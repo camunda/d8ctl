@@ -9,7 +9,7 @@ import d8ctl.util : eqIgnoreCase;
 import std.algorithm : canFind, sort, uniq;
 import std.array : array;
 
-public import d8ctl.generated.catalog : Command, catalog, catalogOperationCount, catalogSpecHash;
+public import d8ctl.generated.catalog : BodyField, Command, catalog, catalogOperationCount, catalogSpecHash;
 
 const(Command)* findExact(string ns, string resource, string verb)
 {
@@ -89,6 +89,11 @@ unittest
     assert(t.verb == "get");
     assert(t.kind == "json");
     assert(!t.hasBody);
+    assert(t.bodyFields.length == 0);
+    auto fail = findByOperationId("failJob");
+    assert(fail !is null);
+    assert(fail.hasBody);
+    assert(fail.bodyFields.length > 0);
     assert(findExact("cluster", "topology", "get") is t);
     assert(isNamespace("cluster"));
     assert(isVerb("get"));

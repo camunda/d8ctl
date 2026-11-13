@@ -89,7 +89,15 @@ string commandHelp(const Command* c)
     buf.put(format("  operation   %s\n", c.operationId));
     if (c.addedInVersion.length)
         buf.put(format("  added in    %s\n", c.addedInVersion));
-    buf.put(format("  body        %s\n", c.hasBody ? "yes (--body='{…}')" : "no"));
+    if (c.hasBody)
+    {
+        if (c.bodyFields.length)
+            buf.put("  body        flags below, or --body='{…}' (wins on conflict)\n");
+        else
+            buf.put("  body        yes (--body='{…}')\n");
+    }
+    else
+        buf.put("  body        no\n");
     if (c.pathParams.length)
     {
         buf.put("\nPath parameters (positional, in order):\n");
@@ -108,8 +116,33 @@ string commandHelp(const Command* c)
         foreach (p; c.optionalQuery)
             buf.put("  --" ~ p ~ "=VALUE\n");
     }
+    if (c.bodyFields.length)
+    {
+        buf.put("\nBody flags (top-level JSON fields):\n");
+        foreach (f; c.bodyFields)
+        {
+            auto star = f.required ? "*" : " ";
+            auto hint = bodyKindHint(f.kind);
+            buf.put(format(" %s --%s=%s\n", star, f.name, hint));
+            if (f.doc.length)
+                buf.put(format("               %s\n", f.doc));
+        }
+        buf.put("  * required unless supplied via --body.\n");
+        buf.put("  Nested objects/arrays: pass JSON, e.g. --filter='{\"state\":\"ACTIVE\"}'.\n");
+    }
+    else if (c.hasBody)
+        buf.put("\nThis body has no documented top-level fields; use --body='{…}'.\n");
     buf.put("\nGlobal flags: --dry-run  --help  --order=resource|verb\n");
     return buf.data;
+}
+
+string bodyKindHint(string kind)
+{
+    if (kind == "boolean") return "true|false";
+    if (kind == "integer") return "INT";
+    if (kind == "number") return "NUM";
+    if (kind == "json") return "JSON";
+    return "VALUE";
 }
 
 string render(const ref Result r)
@@ -136,6 +169,18 @@ unittest
     auto text = render(r);
     assert(text.length > 0);
     assert(text.canFind("Namespaces"));
+
+    import d8ctl.catalog : findByOperationId;
+    auto fail = findByOperationId("failJob");
+    auto failHelp = commandHelp(fail);
+    assert(failHelp.canFind("--retries="));
+    assert(failHelp.canFind("--errorMessage="));
+    assert(failHelp.canFind("--body="));
+
+    auto create = findByOperationId("createProcessInstance");
+    auto createHelp = commandHelp(create);
+    assert(createHelp.canFind("no documented top-level fields"));
+    assert(createHelp.canFind("--body='{…}'"));
 }
 
 private bool canFind(string hay, string needle)

@@ -41,7 +41,11 @@ d8ctl cluster topology get --dry-run
 ```
 
 Path parameters are positional, in spec order. Query parameters are
-`--name=value`. JSON bodies are `--body='{…}'`.
+`--name=value`. JSON bodies accept top-level fields as `--name=value`
+(see `--help` on the command) and/or a full document via `--body='{…}'`.
+`--body` wins on conflict. Nested objects and arrays are JSON strings
+(`--filter='{"state":"ACTIVE"}'`). Union bodies (create process instance,
+evaluate decision, …) stay `--body` only.
 
 `--order=resource|verb` only changes how help lists commands. Both orders
 always parse.
