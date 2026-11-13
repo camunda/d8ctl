@@ -27,9 +27,9 @@ jobs:
             asset: d8ctl-linux-amd64
           - os: ubuntu-24.04-arm
             asset: d8ctl-linux-arm64
-          - os: macos-14
+          - os: macos-15
             asset: d8ctl-darwin-arm64
-          - os: macos-13
+          - os: macos-15-intel
             asset: d8ctl-darwin-amd64
     steps:
       - uses: actions/checkout@v5
