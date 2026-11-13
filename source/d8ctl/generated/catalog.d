@@ -42,10 +42,10 @@ struct Command
 }
 
 /// SHA-256 of the bundled spec this catalog was generated from.
-enum catalogSpecHash = "sha256:e140ca0dbd4353da6a63dc0cffb08773e4805379b5a7364a4264431b7c0493ef";
+enum catalogSpecHash = "sha256:dcfd1b015d1e24c70c3288101ab7cbbab420a4ebda5641d68e787a32eaee0266";
 
 /// Number of operations in the catalog.
-enum catalogOperationCount = 244;
+enum catalogOperationCount = 247;
 
 immutable Command[] catalog = [
     Command(
@@ -577,6 +577,22 @@ immutable Command[] catalog = [
         null,
     ),
     Command(
+        "getClock",
+        "cluster",
+        "clock",
+        "get",
+        "GET",
+        "/clock",
+        "Get internal clock",
+        "8.11",
+        "json",
+        false,
+        null,
+        null,
+        null,
+        null,
+    ),
+    Command(
         "pinClock",
         "cluster",
         "clock",
@@ -591,6 +607,22 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("timestamp", "integer", true, "The exact time in epoch milliseconds to which the clock should be pinned.")],
+    ),
+    Command(
+        "addClock",
+        "cluster",
+        "clock",
+        "add",
+        "POST",
+        "/clock/add",
+        "Add time to internal clock",
+        "8.11",
+        "json",
+        true,
+        null,
+        null,
+        null,
+        [BodyField("offset", "string", true, "The time to add to the clock, as an ISO 8601 duration in days, hours, minutes, and seconds (for…")],
     ),
     Command(
         "resetClock",
@@ -3903,6 +3935,22 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+    ),
+    Command(
+        "lookupUserTask",
+        "cluster",
+        "user-task",
+        "lookup",
+        "POST",
+        "/user-tasks/{userTaskKey}/lookup",
+        "Look up an active user task (alpha)",
+        "8.11",
+        "json",
+        true,
+        ["userTaskKey"],
+        null,
+        null,
+        [BodyField("fetchVariables", "json", false, "The names of the variables to return.")],
     ),
     Command(
         "searchUserTaskVariables",
