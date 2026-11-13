@@ -1,6 +1,8 @@
 // d8ctl is a single-line CLI. Releases come off `main` as GitHub Releases
-// with attached binaries (see .github/workflows/release.yml). There is no
-// stable/N channel yet — open that when the first supported line exists.
+// with attached binaries (see .github/workflows/release.yml); nothing is
+// published to a registry. Pre-1.0: versions stay 0.x (breaking -> minor)
+// and every GitHub Release is flagged Pre-release. Cutting 1.0.0 is a
+// deliberate config change, not a side effect of a commit message.
 module.exports = {
   branches: ['main'],
   plugins: [
@@ -12,7 +14,7 @@ module.exports = {
           { type: 'fix', release: 'patch' },
           { type: 'perf', release: 'patch' },
           { type: 'revert', release: 'patch' },
-          { breaking: true, release: 'major' },
+          { breaking: true, release: 'minor' },
         ],
       },
     ],
@@ -22,6 +24,7 @@ module.exports = {
       '@semantic-release/exec',
       {
         prepareCmd: 'bash scripts/prepare-release.sh "${nextRelease.version}"',
+        successCmd: 'gh release edit "v${nextRelease.version}" --prerelease --repo camunda/d8ctl',
       },
     ],
     [
