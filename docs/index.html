@@ -30,6 +30,7 @@
       <a href="#timemachine">Any version</a>
       <a href="#projection">Generated</a>
       <a href="#native">For agents</a>
+      <a href="#d">Why D</a>
       <a href="#try">Try it</a>
     </nav>
     <a class="gh" href="https://github.com/camunda/d8ctl">GitHub</a>
@@ -188,11 +189,43 @@ Activate jobs
         or an agent jail. It runs. Help returns in milliseconds, not
         after a Node boot.
       </p>
+    </section>
+
+    <section id="d">
+      <h2>Why D? Rust-class safety, without the Rust-class build bill.</h2>
+      <p class="benefit">
+        As our Rust investment grew, we started paying for it in velocity:
+        build time, CPU, and disk caches — paid by every engineer and every
+        agent working on the code. We went looking for the same runtime
+        performance and similar safety, at a fraction of that cost. D gives
+        us both.
+      </p>
+      <div class="split">
+        <div>
+          <h3>Same class of safety</h3>
+          <p>
+            Every module is compile-time memory-safe (<code>@safe</code>,
+            scoped lifetimes, no unchecked shared state), with bounds checks
+            kept on in release. Escape hatches are few, reviewed, and
+            ratcheted in CI. The tool agents run unattended cannot be the
+            source of a use-after-free.
+          </p>
+        </div>
+        <div>
+          <h3>A fraction of the build cost</h3>
+          <p>
+            One compiler download (LDC) and the standard D tools. Builds
+            in seconds, not minutes, with no gigabyte <code>target/</code>
+            caches growing on every laptop, runner, and agent sandbox.
+            Agents iterating on the codebase spend their time on the change,
+            not the compile.
+          </p>
+        </div>
+      </div>
       <p>
-        We already invest in Rust. The bill showed up as build time and
-        disk caches, not as missing safety. D is the look-around: native
-        speed, compile-time <code>@safe</code>, without that incremental
-        cost on every agent-shaped binary.
+        And the result is the binary agents want to run: one native file,
+        no runtime, no dependencies beyond the system’s libcurl. It just
+        works everywhere — and starts as fast as <code>curl</code>.
       </p>
     </section>
 
