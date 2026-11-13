@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/camunda/d8ctl/compare/v1.0.0...v1.1.0) (2026-11-13)
+
+
+### Features
+
+* source the spec from camunda/camunda via camunda-schema-bundler ([4c91e1c](https://github.com/camunda/d8ctl/commit/4c91e1c3de5b2a20144ac91fccb6448bd268e01c)), closes [#6](https://github.com/camunda/d8ctl/issues/6)
+
 # 1.0.0 (2026-11-13)
 
 
