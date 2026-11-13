@@ -19,9 +19,9 @@ struct BodyField
     string doc;
 }
 
-/// A generated CLI command. `namespace` is the kebab-case OpenAPI tag
-/// (`cluster`, `process-instance`, …). `resource` / `verb` are split from
-/// the operationId so the parser can accept either order.
+/// A generated CLI command. `namespace` is always `cluster` (the OC
+/// surface). `resource` / `verb` are split from the operationId so the
+/// parser can accept either order.
 struct Command
 {
     string operationId;
@@ -50,7 +50,7 @@ enum catalogOperationCount = 244;
 immutable Command[] catalog = [
     Command(
         "getAgentDefinition",
-        "agent-definition",
+        "cluster",
         "agent-definition",
         "get",
         "GET",
@@ -66,7 +66,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchAgentDefinitions",
-        "agent-definition",
+        "cluster",
         "agent-definitions",
         "search",
         "POST",
@@ -82,7 +82,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "createAgentInstance",
-        "agent-instance",
+        "cluster",
         "agent-instance",
         "create",
         "POST",
@@ -98,7 +98,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getAgentInstance",
-        "agent-instance",
+        "cluster",
         "agent-instance",
         "get",
         "GET",
@@ -114,7 +114,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "updateAgentInstance",
-        "agent-instance",
+        "cluster",
         "agent-instance",
         "update",
         "PATCH",
@@ -130,7 +130,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchAgentInstances",
-        "agent-instance",
+        "cluster",
         "agent-instances",
         "search",
         "POST",
@@ -146,7 +146,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchAgentInstanceHistory",
-        "agent-instance",
+        "cluster",
         "agent-instance-history",
         "search",
         "POST",
@@ -162,7 +162,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchAuditLogs",
-        "audit-log",
+        "cluster",
         "audit-logs",
         "search",
         "POST",
@@ -178,7 +178,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getAuditLog",
-        "audit-log",
+        "cluster",
         "audit-log",
         "get",
         "GET",
@@ -194,7 +194,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getAuthentication",
-        "authentication",
+        "cluster",
         "authentication",
         "get",
         "GET",
@@ -210,7 +210,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchOwnAuthorizations",
-        "authentication",
+        "cluster",
         "own-authorizations",
         "search",
         "POST",
@@ -226,7 +226,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "createAuthorization",
-        "authorization",
+        "cluster",
         "authorization",
         "create",
         "POST",
@@ -242,7 +242,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchAuthorizations",
-        "authorization",
+        "cluster",
         "authorizations",
         "search",
         "POST",
@@ -258,7 +258,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getAuthorization",
-        "authorization",
+        "cluster",
         "authorization",
         "get",
         "GET",
@@ -274,7 +274,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "updateAuthorization",
-        "authorization",
+        "cluster",
         "authorization",
         "update",
         "PUT",
@@ -290,7 +290,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteAuthorization",
-        "authorization",
+        "cluster",
         "authorization",
         "delete",
         "DELETE",
@@ -306,7 +306,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "listRuntimeBackups",
-        "backup",
+        "cluster",
         "runtime-backups",
         "list",
         "GET",
@@ -322,7 +322,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "takeRuntimeBackup",
-        "backup",
+        "cluster",
         "runtime-backup",
         "take",
         "POST",
@@ -338,7 +338,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getRuntimeBackupState",
-        "backup",
+        "cluster",
         "runtime-backup-state",
         "get",
         "GET",
@@ -354,7 +354,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteRuntimeBackupState",
-        "backup",
+        "cluster",
         "runtime-backup-state",
         "delete",
         "DELETE",
@@ -370,7 +370,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "syncRuntimeBackupState",
-        "backup",
+        "cluster",
         "runtime-backup-state",
         "sync",
         "POST",
@@ -386,7 +386,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getRuntimeBackup",
-        "backup",
+        "cluster",
         "runtime-backup",
         "get",
         "GET",
@@ -402,7 +402,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteRuntimeBackup",
-        "backup",
+        "cluster",
         "runtime-backup",
         "delete",
         "DELETE",
@@ -418,7 +418,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "listHistoryBackups",
-        "backup",
+        "cluster",
         "history-backups",
         "list",
         "GET",
@@ -434,7 +434,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "takeHistoryBackup",
-        "backup",
+        "cluster",
         "history-backup",
         "take",
         "POST",
@@ -450,7 +450,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getHistoryBackup",
-        "backup",
+        "cluster",
         "history-backup",
         "get",
         "GET",
@@ -466,7 +466,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteHistoryBackup",
-        "backup",
+        "cluster",
         "history-backup",
         "delete",
         "DELETE",
@@ -482,7 +482,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchBatchOperationItems",
-        "batch-operation",
+        "cluster",
         "batch-operation-items",
         "search",
         "POST",
@@ -498,7 +498,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchBatchOperations",
-        "batch-operation",
+        "cluster",
         "batch-operations",
         "search",
         "POST",
@@ -514,7 +514,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getBatchOperation",
-        "batch-operation",
+        "cluster",
         "batch-operation",
         "get",
         "GET",
@@ -530,7 +530,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "cancelBatchOperation",
-        "batch-operation",
+        "cluster",
         "batch-operation",
         "cancel",
         "POST",
@@ -546,7 +546,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "resumeBatchOperation",
-        "batch-operation",
+        "cluster",
         "batch-operation",
         "resume",
         "POST",
@@ -562,7 +562,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "suspendBatchOperation",
-        "batch-operation",
+        "cluster",
         "batch-operation",
         "suspend",
         "POST",
@@ -578,7 +578,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "pinClock",
-        "clock",
+        "cluster",
         "clock",
         "pin",
         "PUT",
@@ -594,7 +594,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "resetClock",
-        "clock",
+        "cluster",
         "clock",
         "reset",
         "POST",
@@ -610,7 +610,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "createGlobalClusterVariable",
-        "cluster-variable",
+        "cluster",
         "global-cluster-variable",
         "create",
         "POST",
@@ -626,7 +626,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getGlobalClusterVariable",
-        "cluster-variable",
+        "cluster",
         "global-cluster-variable",
         "get",
         "GET",
@@ -642,7 +642,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "updateGlobalClusterVariable",
-        "cluster-variable",
+        "cluster",
         "global-cluster-variable",
         "update",
         "PUT",
@@ -658,7 +658,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteGlobalClusterVariable",
-        "cluster-variable",
+        "cluster",
         "global-cluster-variable",
         "delete",
         "DELETE",
@@ -674,7 +674,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchClusterVariables",
-        "cluster-variable",
+        "cluster",
         "cluster-variables",
         "search",
         "POST",
@@ -690,7 +690,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "createTenantClusterVariable",
-        "cluster-variable",
+        "cluster",
         "tenant-cluster-variable",
         "create",
         "POST",
@@ -706,7 +706,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getTenantClusterVariable",
-        "cluster-variable",
+        "cluster",
         "tenant-cluster-variable",
         "get",
         "GET",
@@ -722,7 +722,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "updateTenantClusterVariable",
-        "cluster-variable",
+        "cluster",
         "tenant-cluster-variable",
         "update",
         "PUT",
@@ -738,7 +738,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteTenantClusterVariable",
-        "cluster-variable",
+        "cluster",
         "tenant-cluster-variable",
         "delete",
         "DELETE",
@@ -754,7 +754,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "evaluateConditionals",
-        "conditional",
+        "cluster",
         "conditionals",
         "evaluate",
         "POST",
@@ -770,7 +770,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchCorrelatedMessageSubscriptions",
-        "message-subscription",
+        "cluster",
         "correlated-message-subscriptions",
         "search",
         "POST",
@@ -786,7 +786,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "evaluateDecision",
-        "decision-definition",
+        "cluster",
         "decision",
         "evaluate",
         "POST",
@@ -802,7 +802,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchDecisionDefinitions",
-        "decision-definition",
+        "cluster",
         "decision-definitions",
         "search",
         "POST",
@@ -818,7 +818,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getDecisionDefinition",
-        "decision-definition",
+        "cluster",
         "decision-definition",
         "get",
         "GET",
@@ -834,7 +834,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getDecisionDefinitionXML",
-        "decision-definition",
+        "cluster",
         "decision-definition-xml",
         "get",
         "GET",
@@ -850,7 +850,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchDecisionInstances",
-        "decision-instance",
+        "cluster",
         "decision-instances",
         "search",
         "POST",
@@ -866,7 +866,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getDecisionInstance",
-        "decision-instance",
+        "cluster",
         "decision-instance",
         "get",
         "GET",
@@ -882,7 +882,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteDecisionInstance",
-        "decision-instance",
+        "cluster",
         "decision-instance",
         "delete",
         "POST",
@@ -898,7 +898,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteDecisionInstancesBatchOperation",
-        "decision-instance",
+        "cluster",
         "decision-instances-batch-operation",
         "delete",
         "POST",
@@ -914,7 +914,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchDecisionRequirements",
-        "decision-requirements",
+        "cluster",
         "decision-requirements",
         "search",
         "POST",
@@ -930,7 +930,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getDecisionRequirements",
-        "decision-requirements",
+        "cluster",
         "decision-requirements",
         "get",
         "GET",
@@ -946,7 +946,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getDecisionRequirementsXML",
-        "decision-requirements",
+        "cluster",
         "decision-requirements-xml",
         "get",
         "GET",
@@ -962,7 +962,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "createDeployment",
-        "resource",
+        "cluster",
         "deployment",
         "create",
         "POST",
@@ -978,7 +978,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "createDocument",
-        "document",
+        "cluster",
         "document",
         "create",
         "POST",
@@ -994,7 +994,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "createDocuments",
-        "document",
+        "cluster",
         "documents",
         "create",
         "POST",
@@ -1010,7 +1010,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getDocument",
-        "document",
+        "cluster",
         "document",
         "get",
         "GET",
@@ -1026,7 +1026,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteDocument",
-        "document",
+        "cluster",
         "document",
         "delete",
         "DELETE",
@@ -1042,7 +1042,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "createDocumentLink",
-        "document",
+        "cluster",
         "document-link",
         "create",
         "POST",
@@ -1058,7 +1058,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "activateAdHocSubProcessActivities",
-        "ad-hoc-sub-process",
+        "cluster",
         "ad-hoc-sub-process-activities",
         "activate",
         "POST",
@@ -1074,7 +1074,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchElementInstanceWaitStates",
-        "element-instance",
+        "cluster",
         "element-instance-wait-states",
         "search",
         "POST",
@@ -1090,7 +1090,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchElementInstances",
-        "element-instance",
+        "cluster",
         "element-instances",
         "search",
         "POST",
@@ -1106,7 +1106,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getElementInstance",
-        "element-instance",
+        "cluster",
         "element-instance",
         "get",
         "GET",
@@ -1122,7 +1122,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchElementInstanceIncidents",
-        "element-instance",
+        "cluster",
         "element-instance-incidents",
         "search",
         "POST",
@@ -1138,7 +1138,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "createElementInstanceVariables",
-        "element-instance",
+        "cluster",
         "element-instance-variables",
         "create",
         "PUT",
@@ -1154,7 +1154,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getExportingStatus",
-        "exporting",
+        "cluster",
         "exporting-status",
         "get",
         "GET",
@@ -1170,7 +1170,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "pauseExporting",
-        "exporting",
+        "cluster",
         "exporting",
         "pause",
         "POST",
@@ -1186,7 +1186,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "resumeExporting",
-        "exporting",
+        "cluster",
         "exporting",
         "resume",
         "POST",
@@ -1202,7 +1202,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "evaluateExpression",
-        "expression",
+        "cluster",
         "expression",
         "evaluate",
         "POST",
@@ -1218,7 +1218,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getFormByKey",
-        "form",
+        "cluster",
         "form-by-key",
         "get",
         "GET",
@@ -1234,7 +1234,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "createGlobalTaskListener",
-        "global-listener",
+        "cluster",
         "global-task-listener",
         "create",
         "POST",
@@ -1250,7 +1250,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getGlobalTaskListener",
-        "global-listener",
+        "cluster",
         "global-task-listener",
         "get",
         "GET",
@@ -1266,7 +1266,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "updateGlobalTaskListener",
-        "global-listener",
+        "cluster",
         "global-task-listener",
         "update",
         "PUT",
@@ -1282,7 +1282,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteGlobalTaskListener",
-        "global-listener",
+        "cluster",
         "global-task-listener",
         "delete",
         "DELETE",
@@ -1298,7 +1298,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchGlobalTaskListeners",
-        "global-listener",
+        "cluster",
         "global-task-listeners",
         "search",
         "POST",
@@ -1314,7 +1314,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "createGroup",
-        "group",
+        "cluster",
         "group",
         "create",
         "POST",
@@ -1330,7 +1330,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchGroups",
-        "group",
+        "cluster",
         "groups",
         "search",
         "POST",
@@ -1346,7 +1346,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getGroup",
-        "group",
+        "cluster",
         "group",
         "get",
         "GET",
@@ -1362,7 +1362,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "updateGroup",
-        "group",
+        "cluster",
         "group",
         "update",
         "PUT",
@@ -1378,7 +1378,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteGroup",
-        "group",
+        "cluster",
         "group",
         "delete",
         "DELETE",
@@ -1394,7 +1394,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchClientsForGroup",
-        "group",
+        "cluster",
         "clients-for-group",
         "search",
         "POST",
@@ -1410,7 +1410,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "assignClientToGroup",
-        "group",
+        "cluster",
         "client-to-group",
         "assign",
         "PUT",
@@ -1426,7 +1426,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "unassignClientFromGroup",
-        "group",
+        "cluster",
         "client-from-group",
         "unassign",
         "DELETE",
@@ -1442,7 +1442,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchMappingRulesForGroup",
-        "group",
+        "cluster",
         "mapping-rules-for-group",
         "search",
         "POST",
@@ -1458,7 +1458,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "assignMappingRuleToGroup",
-        "group",
+        "cluster",
         "mapping-rule-to-group",
         "assign",
         "PUT",
@@ -1474,7 +1474,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "unassignMappingRuleFromGroup",
-        "group",
+        "cluster",
         "mapping-rule-from-group",
         "unassign",
         "DELETE",
@@ -1490,7 +1490,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchRolesForGroup",
-        "group",
+        "cluster",
         "roles-for-group",
         "search",
         "POST",
@@ -1506,7 +1506,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchUsersForGroup",
-        "group",
+        "cluster",
         "users-for-group",
         "search",
         "POST",
@@ -1522,7 +1522,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "assignUserToGroup",
-        "group",
+        "cluster",
         "user-to-group",
         "assign",
         "PUT",
@@ -1538,7 +1538,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "unassignUserFromGroup",
-        "group",
+        "cluster",
         "user-from-group",
         "unassign",
         "DELETE",
@@ -1554,7 +1554,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchIncidents",
-        "incident",
+        "cluster",
         "incidents",
         "search",
         "POST",
@@ -1570,7 +1570,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getIncident",
-        "incident",
+        "cluster",
         "incident",
         "get",
         "GET",
@@ -1586,7 +1586,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "resolveIncident",
-        "incident",
+        "cluster",
         "incident",
         "resolve",
         "POST",
@@ -1602,7 +1602,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getProcessInstanceStatisticsByDefinition",
-        "incident",
+        "cluster",
         "process-instance-statistics-by-definition",
         "get",
         "POST",
@@ -1618,7 +1618,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getProcessInstanceStatisticsByError",
-        "incident",
+        "cluster",
         "process-instance-statistics-by-error",
         "get",
         "POST",
@@ -1634,7 +1634,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "activateJobs",
-        "job",
+        "cluster",
         "jobs",
         "activate",
         "POST",
@@ -1650,7 +1650,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchJobs",
-        "job",
+        "cluster",
         "jobs",
         "search",
         "POST",
@@ -1666,7 +1666,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "updateJob",
-        "job",
+        "cluster",
         "job",
         "update",
         "PATCH",
@@ -1682,7 +1682,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "completeJob",
-        "job",
+        "cluster",
         "job",
         "complete",
         "POST",
@@ -1698,7 +1698,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "throwJobError",
-        "job",
+        "cluster",
         "job-error",
         "throw",
         "POST",
@@ -1714,7 +1714,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "failJob",
-        "job",
+        "cluster",
         "job",
         "fail",
         "POST",
@@ -1730,7 +1730,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "updateJobsBatchOperation",
-        "job",
+        "cluster",
         "jobs-batch-operation",
         "update",
         "POST",
@@ -1746,7 +1746,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getGlobalJobStatistics",
-        "job",
+        "cluster",
         "global-job-statistics",
         "get",
         "GET",
@@ -1762,7 +1762,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getJobTypeStatistics",
-        "job",
+        "cluster",
         "job-type-statistics",
         "get",
         "POST",
@@ -1778,7 +1778,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getJobWorkerStatistics",
-        "job",
+        "cluster",
         "job-worker-statistics",
         "get",
         "POST",
@@ -1794,7 +1794,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getJobTimeSeriesStatistics",
-        "job",
+        "cluster",
         "job-time-series-statistics",
         "get",
         "POST",
@@ -1810,7 +1810,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getJobErrorStatistics",
-        "job",
+        "cluster",
         "job-error-statistics",
         "get",
         "POST",
@@ -1826,7 +1826,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getLicense",
-        "license",
+        "cluster",
         "license",
         "get",
         "GET",
@@ -1842,7 +1842,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "createMappingRule",
-        "mapping-rule",
+        "cluster",
         "mapping-rule",
         "create",
         "POST",
@@ -1858,7 +1858,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchMappingRule",
-        "mapping-rule",
+        "cluster",
         "mapping-rule",
         "search",
         "POST",
@@ -1874,7 +1874,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getMappingRule",
-        "mapping-rule",
+        "cluster",
         "mapping-rule",
         "get",
         "GET",
@@ -1890,7 +1890,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "updateMappingRule",
-        "mapping-rule",
+        "cluster",
         "mapping-rule",
         "update",
         "PUT",
@@ -1906,7 +1906,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteMappingRule",
-        "mapping-rule",
+        "cluster",
         "mapping-rule",
         "delete",
         "DELETE",
@@ -1922,7 +1922,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchMessageSubscriptions",
-        "message-subscription",
+        "cluster",
         "message-subscriptions",
         "search",
         "POST",
@@ -1938,7 +1938,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "correlateMessage",
-        "message",
+        "cluster",
         "message",
         "correlate",
         "POST",
@@ -1954,7 +1954,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "publishMessage",
-        "message",
+        "cluster",
         "message",
         "publish",
         "POST",
@@ -1970,7 +1970,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchProcessDefinitions",
-        "process-definition",
+        "cluster",
         "process-definitions",
         "search",
         "POST",
@@ -1986,7 +1986,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getProcessDefinitionMessageSubscriptionStatistics",
-        "process-definition",
+        "cluster",
         "process-definition-message-subscription-statistics",
         "get",
         "POST",
@@ -2002,7 +2002,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getProcessDefinitionInstanceStatistics",
-        "process-definition",
+        "cluster",
         "process-definition-instance-statistics",
         "get",
         "POST",
@@ -2018,7 +2018,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getProcessDefinition",
-        "process-definition",
+        "cluster",
         "process-definition",
         "get",
         "GET",
@@ -2034,7 +2034,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getStartProcessForm",
-        "process-definition",
+        "cluster",
         "start-process-form",
         "get",
         "GET",
@@ -2050,7 +2050,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getProcessDefinitionStatistics",
-        "process-definition",
+        "cluster",
         "process-definition-statistics",
         "get",
         "POST",
@@ -2066,7 +2066,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchProcessDefinitionVariableNames",
-        "process-definition",
+        "cluster",
         "process-definition-variable-names",
         "search",
         "POST",
@@ -2082,7 +2082,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getProcessDefinitionXML",
-        "process-definition",
+        "cluster",
         "process-definition-xml",
         "get",
         "GET",
@@ -2098,7 +2098,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getProcessDefinitionInstanceVersionStatistics",
-        "process-definition",
+        "cluster",
         "process-definition-instance-version-statistics",
         "get",
         "POST",
@@ -2114,7 +2114,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "createProcessInstance",
-        "process-instance",
+        "cluster",
         "process-instance",
         "create",
         "POST",
@@ -2130,7 +2130,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "cancelProcessInstancesBatchOperation",
-        "process-instance",
+        "cluster",
         "process-instances-batch-operation",
         "cancel",
         "POST",
@@ -2146,7 +2146,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteProcessInstancesBatchOperation",
-        "process-instance",
+        "cluster",
         "process-instances-batch-operation",
         "delete",
         "POST",
@@ -2162,7 +2162,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "resolveIncidentsBatchOperation",
-        "process-instance",
+        "cluster",
         "incidents-batch-operation",
         "resolve",
         "POST",
@@ -2178,7 +2178,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "migrateProcessInstancesBatchOperation",
-        "process-instance",
+        "cluster",
         "process-instances-batch-operation",
         "migrate",
         "POST",
@@ -2194,7 +2194,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "modifyProcessInstancesBatchOperation",
-        "process-instance",
+        "cluster",
         "process-instances-batch-operation",
         "modify",
         "POST",
@@ -2210,7 +2210,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "resumeProcessInstancesBatchOperation",
-        "process-instance",
+        "cluster",
         "process-instances-batch-operation",
         "resume",
         "POST",
@@ -2226,7 +2226,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchProcessInstances",
-        "process-instance",
+        "cluster",
         "process-instances",
         "search",
         "POST",
@@ -2242,7 +2242,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "suspendProcessInstancesBatchOperation",
-        "process-instance",
+        "cluster",
         "process-instances-batch-operation",
         "suspend",
         "POST",
@@ -2258,7 +2258,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getProcessInstance",
-        "process-instance",
+        "cluster",
         "process-instance",
         "get",
         "GET",
@@ -2274,7 +2274,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "assignProcessInstanceBusinessId",
-        "process-instance",
+        "cluster",
         "process-instance-business-id",
         "assign",
         "POST",
@@ -2290,7 +2290,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getProcessInstanceCallHierarchy",
-        "process-instance",
+        "cluster",
         "process-instance-call-hierarchy",
         "get",
         "GET",
@@ -2306,7 +2306,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "cancelProcessInstance",
-        "process-instance",
+        "cluster",
         "process-instance",
         "cancel",
         "POST",
@@ -2322,7 +2322,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteProcessInstance",
-        "process-instance",
+        "cluster",
         "process-instance",
         "delete",
         "POST",
@@ -2338,7 +2338,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "resolveProcessInstanceIncidents",
-        "process-instance",
+        "cluster",
         "process-instance-incidents",
         "resolve",
         "POST",
@@ -2354,7 +2354,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchProcessInstanceIncidents",
-        "process-instance",
+        "cluster",
         "process-instance-incidents",
         "search",
         "POST",
@@ -2370,7 +2370,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "migrateProcessInstance",
-        "process-instance",
+        "cluster",
         "process-instance",
         "migrate",
         "POST",
@@ -2386,7 +2386,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "modifyProcessInstance",
-        "process-instance",
+        "cluster",
         "process-instance",
         "modify",
         "POST",
@@ -2402,7 +2402,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "resumeProcessInstance",
-        "process-instance",
+        "cluster",
         "process-instance",
         "resume",
         "POST",
@@ -2418,7 +2418,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getProcessInstanceSequenceFlows",
-        "process-instance",
+        "cluster",
         "process-instance-sequence-flows",
         "get",
         "GET",
@@ -2434,7 +2434,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getProcessInstanceStatistics",
-        "process-instance",
+        "cluster",
         "process-instance-statistics",
         "get",
         "GET",
@@ -2450,7 +2450,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getProcessInstanceWaitStateStatistics",
-        "process-instance",
+        "cluster",
         "process-instance-wait-state-statistics",
         "get",
         "GET",
@@ -2466,7 +2466,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "suspendProcessInstance",
-        "process-instance",
+        "cluster",
         "process-instance",
         "suspend",
         "POST",
@@ -2482,7 +2482,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchResources",
-        "resource",
+        "cluster",
         "resources",
         "search",
         "POST",
@@ -2498,7 +2498,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getResource",
-        "resource",
+        "cluster",
         "resource",
         "get",
         "GET",
@@ -2514,7 +2514,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getResourceContent",
-        "resource",
+        "cluster",
         "resource-content",
         "get",
         "GET",
@@ -2530,7 +2530,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getResourceContentBinary",
-        "resource",
+        "cluster",
         "resource-content-binary",
         "get",
         "GET",
@@ -2546,7 +2546,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteResource",
-        "resource",
+        "cluster",
         "resource",
         "delete",
         "POST",
@@ -2562,7 +2562,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "createRole",
-        "role",
+        "cluster",
         "role",
         "create",
         "POST",
@@ -2578,7 +2578,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchRoles",
-        "role",
+        "cluster",
         "roles",
         "search",
         "POST",
@@ -2594,7 +2594,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getRole",
-        "role",
+        "cluster",
         "role",
         "get",
         "GET",
@@ -2610,7 +2610,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "updateRole",
-        "role",
+        "cluster",
         "role",
         "update",
         "PUT",
@@ -2626,7 +2626,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteRole",
-        "role",
+        "cluster",
         "role",
         "delete",
         "DELETE",
@@ -2642,7 +2642,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchClientsForRole",
-        "role",
+        "cluster",
         "clients-for-role",
         "search",
         "POST",
@@ -2658,7 +2658,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "assignRoleToClient",
-        "role",
+        "cluster",
         "role-to-client",
         "assign",
         "PUT",
@@ -2674,7 +2674,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "unassignRoleFromClient",
-        "role",
+        "cluster",
         "role-from-client",
         "unassign",
         "DELETE",
@@ -2690,7 +2690,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchGroupsForRole",
-        "role",
+        "cluster",
         "groups-for-role",
         "search",
         "POST",
@@ -2706,7 +2706,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "assignRoleToGroup",
-        "role",
+        "cluster",
         "role-to-group",
         "assign",
         "PUT",
@@ -2722,7 +2722,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "unassignRoleFromGroup",
-        "role",
+        "cluster",
         "role-from-group",
         "unassign",
         "DELETE",
@@ -2738,7 +2738,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchMappingRulesForRole",
-        "role",
+        "cluster",
         "mapping-rules-for-role",
         "search",
         "POST",
@@ -2754,7 +2754,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "assignRoleToMappingRule",
-        "role",
+        "cluster",
         "role-to-mapping-rule",
         "assign",
         "PUT",
@@ -2770,7 +2770,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "unassignRoleFromMappingRule",
-        "role",
+        "cluster",
         "role-from-mapping-rule",
         "unassign",
         "DELETE",
@@ -2786,7 +2786,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchUsersForRole",
-        "role",
+        "cluster",
         "users-for-role",
         "search",
         "POST",
@@ -2802,7 +2802,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "assignRoleToUser",
-        "role",
+        "cluster",
         "role-to-user",
         "assign",
         "PUT",
@@ -2818,7 +2818,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "unassignRoleFromUser",
-        "role",
+        "cluster",
         "role-from-user",
         "unassign",
         "DELETE",
@@ -2834,7 +2834,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "resolveSecrets",
-        "secret",
+        "cluster",
         "secrets",
         "resolve",
         "POST",
@@ -2850,7 +2850,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "listSecrets",
-        "secret",
+        "cluster",
         "secrets",
         "list",
         "POST",
@@ -2866,7 +2866,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "createAdminUser",
-        "setup",
+        "cluster",
         "admin-user",
         "create",
         "POST",
@@ -2882,7 +2882,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "broadcastSignal",
-        "signal",
+        "cluster",
         "signal",
         "broadcast",
         "POST",
@@ -2914,7 +2914,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getUsageMetrics",
-        "system",
+        "cluster",
         "usage-metrics",
         "get",
         "GET",
@@ -2930,7 +2930,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getSystemConfiguration",
-        "system",
+        "cluster",
         "system-configuration",
         "get",
         "GET",
@@ -2946,7 +2946,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "createTenant",
-        "tenant",
+        "cluster",
         "tenant",
         "create",
         "POST",
@@ -2962,7 +2962,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchTenants",
-        "tenant",
+        "cluster",
         "tenants",
         "search",
         "POST",
@@ -2978,7 +2978,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getTenant",
-        "tenant",
+        "cluster",
         "tenant",
         "get",
         "GET",
@@ -2994,7 +2994,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "updateTenant",
-        "tenant",
+        "cluster",
         "tenant",
         "update",
         "PUT",
@@ -3010,7 +3010,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteTenant",
-        "tenant",
+        "cluster",
         "tenant",
         "delete",
         "DELETE",
@@ -3026,7 +3026,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchClientsForTenant",
-        "tenant",
+        "cluster",
         "clients-for-tenant",
         "search",
         "POST",
@@ -3042,7 +3042,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "assignClientToTenant",
-        "tenant",
+        "cluster",
         "client-to-tenant",
         "assign",
         "PUT",
@@ -3058,7 +3058,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "unassignClientFromTenant",
-        "tenant",
+        "cluster",
         "client-from-tenant",
         "unassign",
         "DELETE",
@@ -3074,7 +3074,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchGroupIdsForTenant",
-        "tenant",
+        "cluster",
         "group-ids-for-tenant",
         "search",
         "POST",
@@ -3090,7 +3090,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "assignGroupToTenant",
-        "tenant",
+        "cluster",
         "group-to-tenant",
         "assign",
         "PUT",
@@ -3106,7 +3106,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "unassignGroupFromTenant",
-        "tenant",
+        "cluster",
         "group-from-tenant",
         "unassign",
         "DELETE",
@@ -3122,7 +3122,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchMappingRulesForTenant",
-        "tenant",
+        "cluster",
         "mapping-rules-for-tenant",
         "search",
         "POST",
@@ -3138,7 +3138,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "assignMappingRuleToTenant",
-        "tenant",
+        "cluster",
         "mapping-rule-to-tenant",
         "assign",
         "PUT",
@@ -3154,7 +3154,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "unassignMappingRuleFromTenant",
-        "tenant",
+        "cluster",
         "mapping-rule-from-tenant",
         "unassign",
         "DELETE",
@@ -3170,7 +3170,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchRolesForTenant",
-        "tenant",
+        "cluster",
         "roles-for-tenant",
         "search",
         "POST",
@@ -3186,7 +3186,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "assignRoleToTenant",
-        "tenant",
+        "cluster",
         "role-to-tenant",
         "assign",
         "PUT",
@@ -3202,7 +3202,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "unassignRoleFromTenant",
-        "tenant",
+        "cluster",
         "role-from-tenant",
         "unassign",
         "DELETE",
@@ -3218,7 +3218,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchUsersForTenant",
-        "tenant",
+        "cluster",
         "users-for-tenant",
         "search",
         "POST",
@@ -3234,7 +3234,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "assignUserToTenant",
-        "tenant",
+        "cluster",
         "user-to-tenant",
         "assign",
         "PUT",
@@ -3250,7 +3250,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "unassignUserFromTenant",
-        "tenant",
+        "cluster",
         "user-from-tenant",
         "unassign",
         "DELETE",
@@ -3282,7 +3282,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "changeClusterMode",
-        "recovery",
+        "cluster",
         "cluster-mode",
         "change",
         "PATCH",
@@ -3298,7 +3298,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getRestoreStatus",
-        "recovery",
+        "cluster",
         "restore-status",
         "get",
         "GET",
@@ -3314,7 +3314,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "restore",
-        "recovery",
+        "cluster",
         "restore",
         "restore",
         "POST",
@@ -3330,7 +3330,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getClusterExportingStatus",
-        "exporting",
+        "cluster",
         "cluster-exporting-status",
         "get",
         "GET",
@@ -3346,7 +3346,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "pauseClusterExporting",
-        "exporting",
+        "cluster",
         "cluster-exporting",
         "pause",
         "POST",
@@ -3362,7 +3362,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "resumeClusterExporting",
-        "exporting",
+        "cluster",
         "cluster-exporting",
         "resume",
         "POST",
@@ -3378,7 +3378,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "listRuntimeBackupsAsClusterAdmin",
-        "backup",
+        "cluster",
         "runtime-backups-as-cluster-admin",
         "list",
         "GET",
@@ -3394,7 +3394,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "takeRuntimeBackupAsClusterAdmin",
-        "backup",
+        "cluster",
         "runtime-backup-as-cluster-admin",
         "take",
         "POST",
@@ -3410,7 +3410,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getRuntimeBackupStateAsClusterAdmin",
-        "backup",
+        "cluster",
         "runtime-backup-state-as-cluster-admin",
         "get",
         "GET",
@@ -3426,7 +3426,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteRuntimeBackupStateAsClusterAdmin",
-        "backup",
+        "cluster",
         "runtime-backup-state-as-cluster-admin",
         "delete",
         "DELETE",
@@ -3442,7 +3442,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "syncRuntimeBackupStateAsClusterAdmin",
-        "backup",
+        "cluster",
         "runtime-backup-state-as-cluster-admin",
         "sync",
         "POST",
@@ -3458,7 +3458,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getRuntimeBackupAsClusterAdmin",
-        "backup",
+        "cluster",
         "runtime-backup-as-cluster-admin",
         "get",
         "GET",
@@ -3474,7 +3474,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteRuntimeBackupAsClusterAdmin",
-        "backup",
+        "cluster",
         "runtime-backup-as-cluster-admin",
         "delete",
         "DELETE",
@@ -3490,7 +3490,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "listHistoryBackupsAsClusterAdmin",
-        "backup",
+        "cluster",
         "history-backups-as-cluster-admin",
         "list",
         "GET",
@@ -3506,7 +3506,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "takeHistoryBackupAsClusterAdmin",
-        "backup",
+        "cluster",
         "history-backup-as-cluster-admin",
         "take",
         "POST",
@@ -3522,7 +3522,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getHistoryBackupAsClusterAdmin",
-        "backup",
+        "cluster",
         "history-backup-as-cluster-admin",
         "get",
         "GET",
@@ -3538,7 +3538,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteHistoryBackupAsClusterAdmin",
-        "backup",
+        "cluster",
         "history-backup-as-cluster-admin",
         "delete",
         "DELETE",
@@ -3554,7 +3554,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "changeClusterModeAsClusterAdmin",
-        "recovery",
+        "cluster",
         "cluster-mode-as-cluster-admin",
         "change",
         "PATCH",
@@ -3618,7 +3618,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "restoreAsClusterAdmin",
-        "recovery",
+        "cluster",
         "as-cluster-admin",
         "restore",
         "POST",
@@ -3682,7 +3682,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "createUser",
-        "user",
+        "cluster",
         "user",
         "create",
         "POST",
@@ -3698,7 +3698,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchUsers",
-        "user",
+        "cluster",
         "users",
         "search",
         "POST",
@@ -3714,7 +3714,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getUser",
-        "user",
+        "cluster",
         "user",
         "get",
         "GET",
@@ -3730,7 +3730,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "updateUser",
-        "user",
+        "cluster",
         "user",
         "update",
         "PUT",
@@ -3746,7 +3746,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "deleteUser",
-        "user",
+        "cluster",
         "user",
         "delete",
         "DELETE",
@@ -3762,7 +3762,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchUserTasks",
-        "user-task",
+        "cluster",
         "user-tasks",
         "search",
         "POST",
@@ -3778,7 +3778,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getUserTask",
-        "user-task",
+        "cluster",
         "user-task",
         "get",
         "GET",
@@ -3794,7 +3794,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "updateUserTask",
-        "user-task",
+        "cluster",
         "user-task",
         "update",
         "PATCH",
@@ -3810,7 +3810,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "unassignUserTask",
-        "user-task",
+        "cluster",
         "user-task",
         "unassign",
         "DELETE",
@@ -3826,7 +3826,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "assignUserTask",
-        "user-task",
+        "cluster",
         "user-task",
         "assign",
         "POST",
@@ -3842,7 +3842,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchUserTaskAuditLogs",
-        "user-task",
+        "cluster",
         "user-task-audit-logs",
         "search",
         "POST",
@@ -3858,7 +3858,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "completeUserTask",
-        "user-task",
+        "cluster",
         "user-task",
         "complete",
         "POST",
@@ -3874,7 +3874,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchUserTaskEffectiveVariables",
-        "user-task",
+        "cluster",
         "user-task-effective-variables",
         "search",
         "POST",
@@ -3890,7 +3890,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getUserTaskForm",
-        "user-task",
+        "cluster",
         "user-task-form",
         "get",
         "GET",
@@ -3906,7 +3906,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchUserTaskVariables",
-        "user-task",
+        "cluster",
         "user-task-variables",
         "search",
         "POST",
@@ -3922,7 +3922,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "searchVariables",
-        "variable",
+        "cluster",
         "variables",
         "search",
         "POST",
@@ -3938,7 +3938,7 @@ immutable Command[] catalog = [
     ),
     Command(
         "getVariable",
-        "variable",
+        "cluster",
         "variable",
         "get",
         "GET",

@@ -226,4 +226,12 @@ unittest
 
     auto bad = parse(["nope"]);
     assert(bad.kind == Kind.error);
+
+    auto jobs = parse(["cluster", "jobs", "activate"]);
+    assert(jobs.kind == Kind.invoke);
+    assert(jobs.command.operationId == "activateJobs");
+
+    auto jobsVerb = parse(["cluster", "activate", "jobs"]);
+    assert(jobsVerb.kind == Kind.invoke);
+    assert(jobsVerb.command.operationId == "activateJobs");
 }

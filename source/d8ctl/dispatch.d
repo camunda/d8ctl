@@ -244,7 +244,7 @@ unittest
     auto fail = findByOperationId("failJob");
     assert(fail !is null);
     auto parsed = parse([
-        "job", "job", "fail", "99",
+        "cluster", "job", "fail", "99",
         "--retries=0",
         "--errorMessage=boom",
         "--dry-run",
@@ -255,7 +255,7 @@ unittest
     assert(built["errorMessage"].str == "boom");
 
     auto merged = parse([
-        "job", "job", "fail", "99",
+        "cluster", "job", "fail", "99",
         "--retries=3",
         "--body={\"retries\":1,\"errorMessage\":\"from-body\"}",
         "--dry-run",
@@ -265,13 +265,13 @@ unittest
     assert(won["errorMessage"].str == "from-body");
 
     auto search = findByOperationId("searchProcessInstances");
-    auto emptySearch = parse(["process-instance", "process-instances", "search", "--dry-run"]);
+    auto emptySearch = parse(["cluster", "process-instances", "search", "--dry-run"]);
     auto emptyBody = buildBody(search, emptySearch);
     assert(emptyBody.type == JSONType.object);
     assert(emptyBody.objectNoRef.length == 0);
 
     auto filtered = parse([
-        "process-instance", "process-instances", "search",
+        "cluster", "process-instances", "search",
         "--filter={\"state\":\"ACTIVE\"}",
         "--page={\"limit\":1}",
         "--dry-run",
@@ -284,7 +284,7 @@ unittest
     try
     {
         auto activate = findByOperationId("activateJobs");
-        auto missing = parse(["job", "jobs", "activate", "--dry-run"]);
+        auto missing = parse(["cluster", "jobs", "activate", "--dry-run"]);
         cast(void) buildBody(activate, missing);
     }
     catch (UsageException) threw = true;

@@ -98,4 +98,7 @@ unittest
     assert(isNamespace("cluster"));
     assert(isVerb("get"));
     assert(resourcesIn("cluster").canFind("topology"));
+    assert(resourcesIn("cluster").canFind("jobs"));
+    assert(findExact("cluster", "jobs", "activate") !is null);
+    assert(findExact("job", "jobs", "activate") is null);
 }

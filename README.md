@@ -37,6 +37,8 @@ d8ctl cluster topology --help
 d8ctl cluster topology get --help
 d8ctl cluster topology get          # live: GET /topology
 d8ctl cluster get topology          # same command, verb-first
+d8ctl cluster jobs activate --help
+d8ctl cluster jobs activate --type=probe:x --timeout=1000 --maxJobsToActivate=1
 d8ctl cluster topology get --dry-run
 ```
 
@@ -52,6 +54,12 @@ always parse.
 
 Auth and address are the SDK's `CAMUNDA_*` environment variables
 (`CAMUNDA_REST_ADDRESS`, `CAMUNDA_AUTH_STRATEGY`, …).
+
+## Releases
+
+Pushes to `main` cut a GitHub Release (`vX.Y.Z`) with linux/darwin
+amd64+arm64 binaries. Install from the release assets until Homebrew /
+`curl | sh` land.
 
 ## Generation
 

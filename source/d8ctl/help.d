@@ -6,24 +6,24 @@ module d8ctl.help;
 import d8ctl.catalog;
 import d8ctl.parse : Kind, Order, Result;
 import d8ctl.util : eqIgnoreCase;
+import d8ctl.version_ : cliVersion;
 import std.algorithm : sort;
 import std.array : appender;
 import std.format : format;
 
-enum versionString = "d8ctl 0.0.0-spike (catalog " ~ catalogSpecHash ~ ")";
+enum versionString = "d8ctl " ~ cliVersion ~ " (catalog " ~ catalogSpecHash ~ ")";
 
 string rootHelp()
 {
     auto buf = appender!string();
     buf.put("d8ctl — Camunda 8 Orchestration Cluster CLI (spike)\n\n");
     buf.put("Usage:\n");
-    buf.put("  d8ctl [--help] [--version] [--dry-run] [--order=resource|verb] <namespace> …\n\n");
-    buf.put("Namespaces (OpenAPI tags):\n");
-    foreach (ns; namespaces())
-        buf.put(format("  %-28s %s command(s)\n", ns, commandsIn(ns).length));
-    buf.put("\nBoth `namespace resource verb` and `namespace verb resource` parse.\n");
+    buf.put("  d8ctl [--help] [--version] [--dry-run] [--order=resource|verb] cluster …\n\n");
+    buf.put(format("The Orchestration Cluster surface is under `cluster` (%s operations).\n", catalogOperationCount));
+    buf.put("Both `cluster <resource> <verb>` and `cluster <verb> <resource>` parse.\n");
     buf.put("`--order` only changes how help lists them (default: resource).\n");
     buf.put("See https://github.com/camunda/d8ctl/issues/1\n");
+    buf.put("\nStart with: d8ctl cluster --help\n");
     return buf.data;
 }
 
@@ -168,7 +168,7 @@ unittest
     auto r = parse(["--help"]);
     auto text = render(r);
     assert(text.length > 0);
-    assert(text.canFind("Namespaces"));
+    assert(text.canFind("cluster"));
 
     import d8ctl.catalog : findByOperationId;
     auto fail = findByOperationId("failJob");

@@ -256,8 +256,11 @@ def main() -> int:
     ops_with_fields = 0
     for op in ops:
         oid = op["operationId"]
-        tag = (op.get("tags") or ["untagged"])[0]
-        ns = kebab(tag)
+        # The whole Orchestration Cluster surface lives under `cluster`.
+        # OpenAPI tags are documentation, not a CLI namespace — otherwise
+        # activateJobs becomes `d8ctl job jobs activate` instead of
+        # `d8ctl cluster jobs activate`.
+        ns = "cluster"
         verb, resource_raw = split_op(oid)
         resource = kebab(resource_raw) or kebab(verb)
         key = (ns, resource, verb)
@@ -318,9 +321,9 @@ struct BodyField
     string doc;
 }}
 
-/// A generated CLI command. `namespace` is the kebab-case OpenAPI tag
-/// (`cluster`, `process-instance`, …). `resource` / `verb` are split from
-/// the operationId so the parser can accept either order.
+/// A generated CLI command. `namespace` is always `cluster` (the OC
+/// surface). `resource` / `verb` are split from the operationId so the
+/// parser can accept either order.
 struct Command
 {{
     string operationId;
