@@ -192,40 +192,53 @@ Activate jobs
     </section>
 
     <section id="d">
-      <h2>Why D? Rust-class safety, without the Rust-class build bill.</h2>
+      <h2>Why D? Lighter than Node. Cheaper to build than Rust.</h2>
       <p class="benefit">
-        As our Rust investment grew, we started paying for it in velocity:
-        build time, CPU, and disk caches — paid by every engineer and every
-        agent working on the code. We went looking for the same runtime
-        performance and similar safety, at a fraction of that cost. D gives
-        us both.
+        An agent calls its tools on every step, so every call has to be
+        instant and the tool has to drop into any sandbox. And the code
+        behind it has to be cheap to change — by engineers and by agents.
+        D is the one choice that gives us both: a tiny native binary at
+        light speed, with Rust-class safety and none of Rust’s build bill.
       </p>
       <div class="split">
         <div>
-          <h3>Same class of safety</h3>
+          <h3>vs Node (c8ctl)</h3>
           <p>
-            Every module is compile-time memory-safe (<code>@safe</code>,
-            scoped lifetimes, no unchecked shared state), with bounds checks
-            kept on in release. Escape hatches are few, reviewed, and
-            ratcheted in CI. The tool agents run unattended cannot be the
-            source of a use-after-free.
+            No JavaScript runtime to boot, no <code>node_modules</code>, no
+            install step. One 2&nbsp;MiB file that just works everywhere.
+            It answers in about 9&nbsp;ms using 7&nbsp;MiB of memory;
+            the same call through Node takes about 160&nbsp;ms and
+            108&nbsp;MiB. Live API calls cost only a few milliseconds more
+            than raw <code>curl</code>. Fan out twenty calls and you feel it.
           </p>
         </div>
         <div>
-          <h3>A fraction of the build cost</h3>
+          <h3>vs Rust</h3>
           <p>
-            One compiler download (LDC) and the standard D tools. Builds
-            in seconds, not minutes, with no gigabyte <code>target/</code>
-            caches growing on every laptop, runner, and agent sandbox.
-            Agents iterating on the codebase spend their time on the change,
-            not the compile.
+            As our Rust investment grew, we started paying in velocity:
+            build time, CPU, and disk caches, paid by every engineer and
+            every agent working on the code. D gives the same native runtime
+            and the same class of compile-time memory safety, from one
+            compiler download, building in seconds, with no gigabyte
+            <code>target/</code> caches on every laptop, runner, and sandbox.
           </p>
         </div>
       </div>
-      <p>
-        And the result is the binary agents want to run: one native file,
-        no runtime, no dependencies beyond the system’s libcurl. It just
-        works everywhere — and starts as fast as <code>curl</code>.
+      <table class="compare">
+        <thead><tr><th></th><th>d8ctl (D)</th><th>c8ctl (Node)</th><th>Rust</th></tr></thead>
+        <tbody>
+          <tr><td>Runtime to install</td><td>none</td><td>Node + node_modules</td><td>none</td></tr>
+          <tr><td>Time to first output</td><td>~9&nbsp;ms</td><td>~160&nbsp;ms</td><td>native</td></tr>
+          <tr><td>Memory per call</td><td>~7&nbsp;MiB</td><td>~108&nbsp;MiB</td><td>native</td></tr>
+          <tr><td>Compile-time memory safety</td><td>yes</td><td>n/a</td><td>yes</td></tr>
+          <tr><td>Cost to build and iterate</td><td>low</td><td>low</td><td>high</td></tr>
+        </tbody>
+      </table>
+      <p class="note">
+        Safety in practice: every module is <code>@safe</code>, with scoped
+        lifetimes, no unchecked shared state, and bounds checks kept on in
+        release. The few escape hatches are reviewed and capped in CI.
+        Measured on Apple Silicon against a local cluster.
       </p>
     </section>
 
