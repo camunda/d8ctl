@@ -6,7 +6,7 @@
   "targetType": "executable",
   "targetName": "d8ctl",
   "dependencies": {
-    "camunda-orchestration-sdk": {
+    "camunda-orchestration-sdk:runtime": {
       "path": "../orchestration-cluster-api-dlang"
     }
   },

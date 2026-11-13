@@ -1,13 +1,13 @@
 /// Dispatch a parsed command through the D SDK's generic HTTP surface.
 ///
 /// Every catalog row is live: we substitute path params, attach query flags
-/// and an optional JSON body, and call CamundaClient.requestJson / requestVoid
+/// and an optional JSON body, and call Transport.requestJson / requestVoid
 /// / requestText. Multipart ops are refused until we grow a file-flag story.
 module d8ctl.dispatch;
 
 @safe:
 
-import camunda;
+import camunda.runtime;
 import d8ctl.catalog : BodyField, Command;
 import d8ctl.parse : Result;
 import std.json;
@@ -29,7 +29,7 @@ string substitutePath(string path, const string[] names, const string[] values)
     return out_;
 }
 
-string invoke(CamundaClient client, const ref Result r)
+string invoke(Transport client, const ref Result r)
 {
     auto c = r.command;
     if (c is null) throw new UsageException("no command");

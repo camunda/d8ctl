@@ -23,7 +23,7 @@ Upstream: [orchestration-cluster-api-dlang](https://github.com/camunda/orchestra
 | `source/d8ctl/app.d` | Entry + `run`. |
 | `source/d8ctl/parse.d` | Argv. Accepts both resource-verb and verb-resource. |
 | `source/d8ctl/help.d` | Progressive help. |
-| `source/d8ctl/dispatch.d` | Generic live HTTP via `CamundaClient.request*`. |
+| `source/d8ctl/dispatch.d` | Generic live HTTP via `Transport.request*` (`camunda-orchestration-sdk:runtime`). |
 | `source/d8ctl/catalog.d` | Lookups over the generated table. |
 | `source/d8ctl/generated/catalog.d` | **Generated.** `make generate`. Never hand-edit. |
 | `source/d8ctl/version_.d` | SemVer stamp (`scripts/prepare-release.sh`). |

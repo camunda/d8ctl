@@ -3,8 +3,9 @@ module d8ctl.app;
 
 @safe:
 
-import camunda;
+import camunda.runtime;
 import d8ctl.catalog : catalogOperationCount;
+import d8ctl.version_ : cliVersion;
 import d8ctl.dispatch;
 import d8ctl.help;
 import d8ctl.parse;
@@ -38,7 +39,8 @@ int run(string[] args)
     case Kind.invoke:
         try
         {
-            auto client = CamundaClient.fromEnv();
+            auto client = Transport.fromEnv();
+            client.userAgent = "d8ctl/" ~ cliVersion;
             auto out_ = invoke(client, r);
             if (out_.length) stdOut.write(out_);
             if (out_.length && out_[$ - 1] != '\n') stdOut.writeln();
