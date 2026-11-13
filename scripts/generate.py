@@ -17,7 +17,12 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SDK_DIR = ROOT.parent / "orchestration-cluster-api-dlang"
+# Local sibling checkout, or the in-workspace copy CI checks out.
+_candidates = [
+    ROOT.parent / "orchestration-cluster-api-dlang",
+    ROOT / "orchestration-cluster-api-dlang",
+]
+SDK_DIR = next((p for p in _candidates if (p / "external-spec/bundled/spec-metadata.json").is_file()), _candidates[0])
 SDK_META = SDK_DIR / "external-spec" / "bundled" / "spec-metadata.json"
 SDK_SPEC = SDK_DIR / "external-spec" / "bundled" / "rest-api.bundle.json"
 OUT = ROOT / "source" / "d8ctl" / "generated" / "catalog.d"

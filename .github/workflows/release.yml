@@ -37,7 +37,16 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: camunda/orchestration-cluster-api-dlang
-          path: ../orchestration-cluster-api-dlang
+          path: orchestration-cluster-api-dlang
+      - name: Point dub.json at the in-workspace SDK
+        run: |
+          python3 -c "
+          import json
+          p='dub.json'
+          d=json.load(open(p))
+          d['dependencies']['camunda-orchestration-sdk']={'path':'orchestration-cluster-api-dlang'}
+          open(p,'w').write(json.dumps(d, indent=2)+'\n')
+          "
       - uses: dlang-community/setup-dlang@v2
         with:
           compiler: ldc-1.43.0
