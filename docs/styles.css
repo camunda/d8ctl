@@ -204,3 +204,6 @@ footer a { color: var(--ink); }
   .timeline { grid-template-columns: 1fr 1fr; }
   .top nav { display: none; }
 }
+.proof { padding-left: 1.1rem; margin: 0 0 1rem; }
+.proof li { margin: 0 0 .5rem; color: var(--muted); }
+.proof strong { color: var(--ink); }

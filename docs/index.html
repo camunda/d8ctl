@@ -148,14 +148,23 @@ Activate jobs
         a project — and when the cluster publishes its spec, not even that:
         new operations appear as catalog rows in the binary already installed.
       </p>
-      <p class="note">
-        The discipline is enforced in CI, not by convention:
-        <a href="https://github.com/camunda/camunda/blob/main/.github/workflows/verify-x-added-in-version-annotations.yml">every spec change must carry correct version markers</a>;
-        <a href="https://github.com/camunda/api-test-generator">api-test-generator</a>
-        derives contract tests from the spec itself (Orchestration Cluster and Hub); and
-        <a href="https://github.com/camunda/camunda/blob/main/.github/workflows/c8-orchestration-cluster-reusable-api-tests.yml">nightly API suites</a>
-        run them against every supported line — 8.7 through main, on Elasticsearch and RDBMS.
+      <p>
+        The spec is a guarantee, not documentation: the API does what the
+        spec says it does. That is enforced in CI, not by convention.
       </p>
+      <ul class="proof">
+        <li><strong>Linted.</strong>
+          <a href="https://github.com/camunda/camunda/blob/main/zeebe/gateway-protocol/.spectral.yaml">Spectral rules</a>
+          — structure, required permissions, semantic key types, consistency annotations, naming — gate every spec change, and the custom rules have their own tests.</li>
+        <li><strong>Versioned.</strong>
+          <a href="https://github.com/camunda/camunda/blob/main/.github/workflows/verify-x-added-in-version-annotations.yml">Every operation and field must carry a correct version marker.</a></li>
+        <li><strong>Contract-tested.</strong>
+          <a href="https://github.com/camunda/api-test-generator">api-test-generator</a>
+          derives tests from the spec itself, for Orchestration Cluster and Hub.</li>
+        <li><strong>Proven on every line.</strong>
+          <a href="https://github.com/camunda/camunda/blob/main/.github/workflows/c8-orchestration-cluster-reusable-api-tests.yml">Nightly API suites</a>
+          run against each supported version, 8.7 through main.</li>
+      </ul>
     </section>
 
     <section id="native">
