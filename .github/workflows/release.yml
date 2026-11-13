@@ -1,0 +1,108 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: d8ctl-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            asset: d8ctl-linux-amd64
+          - os: ubuntu-24.04-arm
+            asset: d8ctl-linux-arm64
+          - os: macos-14
+            asset: d8ctl-darwin-arm64
+          - os: macos-13
+            asset: d8ctl-darwin-amd64
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check out the D SDK (path dependency)
+        uses: actions/checkout@v5
+        with:
+          repository: camunda/orchestration-cluster-api-dlang
+          path: ../orchestration-cluster-api-dlang
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ldc-1.43.0
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libcurl4-openssl-dev zlib1g-dev
+      - run: dub test
+      - run: dub build -b release
+      - name: Stage binary
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          bin=d8ctl
+          if [ ! -f "$bin" ]; then
+            echo "::error::release binary $bin not found"
+            exit 1
+          fi
+          cp "$bin" "release-assets/${{ matrix.asset }}"
+          chmod +x "release-assets/${{ matrix.asset }}"
+          (cd release-assets && shasum -a 256 "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  release:
+    name: Version & GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Fetch remote refs for semantic-release
+        run: |
+          set -euo pipefail
+          git fetch origin '+refs/heads/*:refs/remotes/origin/*' --prune
+          git fetch origin '+refs/notes/*:refs/notes/*' || true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install release tooling
+        run: npm install
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: List assets
+        run: ls -la release-assets
+
+      - name: Configure git
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Publish (semantic-release)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release

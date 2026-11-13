@@ -26,14 +26,23 @@ Upstream: [orchestration-cluster-api-dlang](https://github.com/camunda/orchestra
 | `source/d8ctl/dispatch.d` | Generic live HTTP via `CamundaClient.request*`. |
 | `source/d8ctl/catalog.d` | Lookups over the generated table. |
 | `source/d8ctl/generated/catalog.d` | **Generated.** `make generate`. Never hand-edit. |
+| `source/d8ctl/version_.d` | SemVer stamp (`scripts/prepare-release.sh`). |
 | `scripts/generate.py` | Catalog generator. |
 | `scripts/check-safe.sh` | `@safe` ratchet (same contract as the SDK). |
+| `scripts/prepare-release.sh` | Stamps `dub.json` + `version.d` for semantic-release. |
 
 ## Strictness
 
 LDC ≥ 1.43 only. Every module `@safe:`. `-preview=dip1000 -preview=nosharedaccess`.
 Release keeps `-boundscheck=on`. No extra dub packages. No raw threads,
 `__gshared`, or `union` outside a future `safeio.d`.
+
+## Releases
+
+Pushes to `main` run `.github/workflows/release.yml`: build linux/darwin
+amd64+arm64, then semantic-release tags `vX.Y.Z` and attaches the binaries
+to a GitHub Release. Homebrew tap and `curl | sh` install are tracked as
+issues, not shipped yet.
 
 ## Commands
 
