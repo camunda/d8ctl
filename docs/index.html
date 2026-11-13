@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>d8ctl — Agent CLI for API</title>
-  <meta name="description" content="d8ctl projects a REST API onto a native CLI. Zero hand-written commands. Progressive help is MCP in depth. API Time Machine shapes the surface to the cluster you are on.">
+  <meta name="description" content="d8ctl projects REST APIs onto one native CLI. Zero hand-written commands. Fuse many APIs into one surface. Progressive help is MCP in depth. API Time Machine shapes each namespace to the system you are on.">
   <link rel="canonical" href="https://camunda.github.io/d8ctl/">
   <meta property="og:title" content="d8ctl — Agent CLI for API">
-  <meta property="og:description" content="Zero-touch projection of an API onto a CLI. Progressive disclosure. API Time Machine. Native D.">
+  <meta property="og:description" content="Zero-touch projection. Fuse many APIs into one agent surface. Progressive disclosure. API Time Machine. Native D.">
   <meta property="og:type" content="website">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,9 +20,10 @@
     <a class="mark" href="#top">d8ctl</a>
     <nav>
       <a href="#projection">Projection</a>
+      <a href="#fuse">Fuse</a>
       <a href="#help">Help as MCP</a>
       <a href="#timemachine">Time Machine</a>
-      <a href="#d">Why D</a>
+      <a href="#native">Native</a>
       <a href="#try">Try it</a>
     </nav>
     <a class="gh" href="https://github.com/camunda/d8ctl">GitHub</a>
@@ -35,7 +36,9 @@
       <p class="lede">
         d8ctl is a <em>projection</em>, not a product surface. The OpenAPI spec
         is the command tree. There is no hand-written handler per operation.
-        An agent that can type <code>--help</code> can operate the whole cluster.
+        An agent that can type <code>--help</code> can operate the cluster —
+        and, with the same primitives, every other API you fuse into the
+        binary.
       </p>
       <div class="hero-stats">
         <div><strong>244</strong><span>operations, one catalog</span></div>
@@ -92,6 +95,47 @@ generate: 244 commands, 121 with body flags (336 fields)
         Multipart (deploy, documents) is refused until file flags exist.
         Union bodies (create process instance) stay <code>--body='{…}'</code>
         — there is no honest single shape to flatten.
+      </p>
+    </section>
+
+    <section id="fuse">
+      <h2>One surface, many APIs</h2>
+      <p>
+        The catalog is not “the Camunda CLI.” It is a <em>row type</em>:
+        namespace, resource, verb, HTTP, flags. Orchestration Cluster is
+        the first table. <strong>Hub</strong> and <strong>Console</strong>
+        are the next — the two APIs an agent actually needs beside the
+        cluster. Parse, help, Time Machine, and dispatch do not change.
+        The agent still types <code>--help</code>.
+      </p>
+      <p>
+        Fusion is concatenation plus a namespace. Time Machine still
+        cuts each table to the version of <em>that</em> system. An 8.6
+        cluster and a current Console do not leak each other’s future
+        into <code>--help</code>.
+      </p>
+      <pre class="term" aria-label="fused surface"><code><span class="ps">$</span> d8ctl --help
+Namespaces:
+  cluster    Orchestration Cluster REST   (API 8.8 · 180 ops)
+  console    Camunda Console              (current)
+  hub        Camunda Hub                  (current)
+
+<span class="ps">$</span> d8ctl cluster process-instances search --filter='{"state":"ACTIVE"}'
+<span class="ps">$</span> d8ctl console clusters list
+<span class="ps">$</span> d8ctl hub connectors search --name='*slack*'
+
+<span class="cmt"># same progressive help, same --dry-run, same CAMUNDA_* auth</span>
+<span class="ps">$</span> d8ctl console clusters create --help
+<span class="ps">$</span> d8ctl hub connectors get --help</code></pre>
+      <p>
+        Agents hate N tools with N dialects. One binary, one help
+        grammar, N specs. Adding an API is a generator input, not a
+        new CLI project.
+      </p>
+      <p class="note">
+        Spike today: one table, namespace <code>cluster</code>. The
+        parser already keys on namespace. The next catalogs plug in
+        beside it.
       </p>
     </section>
 
@@ -160,12 +204,34 @@ Body flags (top-level JSON fields):
         <em>is</em> the CLI surface.
       </p>
       <p>
-        The cluster already knows what it is. We read that — a response
-        header, or <code>GET /topology</code> — and drop every operation
-        whose <code>added in</code> is newer than that version. Help,
-        completion, and dispatch all walk the filtered table. An agent
+        The cut is not a hand-maintained allow-list. Every operation in the
+        Orchestration Cluster spec already carries a vendor extension:
+      </p>
+      <pre class="term" aria-label="x-added-in-version in the OpenAPI spec"><code><span class="cmt"># rest-api.bundle.json — searchJobs</span>
+"post": {
+  "operationId": "searchJobs",
+  "summary": "Search jobs",
+  "x-added-in-version": "8.8"
+}
+
+<span class="cmt"># activateJobs, same file</span>
+"x-added-in-version": "8.6"</code></pre>
+      <p>
+        The generator copies that onto the catalog row
+        (<code>addedInVersion</code>). At runtime we ask the cluster who it
+        is — <code>GET /topology</code>, or a negotiated response header —
+        and keep the row only when
+        <code>x-added-in-version &lt;= server version</code>. Help,
+        completion, and dispatch all walk that filtered table. An agent
         that only ever types <code>--help</code> cannot invent a flag
         the broker will 404.
+      </p>
+      <p>
+        Fields can carry the same key
+        (<code>x-properties-added-in-version</code>). A 8.6 cluster can
+        still expose <code>activateJobs</code> while hiding a flag that
+        landed in 8.9. One extension, two granularities: operations and
+        properties.
       </p>
       <div class="timeline" aria-hidden="true">
         <div>
@@ -209,54 +275,51 @@ d8ctl: unknown command 'jobs search' on API 8.6 (added in 8.8).
       </p>
       <p class="note">
         Spike today: the catalog is compiled in and every row is offered.
-        Time Machine is the next cut — version from
-        <code>GET /topology</code> (or a negotiated header), then filter
-        on <code>added in</code>. The field is already on every command.
+        Time Machine is the next cut — read the server version, then
+        filter on <code>x-added-in-version</code>. The field is already
+        on every command; help already prints <code>added in 8.6</code>.
       </p>
     </section>
 
-    <section id="d">
-      <h2>Why D</h2>
+    <section id="native">
+      <h2>c8ctl for humans. d8ctl for agents.</h2>
       <p>
-        Agents pay process startup on every tool call. A Node CLI that does
-        the same job here boots in ~160&nbsp;ms and 110&nbsp;MiB just to print
-        <code>--version</code>. d8ctl is 9&nbsp;ms and 7&nbsp;MiB. Live calls
-        sit 3–8&nbsp;ms above curl. That is the tax you want when a planner
-        fans out twenty searches.
+        <a href="https://github.com/camunda/c8ctl">c8ctl</a> is the human
+        CLI: profiles, plugins, deploy UX, pretty search, cluster
+        lifecycle. Keep using it. d8ctl is the other half — a native
+        projection an agent can afford to call on every step.
       </p>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th></th><th>d8ctl</th><th>c8ctl (Node 24)</th><th>curl</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>On disk</td><td>2.2 MiB one file</td><td>114 MiB node + 59 MiB package</td><td>~0.5 MiB</td></tr>
-            <tr><td><code>--help</code> p50</td><td>9 ms / 7 MiB</td><td>156 ms / 108 MiB</td><td>—</td></tr>
-            <tr><td>GET topology p50</td><td>13 ms / 9 MiB</td><td>170 ms / 109 MiB</td><td>10 ms / 5 MiB</td></tr>
-            <tr><td>Search (limit=1)</td><td>19 ms / 9 MiB</td><td>242 ms / 139 MiB†</td><td>10 ms</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="note">
-        † c8ctl’s search often fetches a large default page and filters in
-        process. d8ctl sends the body you typed. Same Mac, same nano engine,
-        15-run p50s.
+      <p>
+        One file. No Node, no <code>node_modules</code>, no runtime to
+        install. System libcurl and that’s it. Drop the binary on a
+        Mac, a Linux box, a CI runner, an agent sandbox — it runs.
+        2.2&nbsp;MiB on disk, 9&nbsp;ms and 7&nbsp;MiB RSS to print
+        <code>--help</code>. Live calls sit 3–8&nbsp;ms above curl.
+        That is the tax you want when a planner fans out twenty searches.
+      </p>
+      <p>
+        We already have a serious Rust investment. The bill arrived as
+        build time, CPU, and disk caches — not as missing safety. d8ctl
+        is the look-around: LDC gives native speed in curl’s
+        neighbourhood, and <code>@safe</code> / DIP1000 is the same
+        class of compile-time story, without paying the incremental
+        compile on every agent-shaped binary.
       </p>
       <div class="split">
         <div>
-          <h3>Native, not “compiled JS”</h3>
+          <h3>Native, not a runtime</h3>
           <p>
-            LDC, Phobos statically linked, system libcurl. No GC warmup, no
-            module graph, no plugin discovery. The catalog is 76&nbsp;KiB of
-            static data in the binary.
+            LDC, Phobos statically linked, system libcurl. No GC warmup,
+            no module graph, no plugin discovery. The catalog is
+            76&nbsp;KiB of static data in the binary.
           </p>
         </div>
         <div>
           <h3>The same <code>@safe</code> ratchet as the SDK</h3>
           <p>
-            Every module <code>@safe:</code>. DIP1000, nosharedaccess, bounds
-            checks on in release. Two <code>@trusted</code> wrappers for
-            stdout/stderr. Zero extra dub packages.
+            Every module <code>@safe:</code>. DIP1000, nosharedaccess,
+            bounds checks on in release. Two <code>@trusted</code>
+            wrappers for stdout/stderr. Zero extra dub packages.
           </p>
         </div>
       </div>
