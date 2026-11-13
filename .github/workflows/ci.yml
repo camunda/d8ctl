@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: dub test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check out the D SDK (path dependency)
+        uses: actions/checkout@v5
+        with:
+          repository: camunda/orchestration-cluster-api-dlang
+          path: ../orchestration-cluster-api-dlang
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ldc-1.43.0
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libcurl4-openssl-dev zlib1g-dev
+      - run: python3 scripts/generate.py
+      - name: Fail if the catalog drifted
+        run: git diff --exit-code -- source/d8ctl/generated
+      - run: dub test
+      - run: dub build -b release
+      - run: ./d8ctl --help
+      - run: ./d8ctl cluster topology get --help
+
+  lint:
+    name: D-Scanner
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ldc-1.43.0
+      - run: ./scripts/check-safe.sh
+      - run: dub run -q dscanner@0.16.0-beta.5 -- --styleCheck --config dscanner.ini source

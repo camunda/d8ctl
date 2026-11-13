@@ -1,0 +1,41 @@
+{
+  "name": "d8ctl",
+  "description": "Native agent CLI for the Camunda 8 Orchestration Cluster API (spike)",
+  "license": "Apache-2.0",
+  "targetType": "executable",
+  "targetName": "d8ctl",
+  "dependencies": {
+    "camunda-orchestration-sdk": {
+      "path": "../orchestration-cluster-api-dlang"
+    }
+  },
+  "toolchainRequirements": {
+    "dmd": "no",
+    "gdc": "no",
+    "ldc": ">=1.43.0"
+  },
+  "dflags": [
+    "-allinst",
+    "-preview=dip1000",
+    "-preview=nosharedaccess"
+  ],
+  "dflags-ldc": [
+    "-fno-delete-null-pointer-checks"
+  ],
+  "buildTypes": {
+    "release": {
+      "buildOptions": [
+        "releaseMode",
+        "optimize",
+        "inline"
+      ],
+      "dflags-ldc": [
+        "-boundscheck=on",
+        "-link-defaultlib-shared=false"
+      ]
+    }
+  },
+  "preBuildCommands": [
+    "$PACKAGE_DIR/scripts/check-safe.sh"
+  ]
+}

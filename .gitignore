@@ -1,0 +1,9 @@
+.dub/
+/d8ctl
+/d8ctl-test-*
+*.o
+*.obj
+.env
+__pycache__/
+*.pyc
+docs-md/
