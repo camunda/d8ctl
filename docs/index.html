@@ -148,6 +148,14 @@ Activate jobs
         a project — and when the cluster publishes its spec, not even that:
         new operations appear as catalog rows in the binary already installed.
       </p>
+      <p class="note">
+        The discipline is enforced in CI, not by convention:
+        <a href="https://github.com/camunda/camunda/blob/main/.github/workflows/verify-x-added-in-version-annotations.yml">every spec change must carry correct version markers</a>;
+        <a href="https://github.com/camunda/api-test-generator">api-test-generator</a>
+        derives contract tests from the spec itself (Orchestration Cluster and Hub); and
+        <a href="https://github.com/camunda/camunda/blob/main/.github/workflows/c8-orchestration-cluster-reusable-api-tests.yml">nightly API suites</a>
+        run them against every supported line — 8.7 through main, on Elasticsearch and RDBMS.
+      </p>
     </section>
 
     <section id="native">
