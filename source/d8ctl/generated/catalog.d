@@ -39,6 +39,8 @@ struct Command
     string[] requiredQuery;
     string[] optionalQuery;
     BodyField[] bodyFields;
+    /// Resolved against the bare root (`{schema}://{host}:{port}`), not `/v2`.
+    bool rootServer;
 }
 
 /// SHA-256 of the bundled spec this catalog was generated from.
@@ -63,6 +65,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchAgentDefinitions",
@@ -79,6 +82,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The agent definition search filters.")],
+        false,
     ),
     Command(
         "createAgentInstance",
@@ -95,6 +99,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("elementInstanceKey", "string", true, "The key of the AI Agent Sub-process or AI Agent Task element instance."), BodyField("jobKey", "string", true, "The key of the job activation during which this creation is being made."), BodyField("jobLeaseToken", "string", true, "Opaque lease token received from the job activation response."), BodyField("history", "json", true, "A batch of history items to append to the agent instance's conversation history, in request ord…")],
+        false,
     ),
     Command(
         "getAgentInstance",
@@ -111,6 +116,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "updateAgentInstance",
@@ -127,6 +133,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("elementInstanceKey", "string", true, "The key of the currently-active element instance for this agent instance."), BodyField("status", "string", false, "The new status of the agent instance."), BodyField("jobKey", "string", true, "The key of the job activation during which this update is being made."), BodyField("jobLeaseToken", "string", true, "Opaque lease token received from the job activation response."), BodyField("history", "json", false, "A batch of history items to append to the agent instance's conversation history, in request ord…")],
+        false,
     ),
     Command(
         "searchAgentInstances",
@@ -143,6 +150,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The agent instance search filters.")],
+        false,
     ),
     Command(
         "searchAgentInstanceHistory",
@@ -159,6 +167,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The history item search filters.")],
+        false,
     ),
     Command(
         "searchAuditLogs",
@@ -175,6 +184,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The audit log search filters.")],
+        false,
     ),
     Command(
         "getAuditLog",
@@ -191,6 +201,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "getAuthentication",
@@ -207,6 +218,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchOwnAuthorizations",
@@ -223,6 +235,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The authorization search filters.")],
+        false,
     ),
     Command(
         "createAuthorization",
@@ -239,6 +252,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchAuthorizations",
@@ -255,6 +269,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The authorization search filters.")],
+        false,
     ),
     Command(
         "getAuthorization",
@@ -271,6 +286,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "updateAuthorization",
@@ -287,6 +303,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "deleteAuthorization",
@@ -303,6 +320,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "listRuntimeBackups",
@@ -319,6 +337,7 @@ immutable Command[] catalog = [
         null,
         ["prefix"],
         null,
+        false,
     ),
     Command(
         "takeRuntimeBackup",
@@ -335,6 +354,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("backupId", "integer", false, "The id of the backup to take.")],
+        false,
     ),
     Command(
         "getRuntimeBackupState",
@@ -351,6 +371,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "deleteRuntimeBackupState",
@@ -367,6 +388,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "syncRuntimeBackupState",
@@ -383,6 +405,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "getRuntimeBackup",
@@ -399,6 +422,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "deleteRuntimeBackup",
@@ -415,6 +439,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "listHistoryBackups",
@@ -431,6 +456,7 @@ immutable Command[] catalog = [
         null,
         ["prefix", "verbose"],
         null,
+        false,
     ),
     Command(
         "takeHistoryBackup",
@@ -447,6 +473,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("backupId", "integer", true, "The id of the backup to take.")],
+        false,
     ),
     Command(
         "getHistoryBackup",
@@ -463,6 +490,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "deleteHistoryBackup",
@@ -479,6 +507,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchBatchOperationItems",
@@ -495,6 +524,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The batch operation item search filters.")],
+        false,
     ),
     Command(
         "searchBatchOperations",
@@ -511,6 +541,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The batch operation search filters.")],
+        false,
     ),
     Command(
         "getBatchOperation",
@@ -527,6 +558,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "cancelBatchOperation",
@@ -543,6 +575,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "resumeBatchOperation",
@@ -559,6 +592,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "suspendBatchOperation",
@@ -575,6 +609,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "getClock",
@@ -591,6 +626,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "pinClock",
@@ -607,6 +643,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("timestamp", "integer", true, "The exact time in epoch milliseconds to which the clock should be pinned.")],
+        false,
     ),
     Command(
         "addClock",
@@ -623,6 +660,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("offset", "string", true, "The time to add to the clock, as an ISO 8601 duration in days, hours, minutes, and seconds (for…")],
+        false,
     ),
     Command(
         "resetClock",
@@ -639,6 +677,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "createGlobalClusterVariable",
@@ -655,6 +694,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("name", "string", true, "The name of the cluster variable."), BodyField("value", "json", true, "The value of the cluster variable."), BodyField("metadata", "json", false, "A generic key-value metadata bag attached to the cluster variable."), BodyField("kind", "string", false, "The kind of the cluster variable.")],
+        false,
     ),
     Command(
         "getGlobalClusterVariable",
@@ -671,6 +711,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "updateGlobalClusterVariable",
@@ -687,6 +728,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("value", "json", true, "The new value of the cluster variable."), BodyField("metadata", "json", false, "A generic key-value metadata bag attached to the cluster variable.")],
+        false,
     ),
     Command(
         "deleteGlobalClusterVariable",
@@ -703,6 +745,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchClusterVariables",
@@ -719,6 +762,7 @@ immutable Command[] catalog = [
         null,
         ["truncateValues"],
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The cluster variable search filters.")],
+        false,
     ),
     Command(
         "createTenantClusterVariable",
@@ -735,6 +779,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("name", "string", true, "The name of the cluster variable."), BodyField("value", "json", true, "The value of the cluster variable."), BodyField("metadata", "json", false, "A generic key-value metadata bag attached to the cluster variable."), BodyField("kind", "string", false, "The kind of the cluster variable.")],
+        false,
     ),
     Command(
         "getTenantClusterVariable",
@@ -751,6 +796,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "updateTenantClusterVariable",
@@ -767,6 +813,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("value", "json", true, "The new value of the cluster variable."), BodyField("metadata", "json", false, "A generic key-value metadata bag attached to the cluster variable.")],
+        false,
     ),
     Command(
         "deleteTenantClusterVariable",
@@ -783,6 +830,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "evaluateConditionals",
@@ -799,6 +847,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("tenantId", "string", false, "Used to evaluate root-level conditional start events for a tenant with the given ID."), BodyField("processDefinitionKey", "string", false, "Used to evaluate root-level conditional start events of the process definition with the given k…"), BodyField("variables", "json", true, "JSON object representing the variables to use for evaluation of the conditions and to pass to t…")],
+        false,
     ),
     Command(
         "searchCorrelatedMessageSubscriptions",
@@ -815,6 +864,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The correlated message subscriptions search filters.")],
+        false,
     ),
     Command(
         "evaluateDecision",
@@ -831,6 +881,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchDecisionDefinitions",
@@ -847,6 +898,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The decision definition search filters.")],
+        false,
     ),
     Command(
         "getDecisionDefinition",
@@ -863,6 +915,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "getDecisionDefinitionXML",
@@ -879,6 +932,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchDecisionInstances",
@@ -895,6 +949,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The decision instance search filters.")],
+        false,
     ),
     Command(
         "getDecisionInstance",
@@ -911,6 +966,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "deleteDecisionInstance",
@@ -927,6 +983,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("operationReference", "integer", false, "")],
+        false,
     ),
     Command(
         "deleteDecisionInstancesBatchOperation",
@@ -943,6 +1000,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("filter", "json", true, "The decision instance filter."), BodyField("operationReference", "integer", false, "")],
+        false,
     ),
     Command(
         "searchDecisionRequirements",
@@ -959,6 +1017,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The decision definition search filters.")],
+        false,
     ),
     Command(
         "getDecisionRequirements",
@@ -975,6 +1034,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "getDecisionRequirementsXML",
@@ -991,6 +1051,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "createDeployment",
@@ -1007,6 +1068,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "createDocument",
@@ -1023,6 +1085,7 @@ immutable Command[] catalog = [
         null,
         ["storeId", "documentId"],
         null,
+        false,
     ),
     Command(
         "createDocuments",
@@ -1039,6 +1102,7 @@ immutable Command[] catalog = [
         null,
         ["storeId"],
         null,
+        false,
     ),
     Command(
         "getDocument",
@@ -1055,6 +1119,7 @@ immutable Command[] catalog = [
         null,
         ["storeId", "contentHash"],
         null,
+        false,
     ),
     Command(
         "deleteDocument",
@@ -1071,6 +1136,7 @@ immutable Command[] catalog = [
         null,
         ["storeId"],
         null,
+        false,
     ),
     Command(
         "createDocumentLink",
@@ -1087,6 +1153,7 @@ immutable Command[] catalog = [
         null,
         ["storeId", "contentHash"],
         [BodyField("timeToLive", "integer", false, "The time-to-live of the document link in ms.")],
+        false,
     ),
     Command(
         "activateAdHocSubProcessActivities",
@@ -1103,6 +1170,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("elements", "json", true, "Activities to activate."), BodyField("cancelRemainingInstances", "boolean", false, "Whether to cancel remaining instances of the ad-hoc sub-process.")],
+        false,
     ),
     Command(
         "searchElementInstanceWaitStates",
@@ -1119,6 +1187,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "Filter criteria for the inspection.")],
+        false,
     ),
     Command(
         "searchElementInstances",
@@ -1135,6 +1204,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The element instance search filters.")],
+        false,
     ),
     Command(
         "getElementInstance",
@@ -1151,6 +1221,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchElementInstanceIncidents",
@@ -1167,6 +1238,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The incident search filters.")],
+        false,
     ),
     Command(
         "createElementInstanceVariables",
@@ -1183,6 +1255,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("variables", "json", true, "JSON object representing the variables to set in the element’s scope."), BodyField("local", "boolean", false, "If set to `true`, the variables are merged strictly into the local scope (as specified by the `…"), BodyField("operationReference", "integer", false, "")],
+        false,
     ),
     Command(
         "getExportingStatus",
@@ -1199,6 +1272,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "pauseExporting",
@@ -1215,6 +1289,7 @@ immutable Command[] catalog = [
         null,
         ["soft"],
         null,
+        false,
     ),
     Command(
         "resumeExporting",
@@ -1231,6 +1306,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "evaluateExpression",
@@ -1247,6 +1323,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("expression", "string", true, "The expression to evaluate (e.g., \"=x + y\")"), BodyField("tenantId", "string", false, "Required when the expression references tenant-scoped cluster variables"), BodyField("scopeKey", "string", false, "Key of the process instance or element instance whose variables should be made visible to the e…"), BodyField("variables", "json", false, "Optional variables for expression evaluation.")],
+        false,
     ),
     Command(
         "getFormByKey",
@@ -1263,6 +1340,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "createGlobalTaskListener",
@@ -1279,6 +1357,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("type", "string", true, "The name of the job type, used as a reference to specify which job workers request the respecti…"), BodyField("retries", "integer", false, "Number of retries for the listener job."), BodyField("afterNonGlobal", "boolean", false, "Whether the listener should run after model-level listeners."), BodyField("priority", "integer", false, "The priority of the listener."), BodyField("eventTypes", "json", true, ""), BodyField("id", "string", true, "")],
+        false,
     ),
     Command(
         "getGlobalTaskListener",
@@ -1295,6 +1374,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "updateGlobalTaskListener",
@@ -1311,6 +1391,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("type", "string", true, "The name of the job type, used as a reference to specify which job workers request the respecti…"), BodyField("retries", "integer", false, "Number of retries for the listener job."), BodyField("afterNonGlobal", "boolean", false, "Whether the listener should run after model-level listeners."), BodyField("priority", "integer", false, "The priority of the listener."), BodyField("eventTypes", "json", true, "")],
+        false,
     ),
     Command(
         "deleteGlobalTaskListener",
@@ -1327,6 +1408,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchGlobalTaskListeners",
@@ -1343,6 +1425,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The global listener search filters.")],
+        false,
     ),
     Command(
         "createGroup",
@@ -1359,6 +1442,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("groupId", "string", true, "The ID of the new group."), BodyField("name", "string", true, "The display name of the new group."), BodyField("description", "string", false, "The description of the new group.")],
+        false,
     ),
     Command(
         "searchGroups",
@@ -1375,6 +1459,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The group search filters.")],
+        false,
     ),
     Command(
         "getGroup",
@@ -1391,6 +1476,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "updateGroup",
@@ -1407,6 +1493,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("name", "string", true, "The new name of the group."), BodyField("description", "string", false, "The new description of the group.")],
+        false,
     ),
     Command(
         "deleteGroup",
@@ -1423,6 +1510,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchClientsForGroup",
@@ -1439,6 +1527,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria.")],
+        false,
     ),
     Command(
         "assignClientToGroup",
@@ -1455,6 +1544,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "unassignClientFromGroup",
@@ -1471,6 +1561,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchMappingRulesForGroup",
@@ -1487,6 +1578,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The mapping rule search filters.")],
+        false,
     ),
     Command(
         "assignMappingRuleToGroup",
@@ -1503,6 +1595,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "unassignMappingRuleFromGroup",
@@ -1519,6 +1612,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchRolesForGroup",
@@ -1535,6 +1629,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The role search filters.")],
+        false,
     ),
     Command(
         "searchUsersForGroup",
@@ -1551,6 +1646,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria.")],
+        false,
     ),
     Command(
         "assignUserToGroup",
@@ -1567,6 +1663,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "unassignUserFromGroup",
@@ -1583,6 +1680,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchIncidents",
@@ -1599,6 +1697,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The incident search filters.")],
+        false,
     ),
     Command(
         "getIncident",
@@ -1615,6 +1714,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "resolveIncident",
@@ -1631,6 +1731,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("operationReference", "integer", false, "")],
+        false,
     ),
     Command(
         "getProcessInstanceStatisticsByDefinition",
@@ -1647,6 +1748,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("filter", "json", true, "Filter criteria for the aggregated process instance statistics."), BodyField("page", "json", false, "Pagination parameters for the aggregated process instance statistics."), BodyField("sort", "json", false, "Sorting criteria for process instance statistics grouped by process definition.")],
+        false,
     ),
     Command(
         "getProcessInstanceStatisticsByError",
@@ -1663,6 +1765,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination parameters for process instance statistics grouped by incident error."), BodyField("sort", "json", false, "Sorting criteria for process instance statistics grouped by incident error.")],
+        false,
     ),
     Command(
         "activateJobs",
@@ -1679,6 +1782,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("type", "string", true, "The job type, as defined in the BPMN process (e.g."), BodyField("worker", "string", false, "The name of the worker activating the jobs, mostly used for logging purposes."), BodyField("timeout", "integer", true, "A job returned after this call will not be activated by another call until the timeout (in ms)…"), BodyField("maxJobsToActivate", "integer", true, "The maximum jobs to activate by this request."), BodyField("fetchVariable", "json", false, "A list of variables to fetch as the job variables; if empty, all visible variables at the time…"), BodyField("requestTimeout", "integer", false, "The request will be completed when at least one job is activated or after the requestTimeout (i…"), BodyField("tenantIds", "json", false, "A list of IDs of tenants for which to activate jobs."), BodyField("tenantFilter", "string", false, "The tenant filtering strategy - determines whether to use provided tenant IDs or assigned tenan…"), BodyField("withLease", "boolean", false, "Whether to activate the jobs with a lease.")],
+        false,
     ),
     Command(
         "searchJobs",
@@ -1695,6 +1799,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The job search filters.")],
+        false,
     ),
     Command(
         "updateJob",
@@ -1711,6 +1816,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("changeset", "json", true, ""), BodyField("operationReference", "integer", false, ""), BodyField("jobLeaseToken", "string", false, "The token identifying a leased job's activation, obtained from `ActivatedJobResult.jobLeaseToke…")],
+        false,
     ),
     Command(
         "completeJob",
@@ -1727,6 +1833,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("variables", "json", false, "The variables to complete the job with."), BodyField("result", "json", false, ""), BodyField("jobLeaseToken", "string", false, "The token identifying a leased job's activation, obtained from `ActivatedJobResult.jobLeaseToke…"), BodyField("businessId", "string", false, "An optional business id to assign to the process instance the job belongs to, as part of comple…")],
+        false,
     ),
     Command(
         "throwJobError",
@@ -1743,6 +1850,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("errorCode", "string", true, "The error code that will be matched with an error catch event."), BodyField("errorMessage", "string", false, "An error message that provides additional context."), BodyField("variables", "json", false, "JSON object that will instantiate the variables at the local scope of the error catch event tha…"), BodyField("jobLeaseToken", "string", false, "The token identifying a leased job's activation, obtained from `ActivatedJobResult.jobLeaseToke…")],
+        false,
     ),
     Command(
         "failJob",
@@ -1759,6 +1867,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("retries", "integer", false, "The amount of retries the job should have left"), BodyField("errorMessage", "string", false, "An optional error message describing why the job failed; if not provided, an empty string is us…"), BodyField("retryBackOff", "integer", false, "An optional retry back off for the failed job."), BodyField("variables", "json", false, "JSON object that will instantiate the variables at the local scope of the job's associated task."), BodyField("jobLeaseToken", "string", false, "The token identifying a leased job's activation, obtained from `ActivatedJobResult.jobLeaseToke…")],
+        false,
     ),
     Command(
         "updateJobsBatchOperation",
@@ -1775,6 +1884,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("filter", "json", true, "The job filter."), BodyField("changeset", "json", true, "The fields to update."), BodyField("operationReference", "integer", false, "")],
+        false,
     ),
     Command(
         "getGlobalJobStatistics",
@@ -1791,6 +1901,7 @@ immutable Command[] catalog = [
         ["from", "to"],
         ["jobType"],
         null,
+        false,
     ),
     Command(
         "getJobTypeStatistics",
@@ -1807,6 +1918,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("filter", "json", false, ""), BodyField("page", "json", false, "Search cursor pagination.")],
+        false,
     ),
     Command(
         "getJobWorkerStatistics",
@@ -1823,6 +1935,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("filter", "json", true, ""), BodyField("page", "json", false, "Search cursor pagination.")],
+        false,
     ),
     Command(
         "getJobTimeSeriesStatistics",
@@ -1839,6 +1952,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("filter", "json", true, ""), BodyField("page", "json", false, "Search cursor pagination.")],
+        false,
     ),
     Command(
         "getJobErrorStatistics",
@@ -1855,6 +1969,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("filter", "json", true, ""), BodyField("page", "json", false, "Search cursor pagination.")],
+        false,
     ),
     Command(
         "getLicense",
@@ -1871,6 +1986,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "createMappingRule",
@@ -1887,6 +2003,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("claimName", "string", true, "The name of the claim to map."), BodyField("claimValue", "string", true, "The value of the claim to map."), BodyField("name", "string", true, "The name of the mapping rule."), BodyField("mappingRuleId", "string", true, "The unique ID of the mapping rule.")],
+        false,
     ),
     Command(
         "searchMappingRule",
@@ -1903,6 +2020,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The mapping rule search filters.")],
+        false,
     ),
     Command(
         "getMappingRule",
@@ -1919,6 +2037,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "updateMappingRule",
@@ -1935,6 +2054,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("claimName", "string", true, "The name of the claim to map."), BodyField("claimValue", "string", true, "The value of the claim to map."), BodyField("name", "string", true, "The name of the mapping rule.")],
+        false,
     ),
     Command(
         "deleteMappingRule",
@@ -1951,6 +2071,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchMessageSubscriptions",
@@ -1967,6 +2088,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The incident search filters.")],
+        false,
     ),
     Command(
         "correlateMessage",
@@ -1983,6 +2105,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("name", "string", true, "The message name as defined in the BPMN process"), BodyField("correlationKey", "string", false, "The correlation key of the message."), BodyField("variables", "json", false, "The message variables as JSON document"), BodyField("tenantId", "string", false, "the tenant for which the message is published"), BodyField("businessId", "string", false, "An optional business id used to enforce uniqueness of the process instance that a message start…")],
+        false,
     ),
     Command(
         "publishMessage",
@@ -1999,6 +2122,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("name", "string", true, "The name of the message."), BodyField("correlationKey", "string", false, "The correlation key of the message."), BodyField("timeToLive", "integer", false, "Timespan (in ms) to buffer the message on the broker."), BodyField("messageId", "string", false, "The unique ID of the message."), BodyField("variables", "json", false, "The message variables as JSON document."), BodyField("tenantId", "string", false, "The tenant of the message sender."), BodyField("businessId", "string", false, "An optional business id used to enforce uniqueness of the process instance that a message start…")],
+        false,
     ),
     Command(
         "searchProcessDefinitions",
@@ -2015,6 +2139,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The process definition search filters.")],
+        false,
     ),
     Command(
         "getProcessDefinitionMessageSubscriptionStatistics",
@@ -2031,6 +2156,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Search cursor pagination."), BodyField("filter", "json", false, "The message subscription filters.")],
+        false,
     ),
     Command(
         "getProcessDefinitionInstanceStatistics",
@@ -2047,6 +2173,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Search cursor pagination."), BodyField("sort", "json", false, "Sort field criteria.")],
+        false,
     ),
     Command(
         "getProcessDefinition",
@@ -2063,6 +2190,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "getStartProcessForm",
@@ -2079,6 +2207,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "getProcessDefinitionStatistics",
@@ -2095,6 +2224,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("filter", "json", false, "The process definition statistics search filters.")],
+        false,
     ),
     Command(
         "searchProcessDefinitionVariableNames",
@@ -2111,6 +2241,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("filter", "json", false, "The process definition variable name search filters.")],
+        false,
     ),
     Command(
         "getProcessDefinitionXML",
@@ -2127,6 +2258,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "getProcessDefinitionInstanceVersionStatistics",
@@ -2143,6 +2275,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", true, "The process definition instance version statistics search filters.")],
+        false,
     ),
     Command(
         "createProcessInstance",
@@ -2159,6 +2292,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "cancelProcessInstancesBatchOperation",
@@ -2175,6 +2309,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("filter", "json", true, "The process instance filter."), BodyField("operationReference", "integer", false, "")],
+        false,
     ),
     Command(
         "deleteProcessInstancesBatchOperation",
@@ -2191,6 +2326,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("filter", "json", true, "The process instance filter."), BodyField("operationReference", "integer", false, "")],
+        false,
     ),
     Command(
         "resolveIncidentsBatchOperation",
@@ -2207,6 +2343,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("filter", "json", true, "The process instance filter."), BodyField("operationReference", "integer", false, "")],
+        false,
     ),
     Command(
         "migrateProcessInstancesBatchOperation",
@@ -2223,6 +2360,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("filter", "json", true, "The process instance filter."), BodyField("migrationPlan", "json", true, "The migration plan."), BodyField("operationReference", "integer", false, "")],
+        false,
     ),
     Command(
         "modifyProcessInstancesBatchOperation",
@@ -2239,6 +2377,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("filter", "json", true, "The process instance filter."), BodyField("moveInstructions", "json", true, "Instructions for moving tokens between elements."), BodyField("operationReference", "integer", false, "")],
+        false,
     ),
     Command(
         "resumeProcessInstancesBatchOperation",
@@ -2255,6 +2394,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("filter", "json", true, "The process instance filter."), BodyField("operationReference", "integer", false, "")],
+        false,
     ),
     Command(
         "searchProcessInstances",
@@ -2271,6 +2411,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The process instance search filters.")],
+        false,
     ),
     Command(
         "suspendProcessInstancesBatchOperation",
@@ -2287,6 +2428,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("filter", "json", true, "The process instance filter."), BodyField("operationReference", "integer", false, "")],
+        false,
     ),
     Command(
         "getProcessInstance",
@@ -2303,6 +2445,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "assignProcessInstanceBusinessId",
@@ -2319,6 +2462,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("businessId", "string", true, "")],
+        false,
     ),
     Command(
         "getProcessInstanceCallHierarchy",
@@ -2335,6 +2479,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "cancelProcessInstance",
@@ -2351,6 +2496,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("operationReference", "integer", false, "")],
+        false,
     ),
     Command(
         "deleteProcessInstance",
@@ -2367,6 +2513,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("operationReference", "integer", false, "")],
+        false,
     ),
     Command(
         "resolveProcessInstanceIncidents",
@@ -2383,6 +2530,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchProcessInstanceIncidents",
@@ -2399,6 +2547,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The incident search filters.")],
+        false,
     ),
     Command(
         "migrateProcessInstance",
@@ -2415,6 +2564,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("targetProcessDefinitionKey", "string", true, "The key of process definition to migrate the process instance to."), BodyField("mappingInstructions", "json", true, "Element mappings from the source process instance to the target process instance."), BodyField("operationReference", "integer", false, "")],
+        false,
     ),
     Command(
         "modifyProcessInstance",
@@ -2431,6 +2581,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("operationReference", "integer", false, ""), BodyField("activateInstructions", "json", false, "Instructions describing which elements to activate in which scopes and which variables to creat…"), BodyField("moveInstructions", "json", false, "Instructions describing which elements to move from one scope to another."), BodyField("terminateInstructions", "json", false, "Instructions describing which elements to terminate.")],
+        false,
     ),
     Command(
         "resumeProcessInstance",
@@ -2447,6 +2598,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("operationReference", "integer", false, "")],
+        false,
     ),
     Command(
         "getProcessInstanceSequenceFlows",
@@ -2463,6 +2615,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "getProcessInstanceStatistics",
@@ -2479,6 +2632,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "getProcessInstanceWaitStateStatistics",
@@ -2495,6 +2649,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "suspendProcessInstance",
@@ -2511,6 +2666,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("operationReference", "integer", false, "")],
+        false,
     ),
     Command(
         "searchResources",
@@ -2527,6 +2683,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The resource search filters.")],
+        false,
     ),
     Command(
         "getResource",
@@ -2543,6 +2700,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "getResourceContent",
@@ -2559,6 +2717,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "getResourceContentBinary",
@@ -2575,6 +2734,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "deleteResource",
@@ -2591,6 +2751,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("operationReference", "integer", false, ""), BodyField("deleteHistory", "boolean", false, "Indicates if the historic data associated with the resource should also be deleted asynchronous…")],
+        false,
     ),
     Command(
         "createRole",
@@ -2607,6 +2768,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("roleId", "string", true, "The ID of the new role."), BodyField("name", "string", true, "The display name of the new role."), BodyField("description", "string", false, "The description of the new role.")],
+        false,
     ),
     Command(
         "searchRoles",
@@ -2623,6 +2785,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The role search filters.")],
+        false,
     ),
     Command(
         "getRole",
@@ -2639,6 +2802,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "updateRole",
@@ -2655,6 +2819,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("name", "string", true, "The display name of the new role."), BodyField("description", "string", false, "The description of the new role.")],
+        false,
     ),
     Command(
         "deleteRole",
@@ -2671,6 +2836,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchClientsForRole",
@@ -2687,6 +2853,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria.")],
+        false,
     ),
     Command(
         "assignRoleToClient",
@@ -2703,6 +2870,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "unassignRoleFromClient",
@@ -2719,6 +2887,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchGroupsForRole",
@@ -2735,6 +2904,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria.")],
+        false,
     ),
     Command(
         "assignRoleToGroup",
@@ -2751,6 +2921,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "unassignRoleFromGroup",
@@ -2767,6 +2938,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchMappingRulesForRole",
@@ -2783,6 +2955,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The mapping rule search filters.")],
+        false,
     ),
     Command(
         "assignRoleToMappingRule",
@@ -2799,6 +2972,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "unassignRoleFromMappingRule",
@@ -2815,6 +2989,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchUsersForRole",
@@ -2831,6 +3006,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("filter", "json", false, "The user filter criteria."), BodyField("sort", "json", false, "Sort field criteria.")],
+        false,
     ),
     Command(
         "assignRoleToUser",
@@ -2847,6 +3023,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "unassignRoleFromUser",
@@ -2863,6 +3040,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "resolveSecrets",
@@ -2879,6 +3057,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("references", "json", true, "The secret references to resolve, each of the form `camunda.secrets.`.")],
+        false,
     ),
     Command(
         "listSecrets",
@@ -2895,6 +3074,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "createAdminUser",
@@ -2911,6 +3091,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("password", "string", true, "The password of the user."), BodyField("username", "string", true, "The username of the new user."), BodyField("name", "string", false, "The name of the user."), BodyField("email", "string", false, "The email of the user.")],
+        false,
     ),
     Command(
         "broadcastSignal",
@@ -2927,6 +3108,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("signalName", "string", true, "The name of the signal to broadcast."), BodyField("variables", "json", false, "The signal variables as a JSON object."), BodyField("tenantId", "string", false, "The ID of the tenant that owns the signal.")],
+        false,
     ),
     Command(
         "getStatus",
@@ -2943,6 +3125,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "getUsageMetrics",
@@ -2959,6 +3142,7 @@ immutable Command[] catalog = [
         ["startTime", "endTime"],
         ["tenantId", "withTenants"],
         null,
+        false,
     ),
     Command(
         "getSystemConfiguration",
@@ -2975,6 +3159,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "createTenant",
@@ -2991,6 +3176,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("tenantId", "string", true, "The unique ID for the tenant."), BodyField("name", "string", true, "The name of the tenant."), BodyField("description", "string", false, "The description of the tenant.")],
+        false,
     ),
     Command(
         "searchTenants",
@@ -3007,6 +3193,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The tenant search filters.")],
+        false,
     ),
     Command(
         "getTenant",
@@ -3023,6 +3210,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "updateTenant",
@@ -3039,6 +3227,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("name", "string", true, "The new name of the tenant."), BodyField("description", "string", false, "The new description of the tenant.")],
+        false,
     ),
     Command(
         "deleteTenant",
@@ -3055,6 +3244,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchClientsForTenant",
@@ -3071,6 +3261,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria.")],
+        false,
     ),
     Command(
         "assignClientToTenant",
@@ -3087,6 +3278,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "unassignClientFromTenant",
@@ -3103,6 +3295,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchGroupIdsForTenant",
@@ -3119,6 +3312,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria.")],
+        false,
     ),
     Command(
         "assignGroupToTenant",
@@ -3135,6 +3329,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "unassignGroupFromTenant",
@@ -3151,6 +3346,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchMappingRulesForTenant",
@@ -3167,6 +3363,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The mapping rule search filters.")],
+        false,
     ),
     Command(
         "assignMappingRuleToTenant",
@@ -3183,6 +3380,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "unassignMappingRuleFromTenant",
@@ -3199,6 +3397,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchRolesForTenant",
@@ -3215,6 +3414,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The role search filters.")],
+        false,
     ),
     Command(
         "assignRoleToTenant",
@@ -3231,6 +3431,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "unassignRoleFromTenant",
@@ -3247,6 +3448,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchUsersForTenant",
@@ -3263,6 +3465,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria.")],
+        false,
     ),
     Command(
         "assignUserToTenant",
@@ -3279,6 +3482,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "unassignUserFromTenant",
@@ -3295,6 +3499,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "getTopology",
@@ -3311,6 +3516,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "changeClusterMode",
@@ -3327,6 +3533,7 @@ immutable Command[] catalog = [
         ["mode"],
         ["dryRun"],
         null,
+        false,
     ),
     Command(
         "getRestoreStatus",
@@ -3343,6 +3550,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "restore",
@@ -3359,6 +3567,7 @@ immutable Command[] catalog = [
         null,
         ["dryRun"],
         [BodyField("from", "string", false, "The start of the time range to restore from, as an ISO 8601 timestamp."), BodyField("to", "string", false, "The end of the time range to restore from, as an ISO 8601 timestamp."), BodyField("backupIds", "json", false, "The IDs of the backups to restore from, one per partition.")],
+        false,
     ),
     Command(
         "getClusterExportingStatus",
@@ -3375,6 +3584,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        true,
     ),
     Command(
         "pauseClusterExporting",
@@ -3391,6 +3601,7 @@ immutable Command[] catalog = [
         null,
         ["soft"],
         null,
+        true,
     ),
     Command(
         "resumeClusterExporting",
@@ -3407,6 +3618,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        true,
     ),
     Command(
         "listRuntimeBackupsAsClusterAdmin",
@@ -3423,6 +3635,7 @@ immutable Command[] catalog = [
         null,
         ["physicalTenantId", "prefix"],
         null,
+        true,
     ),
     Command(
         "takeRuntimeBackupAsClusterAdmin",
@@ -3439,6 +3652,7 @@ immutable Command[] catalog = [
         null,
         ["physicalTenantId"],
         [BodyField("backupId", "integer", false, "The id of the backup to take.")],
+        true,
     ),
     Command(
         "getRuntimeBackupStateAsClusterAdmin",
@@ -3455,6 +3669,7 @@ immutable Command[] catalog = [
         null,
         ["physicalTenantId"],
         null,
+        true,
     ),
     Command(
         "deleteRuntimeBackupStateAsClusterAdmin",
@@ -3471,6 +3686,7 @@ immutable Command[] catalog = [
         null,
         ["physicalTenantId"],
         null,
+        true,
     ),
     Command(
         "syncRuntimeBackupStateAsClusterAdmin",
@@ -3487,6 +3703,7 @@ immutable Command[] catalog = [
         null,
         ["physicalTenantId"],
         null,
+        true,
     ),
     Command(
         "getRuntimeBackupAsClusterAdmin",
@@ -3503,6 +3720,7 @@ immutable Command[] catalog = [
         null,
         ["physicalTenantId"],
         null,
+        true,
     ),
     Command(
         "deleteRuntimeBackupAsClusterAdmin",
@@ -3519,6 +3737,7 @@ immutable Command[] catalog = [
         null,
         ["physicalTenantId"],
         null,
+        true,
     ),
     Command(
         "listHistoryBackupsAsClusterAdmin",
@@ -3535,6 +3754,7 @@ immutable Command[] catalog = [
         null,
         ["physicalTenantId", "prefix", "verbose"],
         null,
+        true,
     ),
     Command(
         "takeHistoryBackupAsClusterAdmin",
@@ -3551,6 +3771,7 @@ immutable Command[] catalog = [
         null,
         ["physicalTenantId"],
         [BodyField("backupId", "integer", true, "The id of the backup to take.")],
+        true,
     ),
     Command(
         "getHistoryBackupAsClusterAdmin",
@@ -3567,6 +3788,7 @@ immutable Command[] catalog = [
         null,
         ["physicalTenantId"],
         null,
+        true,
     ),
     Command(
         "deleteHistoryBackupAsClusterAdmin",
@@ -3583,6 +3805,7 @@ immutable Command[] catalog = [
         null,
         ["physicalTenantId"],
         null,
+        true,
     ),
     Command(
         "changeClusterModeAsClusterAdmin",
@@ -3599,6 +3822,7 @@ immutable Command[] catalog = [
         ["mode"],
         ["physicalTenantId", "dryRun"],
         null,
+        true,
     ),
     Command(
         "getClusterRebalance",
@@ -3615,6 +3839,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        true,
     ),
     Command(
         "triggerClusterRebalance",
@@ -3631,6 +3856,7 @@ immutable Command[] catalog = [
         null,
         ["dryRun"],
         [BodyField("replicationLagThreshold", "integer", false, "The highest replication lag (in bytes) that a desired leader may have for its transfer to be ac…"), BodyField("replicationTimeout", "string", false, "How long a partition may stay frozen waiting for its desired leader to catch up (as a positive…"), BodyField("maxTransferAttempts", "integer", false, "How many times a current leader may prompt the desired leader to take over leadership before gi…"), BodyField("leaderWaitTimeout", "string", false, "How long the coordinator waits for a partition without a leader to acquire one before reporting…")],
+        true,
     ),
     Command(
         "cancelClusterRebalance",
@@ -3647,6 +3873,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        true,
     ),
     Command(
         "restoreAsClusterAdmin",
@@ -3663,6 +3890,7 @@ immutable Command[] catalog = [
         null,
         ["physicalTenantId", "dryRun"],
         [BodyField("from", "string", false, "The start of the time range to restore from, as an ISO 8601 timestamp."), BodyField("to", "string", false, "The end of the time range to restore from, as an ISO 8601 timestamp."), BodyField("backupIds", "json", false, "The IDs of the backups to restore from, one per partition."), BodyField("overrides", "json", false, "The backup selection to apply to individual physical tenants, keyed by physical tenant id.")],
+        true,
     ),
     Command(
         "getClusterStatus",
@@ -3679,6 +3907,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        true,
     ),
     Command(
         "getClusterUpgradeStatus",
@@ -3695,6 +3924,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        true,
     ),
     Command(
         "getClusterTopology",
@@ -3711,6 +3941,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        true,
     ),
     Command(
         "createUser",
@@ -3727,6 +3958,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("password", "string", true, "The password of the user."), BodyField("username", "string", true, "The username of the new user."), BodyField("name", "string", false, "The name of the user."), BodyField("email", "string", false, "The email of the user.")],
+        false,
     ),
     Command(
         "searchUsers",
@@ -3743,6 +3975,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The user search filters.")],
+        false,
     ),
     Command(
         "getUser",
@@ -3759,6 +3992,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "updateUser",
@@ -3775,6 +4009,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("password", "string", false, "The password of the user."), BodyField("name", "string", false, "The name of the user."), BodyField("email", "string", false, "The email of the user.")],
+        false,
     ),
     Command(
         "deleteUser",
@@ -3791,6 +4026,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "searchUserTasks",
@@ -3807,6 +4043,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The user task search filters.")],
+        false,
     ),
     Command(
         "getUserTask",
@@ -3823,6 +4060,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "updateUserTask",
@@ -3839,6 +4077,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("changeset", "json", false, ""), BodyField("action", "string", false, "A custom action value that will be accessible from user task events resulting from this endpoin…")],
+        false,
     ),
     Command(
         "unassignUserTask",
@@ -3855,6 +4094,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "assignUserTask",
@@ -3871,6 +4111,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("assignee", "string", true, "The assignee for the user task."), BodyField("allowOverride", "boolean", false, "By default, the task is reassigned if it was already assigned."), BodyField("action", "string", false, "A custom action value that will be accessible from user task events resulting from this endpoin…")],
+        false,
     ),
     Command(
         "searchUserTaskAuditLogs",
@@ -3887,6 +4128,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "")],
+        false,
     ),
     Command(
         "completeUserTask",
@@ -3903,6 +4145,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("variables", "json", false, "The variables to complete the user task with."), BodyField("action", "string", false, "A custom action value that will be accessible from user task events resulting from this endpoin…")],
+        false,
     ),
     Command(
         "searchUserTaskEffectiveVariables",
@@ -3919,6 +4162,7 @@ immutable Command[] catalog = [
         null,
         ["truncateValues"],
         [BodyField("page", "json", false, "Pagination parameters."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The user task variable search filters.")],
+        false,
     ),
     Command(
         "getUserTaskForm",
@@ -3935,6 +4179,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
     Command(
         "lookupUserTask",
@@ -3951,6 +4196,7 @@ immutable Command[] catalog = [
         null,
         null,
         [BodyField("fetchVariables", "json", false, "The names of the variables to return.")],
+        false,
     ),
     Command(
         "searchUserTaskVariables",
@@ -3967,6 +4213,7 @@ immutable Command[] catalog = [
         null,
         ["truncateValues"],
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The user task variable search filters.")],
+        false,
     ),
     Command(
         "searchVariables",
@@ -3983,6 +4230,7 @@ immutable Command[] catalog = [
         null,
         ["truncateValues"],
         [BodyField("page", "json", false, "Pagination criteria."), BodyField("sort", "json", false, "Sort field criteria."), BodyField("filter", "json", false, "The variable search filters.")],
+        false,
     ),
     Command(
         "getVariable",
@@ -3999,5 +4247,6 @@ immutable Command[] catalog = [
         null,
         null,
         null,
+        false,
     ),
 ];
