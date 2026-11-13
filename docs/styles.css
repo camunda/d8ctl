@@ -165,8 +165,33 @@ footer {
 }
 footer a { color: var(--ink); }
 
+.timeline {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: .5rem;
+  margin: 1.4rem 0 1.2rem;
+}
+.timeline div {
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+  padding: .65rem .7rem;
+}
+.timeline strong {
+  display: block;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: .85rem;
+  color: var(--accent);
+  margin-bottom: .25rem;
+}
+.timeline span { color: var(--muted); font-size: .82rem; }
+.timeline .now {
+  border-color: var(--accent-dim);
+  background: color-mix(in oklab, var(--accent) 10%, var(--bg-elev));
+}
+
 @media (max-width: 720px) {
   .hero-stats { grid-template-columns: 1fr 1fr; }
   .split { grid-template-columns: 1fr; }
+  .timeline { grid-template-columns: 1fr 1fr; }
   .top nav { display: none; }
 }

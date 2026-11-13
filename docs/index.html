@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>d8ctl — Agent CLI for API</title>
-  <meta name="description" content="d8ctl projects a REST API onto a native CLI. Zero hand-written commands. Progressive help is MCP in depth. The binary is 2 MiB of D.">
+  <meta name="description" content="d8ctl projects a REST API onto a native CLI. Zero hand-written commands. Progressive help is MCP in depth. API Time Machine shapes the surface to the cluster you are on.">
   <link rel="canonical" href="https://camunda.github.io/d8ctl/">
   <meta property="og:title" content="d8ctl — Agent CLI for API">
-  <meta property="og:description" content="Zero-touch projection of an API onto a CLI. Progressive disclosure. Native D. 9 ms to first output.">
+  <meta property="og:description" content="Zero-touch projection of an API onto a CLI. Progressive disclosure. API Time Machine. Native D.">
   <meta property="og:type" content="website">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,7 +21,7 @@
     <nav>
       <a href="#projection">Projection</a>
       <a href="#help">Help as MCP</a>
-      <a href="#version">Version</a>
+      <a href="#timemachine">Time Machine</a>
       <a href="#d">Why D</a>
       <a href="#try">Try it</a>
     </nav>
@@ -149,32 +149,70 @@ Body flags (top-level JSON fields):
       </p>
     </section>
 
-    <section id="version">
-      <h2>The API version <em>is</em> the CLI surface</h2>
+    <section id="timemachine">
+      <h2>API Time Machine</h2>
       <p>
-        The catalog is compiled from a specific spec hash. Change the spec,
-        regenerate, the binary’s command tree moves. That is the version
-        negotiation: you do not feature-flag commands in the CLI. You ship
-        the projection of the API the agent is talking to.
+        One binary carries the <em>newest</em> catalog. The command tree the
+        agent sees is the catalog <em>cut to the server it is talking to</em>.
+        Point d8ctl at 8.6 and <code>searchJobs</code> is not a command.
+        Point it at 8.8 and it is. No “upgrade the CLI” step. No
+        <code>d8ctl@8.6</code> on <code>PATH</code>. The API version
+        <em>is</em> the CLI surface.
       </p>
-      <ul>
-        <li>
-          <code>main</code> of the D SDK tracks Camunda <code>main</code>
-          (11.x alpha). <code>stable/N</code> tracks server 8.N and
-          releases N.x.
-        </li>
-        <li>
-          d8ctl’s catalog records <code>catalogSpecHash</code>.
-          <code>d8ctl --version</code> prints it. An agent can refuse to
-          run if the hash is not the one it planned against.
-        </li>
-        <li>
-          <code>added in 8.6</code> on each command is the floor, not a
-          compatibility shim. Old servers 404; the CLI does not pretend.
-        </li>
-      </ul>
-      <pre class="term" aria-label="version"><code><span class="ps">$</span> d8ctl --version
-d8ctl 0.1.0 (catalog sha256:e140ca0d…c0493ef)</code></pre>
+      <p>
+        The cluster already knows what it is. We read that — a response
+        header, or <code>GET /topology</code> — and drop every operation
+        whose <code>added in</code> is newer than that version. Help,
+        completion, and dispatch all walk the filtered table. An agent
+        that only ever types <code>--help</code> cannot invent a flag
+        the broker will 404.
+      </p>
+      <div class="timeline" aria-hidden="true">
+        <div>
+          <strong>8.6</strong>
+          <span>create / cancel / activate</span>
+        </div>
+        <div>
+          <strong>8.7</strong>
+          <span>+ resources, documents</span>
+        </div>
+        <div>
+          <strong>8.8</strong>
+          <span>+ search, get-by-key</span>
+        </div>
+        <div>
+          <strong>8.9</strong>
+          <span>+ job statistics</span>
+        </div>
+        <div class="now">
+          <strong>8.11</strong>
+          <span>full catalog · 244</span>
+        </div>
+      </div>
+      <pre class="term" aria-label="API Time Machine"><code><span class="cmt"># same binary, two clusters</span>
+<span class="ps">$</span> CAMUNDA_REST_ADDRESS=https://old.example d8ctl cluster --help
+d8ctl cluster — 91 operation(s)   <span class="cmt"># API 8.6 · search is not listed</span>
+
+<span class="ps">$</span> CAMUNDA_REST_ADDRESS=https://new.example d8ctl cluster --help
+d8ctl cluster — 244 operation(s)  <span class="cmt"># API 8.11 · full surface</span>
+
+<span class="ps">$</span> CAMUNDA_REST_ADDRESS=https://old.example \
+    d8ctl cluster jobs search --help
+d8ctl: unknown command 'jobs search' on API 8.6 (added in 8.8).
+       Talking to 8.6. See `d8ctl cluster jobs --help`.</code></pre>
+      <p>
+        Discovery is the handshake. First call (or first <code>--help</code>
+        that needs the live tree) asks the cluster who it is. After that,
+        every progressive-help screen is already in the past of that
+        cluster. The agent plans against what exists, not against what
+        we shipped last Tuesday.
+      </p>
+      <p class="note">
+        Spike today: the catalog is compiled in and every row is offered.
+        Time Machine is the next cut — version from
+        <code>GET /topology</code> (or a negotiated header), then filter
+        on <code>added in</code>. The field is already on every command.
+      </p>
     </section>
 
     <section id="d">
