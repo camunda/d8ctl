@@ -22,7 +22,7 @@
       <a href="#fuse">One surface</a>
       <a href="#help">Discover</a>
       <a href="#timemachine">Any version</a>
-      <a href="#projection">Always current</a>
+      <a href="#projection">Generated</a>
       <a href="#native">For agents</a>
       <a href="#try">Try it</a>
     </nav>
@@ -131,19 +131,22 @@ Activate jobs
     </section>
 
     <section id="projection">
-      <h2>The API ships. The CLI is already there.</h2>
+      <h2>Nobody hand-writes this CLI.</h2>
       <p class="benefit">
-        A new operation should not wait on a CLI roadmap. If it is in
-        the spec, it is a command. Coverage cannot drift. That is how
-        you stop “the agent can’t do X because nobody wrapped the
-        endpoint.”
+        Every command materialises from the API specification —
+        deterministically, the same way every time. That is only possible
+        because Camunda treats the spec as a product: version markers on
+        every operation and field, contract-tested against the real engine.
+        No engineers wrapping endpoints. No agents burning tokens to guess
+        an implementation. Spec in, CLI out — and at runtime, from a live
+        cluster’s spec.
       </p>
       <p>
-        A generator turns the spec into a table. There is no
-        hand-written handler per operation. Flags, help text, and
-        required fields come from the same source the server implements.
-        When the cluster publishes its spec, the CLI can grow without a
-        release — new operations appear as catalog rows, not a new binary.
+        A generator turns the spec into a table; one small engine handles
+        parsing, help, and HTTP for all 244 operations. Zero per-operation
+        code, so coverage cannot drift. A new endpoint is a regenerate, not
+        a project — and when the cluster publishes its spec, not even that:
+        new operations appear as catalog rows in the binary already installed.
       </p>
     </section>
 
