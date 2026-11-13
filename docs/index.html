@@ -7,7 +7,7 @@
   <meta name="description" content="One CLI to rule them all. An agent tool that fuses multiple APIs into a single CLI with progressive disclosure and intelligent API version negotiation.">
   <link rel="canonical" href="https://camunda.github.io/d8ctl/">
   <meta property="og:title" content="d8ctl — One CLI to rule them all">
-  <meta property="og:description" content="Fuse Hub, Console, and the Orchestration Cluster into one agent CLI. Progressive disclosure. API Time Machine.">
+  <meta property="og:description" content="Give every agent one way to operate Camunda — cluster, Console, and Hub — without a new integration for each API or each version.">
   <meta property="og:type" content="website">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,11 +19,11 @@
   <header class="top">
     <a class="mark" href="#top">d8ctl</a>
     <nav>
-      <a href="#projection">Projection</a>
-      <a href="#fuse">Fuse</a>
-      <a href="#help">Help as MCP</a>
-      <a href="#timemachine">Time Machine</a>
-      <a href="#native">Native</a>
+      <a href="#fuse">One surface</a>
+      <a href="#help">Discover</a>
+      <a href="#timemachine">Any version</a>
+      <a href="#projection">Always current</a>
+      <a href="#native">For agents</a>
       <a href="#try">Try it</a>
     </nav>
     <a class="gh" href="https://github.com/camunda/d8ctl">GitHub</a>
@@ -31,347 +31,167 @@
 
   <main id="main">
     <section class="hero" id="top">
-      <p class="kicker">Technical Preview · Agent CLI for API</p>
+      <p class="kicker">Technical Preview · Agent CLI for Camunda</p>
       <h1>One CLI to rule them all.</h1>
       <p class="lede">
-        An agent tool that fuses multiple APIs into a single CLI —
-        progressive disclosure, intelligent version negotiation.
-        Type <code>--help</code>. Operate the cluster, Console, and Hub
-        as one surface.
+        Give every agent <em>one</em> way to operate Camunda — the
+        Orchestration Cluster, Console, and Hub — without a new
+        integration for each API, and without breaking when a customer
+        is still on last year’s cluster.
       </p>
-      <div class="hero-stats">
-        <div><strong>244</strong><span>operations, one catalog</span></div>
-        <div><strong>2.2&nbsp;MiB</strong><span>one native binary</span></div>
-        <div><strong>9&nbsp;ms</strong><span>to first output</span></div>
-        <div><strong>7&nbsp;MiB</strong><span>RSS to print help</span></div>
-      </div>
-      <pre class="term hero-term" aria-label="d8ctl --help"><code><span class="ps">$</span> d8ctl --help
-d8ctl — Camunda 8 Orchestration Cluster CLI
-
-Usage:
-  d8ctl [--help] [--version] [--dry-run] cluster …
-
-The Orchestration Cluster surface is under `cluster` (244 operations).
-Both `cluster &lt;resource&gt; &lt;verb&gt;` and `cluster &lt;verb&gt; &lt;resource&gt;` parse.
-
-Start with: d8ctl cluster --help</code></pre>
-    </section>
-
-    <section id="projection">
-      <h2>Zero-touch projection</h2>
-      <p>
-        A generator reads the D SDK’s bundled spec-metadata and writes a static
-        table. Parse, help, and dispatch walk that table. If the API grows an
-        operation, regenerate — it is a command. No per-op switch, no YAML
-        command defs, no “we forgot to wrap <code>searchJobs</code>.”
-      </p>
-      <div class="split">
-        <div>
-          <h3>What is generated</h3>
-          <ul>
-            <li>244 rows: method, path, verb, resource, summary</li>
-            <li>Path params as positionals, in spec order</li>
-            <li>Query params as <code>--name=value</code></li>
-            <li>336 top-level body fields as documented flags</li>
-          </ul>
-        </div>
-        <div>
-          <h3>What is not</h3>
-          <ul>
-            <li>The HTTP client (D SDK + libcurl)</li>
-            <li>Auth, retry, backpressure (<code>CAMUNDA_*</code>)</li>
-            <li>The argv parser and progressive help</li>
-            <li>One <code>invoke()</code> that calls <code>requestJson</code></li>
-          </ul>
-        </div>
-      </div>
-      <pre class="term" aria-label="generation pipeline"><code><span class="ps">$</span> make generate
-generate: 244 commands, 121 with body flags (336 fields)
-
-<span class="ps">$</span> d8ctl cluster jobs activate --help   <span class="cmt"># flags came from JobActivationRequest</span>
-<span class="ps">$</span> d8ctl cluster process-instances search --filter='{"state":"ACTIVE"}'</code></pre>
-      <p class="note">
-        Multipart (deploy, documents) is refused until file flags exist.
-        Union bodies (create process instance) stay <code>--body='{…}'</code>
-        — there is no honest single shape to flatten.
-      </p>
-    </section>
-
-    <section id="fuse">
-      <h2>One surface, many APIs</h2>
-      <p>
-        The catalog is not “the Camunda CLI.” It is a <em>row type</em>:
-        namespace, resource, verb, HTTP, flags. Orchestration Cluster is
-        the first table. <strong>Hub</strong> and <strong>Console</strong>
-        are the next — the two APIs an agent actually needs beside the
-        cluster. Parse, help, Time Machine, and dispatch do not change.
-        The agent still types <code>--help</code>.
-      </p>
-      <p>
-        Fusion is concatenation plus a namespace. Time Machine still
-        cuts each table to the version of <em>that</em> system. An 8.6
-        cluster and a current Console do not leak each other’s future
-        into <code>--help</code>.
-      </p>
-      <pre class="term" aria-label="fused surface"><code><span class="ps">$</span> d8ctl --help
-Namespaces:
-  cluster    Orchestration Cluster REST   (API 8.8 · 180 ops)
-  console    Camunda Console              (current)
-  hub        Camunda Hub                  (current)
+      <ul class="value">
+        <li><strong>One tool, not a toolkit.</strong> Agents stop choosing among N CLIs with N dialects.</li>
+        <li><strong>They learn by asking.</strong> <code>--help</code> is the contract. No prompt pack to maintain.</li>
+        <li><strong>Old estates still work.</strong> The surface shrinks to the version in front of them.</li>
+      </ul>
+      <pre class="term hero-term" aria-label="one surface"><code><span class="ps">$</span> d8ctl --help
+  cluster    Orchestration Cluster
+  console    Camunda Console
+  hub        Camunda Hub
 
 <span class="ps">$</span> d8ctl cluster process-instances search --filter='{"state":"ACTIVE"}'
 <span class="ps">$</span> d8ctl console clusters list
-<span class="ps">$</span> d8ctl hub connectors search --name='*slack*'
+<span class="ps">$</span> d8ctl hub connectors search --name='*slack*'</code></pre>
+    </section>
 
-<span class="cmt"># same progressive help, same --dry-run, same CAMUNDA_* auth</span>
-<span class="ps">$</span> d8ctl console clusters create --help
-<span class="ps">$</span> d8ctl hub connectors get --help</code></pre>
+    <section id="fuse">
+      <h2>One surface for the whole product.</h2>
+      <p class="benefit">
+        Customers do not buy “the REST API.” They buy Camunda. An agent
+        that can start a process, list SaaS clusters, and find a Hub
+        connector — in one grammar — is an agent that can do the job.
+        Shipping a new product surface should not mean shipping a new
+        agent tool.
+      </p>
       <p>
-        Agents hate N tools with N dialects. One binary, one help
-        grammar, N specs. Adding an API is a generator input, not a
-        new CLI project.
+        Orchestration Cluster is live today. Console and Hub plug in as
+        more catalogs behind the same parse, help, and dispatch. Adding
+        an API is a generator input, not a new CLI programme.
       </p>
       <p class="note">
-        Spike today: one table, namespace <code>cluster</code>. The
-        parser already keys on namespace. The next catalogs plug in
-        beside it.
+        Spike: namespace <code>cluster</code> only. The parser already
+        keys on namespace; the next catalogs sit beside it.
       </p>
     </section>
 
     <section id="help">
-      <h2>Progressive help is MCP, in depth</h2>
-      <p>
-        An MCP server is a catalog plus tool schemas plus a way to call them.
-        A well-factored CLI is the same object, already on <code>PATH</code>,
-        already streamable, already something every agent runtime knows how
-        to invoke. d8ctl treats <code>--help</code> as the schema endpoint.
+      <h2>Agents discover. You don’t document a prompt.</h2>
+      <p class="benefit">
+        Every agent runtime already knows how to run a command and read
+        stdout. Progressive <code>--help</code> is the schema: what exists,
+        what it needs, what it does. No MCP server to host, no tool
+        catalog to republish when the API moves.
       </p>
-      <ol class="steps">
-        <li>
-          <strong>Root</strong> — there is one namespace: <code>cluster</code>.
-          The agent does not guess product names.
-        </li>
-        <li>
-          <strong>Resource list</strong> — <code>d8ctl cluster --help</code>
-          is the tool index. 166 resources, verbs beside each.
-        </li>
-        <li>
-          <strong>Verb</strong> — <code>d8ctl cluster jobs --help</code>
-          is <code>activate</code> and <code>search</code>, with HTTP method
-          and path.
-        </li>
-        <li>
-          <strong>Flags</strong> — <code>d8ctl cluster jobs activate --help</code>
-          is the JSON Schema: required starred, types hinted, first sentence
-          of the OpenAPI description. Nested objects stay JSON strings.
-        </li>
-      </ol>
+      <p>
+        Root → product → resource → flags. The agent walks in as deep as
+        the task requires. Humans get the same path. Both
+        <code>cluster jobs activate</code> and
+        <code>cluster activate jobs</code> work — noun-verb or verb-noun.
+      </p>
       <pre class="term" aria-label="progressive help"><code><span class="ps">$</span> d8ctl cluster jobs activate --help
-d8ctl cluster jobs activate
-
 Activate jobs
   HTTP        POST /jobs/activation
-  operation   activateJobs
   added in    8.6
-  body        flags below, or --body='{…}' (wins on conflict)
 
-Body flags (top-level JSON fields):
- * --type=VALUE              The job type, as defined in the BPMN process
-   --worker=VALUE            The name of the worker activating the jobs
- * --timeout=INT             Lease timeout in ms
- * --maxJobsToActivate=INT   The maximum jobs to activate
-   --fetchVariable=JSON      Variables to fetch; empty means all
-   --requestTimeout=INT      Long-poll timeout
-   --withLease=true|false    Activate with a lease
-  * required unless supplied via --body.</code></pre>
-      <p>
-        Both orders parse: <code>cluster jobs activate</code> and
-        <code>cluster activate jobs</code>. <code>--order</code> only changes
-        how help lists them. An agent that learned kubectl’s noun-verb and
-        one that learned git’s verb-noun both land on the same operation.
-      </p>
+ * --type=VALUE              job type from the BPMN
+ * --timeout=INT             lease timeout
+ * --maxJobsToActivate=INT
+   --withLease=true|false</code></pre>
     </section>
 
     <section id="timemachine">
-      <h2>API Time Machine</h2>
-      <p>
-        One binary carries the <em>newest</em> catalog. The command tree the
-        agent sees is the catalog <em>cut to the server it is talking to</em>.
-        Point d8ctl at 8.6 and <code>searchJobs</code> is not a command.
-        Point it at 8.8 and it is. No “upgrade the CLI” step. No
-        <code>d8ctl@8.6</code> on <code>PATH</code>. The API version
-        <em>is</em> the CLI surface.
+      <h2>One binary. Every supported version.</h2>
+      <p class="benefit">
+        Support does not fork the CLI per release train. Point the same
+        binary at an 8.6 cluster and at 8.11: the agent only sees what
+        that cluster can do. No “upgrade the agent’s tools” ticket when
+        a customer has not upgraded the broker.
       </p>
       <p>
-        The cut is not a hand-maintained allow-list. Every operation in the
-        Orchestration Cluster spec already carries a vendor extension:
-      </p>
-      <pre class="term" aria-label="x-added-in-version in the OpenAPI spec"><code><span class="cmt"># rest-api.bundle.json — searchJobs</span>
-"post": {
-  "operationId": "searchJobs",
-  "summary": "Search jobs",
-  "x-added-in-version": "8.8"
-}
-
-<span class="cmt"># activateJobs, same file</span>
-"x-added-in-version": "8.6"</code></pre>
-      <p>
-        The generator copies that onto the catalog row
-        (<code>addedInVersion</code>). At runtime we ask the cluster who it
-        is — <code>GET /topology</code>, or a negotiated response header —
-        and keep the row only when
-        <code>x-added-in-version &lt;= server version</code>. Help,
-        completion, and dispatch all walk that filtered table. An agent
-        that only ever types <code>--help</code> cannot invent a flag
-        the broker will 404.
-      </p>
-      <p>
-        Fields can carry the same key
-        (<code>x-properties-added-in-version</code>). A 8.6 cluster can
-        still expose <code>activateJobs</code> while hiding a flag that
-        landed in 8.9. One extension, two granularities: operations and
-        properties.
+        The OpenAPI spec already marks when each operation landed
+        (<code>x-added-in-version</code>). d8ctl asks the cluster who it
+        is, and hides everything newer. Fields can carry the same mark,
+        so an old cluster keeps the command and loses only the new flag.
       </p>
       <div class="timeline" aria-hidden="true">
-        <div>
-          <strong>8.6</strong>
-          <span>create / cancel / activate</span>
-        </div>
-        <div>
-          <strong>8.7</strong>
-          <span>+ resources, documents</span>
-        </div>
-        <div>
-          <strong>8.8</strong>
-          <span>+ search, get-by-key</span>
-        </div>
-        <div>
-          <strong>8.9</strong>
-          <span>+ job statistics</span>
-        </div>
-        <div class="now">
-          <strong>8.11</strong>
-          <span>full catalog · 244</span>
-        </div>
+        <div><strong>8.6</strong><span>create / cancel / activate</span></div>
+        <div><strong>8.7</strong><span>+ resources</span></div>
+        <div><strong>8.8</strong><span>+ search</span></div>
+        <div><strong>8.9</strong><span>+ statistics</span></div>
+        <div class="now"><strong>8.11</strong><span>full catalog</span></div>
       </div>
-      <pre class="term" aria-label="API Time Machine"><code><span class="cmt"># same binary, two clusters</span>
-<span class="ps">$</span> CAMUNDA_REST_ADDRESS=https://old.example d8ctl cluster --help
-d8ctl cluster — 91 operation(s)   <span class="cmt"># API 8.6 · search is not listed</span>
-
-<span class="ps">$</span> CAMUNDA_REST_ADDRESS=https://new.example d8ctl cluster --help
-d8ctl cluster — 244 operation(s)  <span class="cmt"># API 8.11 · full surface</span>
-
-<span class="ps">$</span> CAMUNDA_REST_ADDRESS=https://old.example \
-    d8ctl cluster jobs search --help
-d8ctl: unknown command 'jobs search' on API 8.6 (added in 8.8).
-       Talking to 8.6. See `d8ctl cluster jobs --help`.</code></pre>
-      <p>
-        Discovery is the handshake. First call (or first <code>--help</code>
-        that needs the live tree) asks the cluster who it is. After that,
-        every progressive-help screen is already in the past of that
-        cluster. The agent plans against what exists, not against what
-        we shipped last Tuesday.
-      </p>
+      <pre class="term" aria-label="API Time Machine"><code><span class="ps">$</span> # same binary, two customers
+<span class="ps">$</span> d8ctl cluster --help          <span class="cmt"># 8.6 estate  → 91 operations</span>
+<span class="ps">$</span> d8ctl cluster --help          <span class="cmt"># 8.11 estate → 244 operations</span>
+<span class="ps">$</span> d8ctl cluster jobs search     <span class="cmt"># 8.6: unknown (added in 8.8)</span></code></pre>
       <p class="note">
-        Spike today: the catalog is compiled in and every row is offered.
-        Time Machine is the next cut — read the server version, then
-        filter on <code>x-added-in-version</code>. The field is already
-        on every command; help already prints <code>added in 8.6</code>.
+        Spike offers the full catalog. The version field is already on
+        every command; filtering on it is the next cut.
+      </p>
+    </section>
+
+    <section id="projection">
+      <h2>The API ships. The CLI is already there.</h2>
+      <p class="benefit">
+        A new operation should not wait on a CLI roadmap. If it is in
+        the spec, it is a command. Coverage cannot drift. That is how
+        you stop “the agent can’t do X because nobody wrapped the
+        endpoint.”
+      </p>
+      <p>
+        A generator turns the spec into a table. There is no
+        hand-written handler per operation. Flags, help text, and
+        required fields come from the same source the server implements.
+        When the cluster publishes its spec, the CLI can grow without a
+        release — new operations appear as catalog rows, not a new binary.
       </p>
     </section>
 
     <section id="native">
       <h2>c8ctl for humans. d8ctl for agents.</h2>
-      <p>
-        <a href="https://github.com/camunda/c8ctl">c8ctl</a> is the human
-        CLI: profiles, plugins, deploy UX, pretty search, cluster
-        lifecycle. Keep using it. d8ctl is the other half — a native
-        projection an agent can afford to call on every step.
+      <p class="benefit">
+        People keep the rich CLI they already have. Agents get something
+        they can call on every step without dragging a runtime into the
+        sandbox — one file, no install story, cheap enough to fan out.
       </p>
       <p>
-        One file. No Node, no <code>node_modules</code>, no runtime to
-        install. System libcurl and that’s it. Drop the binary on a
-        Mac, a Linux box, a CI runner, an agent sandbox — it runs.
-        2.2&nbsp;MiB on disk, 9&nbsp;ms and 7&nbsp;MiB RSS to print
-        <code>--help</code>. Live calls sit 3–8&nbsp;ms above curl.
-        That is the tax you want when a planner fans out twenty searches.
+        <a href="https://github.com/camunda/c8ctl">c8ctl</a> stays the
+        human product: profiles, plugins, deploy, pretty search. d8ctl
+        is a 2&nbsp;MiB native binary. Drop it on a laptop, a CI runner,
+        or an agent jail. It runs. Help returns in milliseconds, not
+        after a Node boot.
       </p>
       <p>
-        We already have a serious Rust investment. The bill arrived as
-        build time, CPU, and disk caches — not as missing safety. d8ctl
-        is the look-around: LDC gives native speed in curl’s
-        neighbourhood, and <code>@safe</code> / DIP1000 is the same
-        class of compile-time story, without paying the incremental
-        compile on every agent-shaped binary.
+        We already invest in Rust. The bill showed up as build time and
+        disk caches, not as missing safety. D is the look-around: native
+        speed, compile-time <code>@safe</code>, without that incremental
+        cost on every agent-shaped binary.
       </p>
-      <div class="split">
-        <div>
-          <h3>Native, not a runtime</h3>
-          <p>
-            LDC, Phobos statically linked, system libcurl. No GC warmup,
-            no module graph, no plugin discovery. The catalog is
-            76&nbsp;KiB of static data in the binary.
-          </p>
-        </div>
-        <div>
-          <h3>The same <code>@safe</code> ratchet as the SDK</h3>
-          <p>
-            Every module <code>@safe:</code>. DIP1000, nosharedaccess,
-            bounds checks on in release. Two <code>@trusted</code>
-            wrappers for stdout/stderr. Zero extra dub packages.
-          </p>
-        </div>
-      </div>
     </section>
 
     <section id="try">
-      <h2>In action</h2>
-      <pre class="term" aria-label="live examples"><code><span class="cmt"># both orders are the same command</span>
-<span class="ps">$</span> d8ctl cluster topology get
-<span class="ps">$</span> d8ctl cluster get topology
-
-<span class="cmt"># flags from the spec, not a hand-written parser</span>
-<span class="ps">$</span> d8ctl cluster jobs activate \
-    --type=probe:never --timeout=1000 --maxJobsToActivate=1
-
-<span class="cmt"># search: empty body is {}, or pass a filter</span>
-<span class="ps">$</span> d8ctl cluster process-instances search --page='{"limit":1}'
-<span class="ps">$</span> d8ctl cluster process-instances search \
-    --filter='{"state":"ACTIVE"}' --page='{"limit":5}'
-
-<span class="cmt"># path params are positional; --body still wins on conflict</span>
-<span class="ps">$</span> d8ctl cluster process-instance cancel 38197 --operationReference=1
-<span class="ps">$</span> d8ctl cluster process-instance create --body='{"processDefinitionId":"order"}'
-
-<span class="cmt"># see the wire without hitting it</span>
-<span class="ps">$</span> d8ctl cluster jobs activate --type=x --timeout=1 --maxJobsToActivate=1 --dry-run
-dry-run POST /jobs/activation
-{
-    "maxJobsToActivate": 1,
-    "timeout": 1,
-    "type": "x"
-}</code></pre>
-      <h3>Talk to a local cluster</h3>
-      <pre class="term" aria-label="environment"><code><span class="ps">$</span> export CAMUNDA_REST_ADDRESS=http://localhost:8080
-<span class="ps">$</span> export CAMUNDA_AUTH_STRATEGY=NONE
-<span class="ps">$</span> d8ctl cluster topology get</code></pre>
-      <h3>Get the binary</h3>
-      <p>
-        GitHub Releases ship <code>d8ctl-{linux,darwin}-{amd64,arm64}</code>
-        plus <code>.sha256</code> sidecars. Homebrew and <code>curl | sh</code>
-        are tracked, not shipped.
+      <h2>See it.</h2>
+      <p class="benefit">
+        The spike talks to a real cluster today. Same commands an agent
+        will type.
       </p>
+      <pre class="term" aria-label="live examples"><code><span class="ps">$</span> export CAMUNDA_REST_ADDRESS=http://localhost:8080
+<span class="ps">$</span> export CAMUNDA_AUTH_STRATEGY=NONE
+
+<span class="ps">$</span> d8ctl cluster topology get
+<span class="ps">$</span> d8ctl cluster process-instances search --page='{"limit":5}'
+<span class="ps">$</span> d8ctl cluster jobs activate --type=worker --timeout=1000 --maxJobsToActivate=1
+<span class="ps">$</span> d8ctl cluster process-instance create --body='{"processDefinitionId":"order"}'</code></pre>
       <p class="cta">
         <a href="https://github.com/camunda/d8ctl/releases">Releases</a>
         <a href="https://github.com/camunda/d8ctl">Source</a>
-        <a href="https://github.com/camunda/orchestration-cluster-api-dlang">D SDK</a>
         <a href="https://github.com/camunda/d8ctl/issues/1">Design</a>
       </p>
     </section>
   </main>
 
   <footer>
-    <p>Apache-2.0 · Camunda · A spike of the generated half of <a href="https://github.com/camunda/c8ctl/issues/767">c8ctl#767</a>.</p>
+    <p>Apache-2.0 · Camunda · Technical Preview. Companion to <a href="https://github.com/camunda/c8ctl">c8ctl</a>, not a replacement.</p>
   </footer>
 </body>
 </html>
