@@ -1,3 +1,10 @@
+## [0.1.1](https://github.com/camunda/d8ctl/compare/v0.1.0...v0.1.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* send cluster-admin commands to the bare root server, not /v2 ([ad2a84f](https://github.com/camunda/d8ctl/commit/ad2a84f836bb508b1d54df29336369d777cfce74)), closes [camunda/orchestration-cluster-api-dlang#6](https://github.com/camunda/orchestration-cluster-api-dlang/issues/6)
+
 # 0.1.0 (2026-11-13)
 
 First pre-release. (Briefly published as v1.0.0 / v1.1.0; those were withdrawn.)
