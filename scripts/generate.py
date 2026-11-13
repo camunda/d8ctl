@@ -239,6 +239,29 @@ def d_body_fields(fields: list[dict]) -> str:
     return "[" + ", ".join(parts) + "]"
 
 
+def _server_path(servers: list | None) -> str | None:
+    """Path part of the first server URL (`{schema}://{host}:{port}/v2` -> `/v2`)."""
+    if not servers:
+        return None
+    rest = (servers[0].get("url") or "").split("://", 1)[-1]
+    i = rest.find("/")
+    return "" if i < 0 else rest[i:].rstrip("/")
+
+
+def is_root_server(spec: dict, op: dict) -> bool:
+    """True when the operation (or its path) declares the bare-root server
+    instead of the top-level `/v2` one (cluster-admin ops, SDK #6)."""
+    item = (spec.get("paths") or {}).get(op.get("path")) or {}
+    operation = item.get((op.get("method") or "get").lower()) or {}
+    own = _server_path(operation.get("servers") or item.get("servers"))
+    top = _server_path(spec.get("servers")) or ""
+    if own is None or own == top:
+        return False
+    if own == "":
+        return True
+    sys.exit(f"unsupported server path {own!r} for {op.get('operationId')} (top-level {top!r})")
+
+
 def main() -> int:
     if not SDK_META.is_file():
         sys.exit(f"missing spec-metadata: {SDK_META} (run: npm install && npm run bundle:spec)")
@@ -296,6 +319,7 @@ def main() -> int:
             f"        {d_string_array(q_req)},\n"
             f"        {d_string_array(q_opt)},\n"
             f"        {d_body_fields(fields)},\n"
+            f"        {str(is_root_server(spec, op)).lower()},\n"
             "    ),"
         )
 
@@ -341,6 +365,8 @@ struct Command
     string[] requiredQuery;
     string[] optionalQuery;
     BodyField[] bodyFields;
+    /// Resolved against the bare root (`{{schema}}://{{host}}:{{port}}`), not `/v2`.
+    bool rootServer;
 }}
 
 /// SHA-256 of the bundled spec this catalog was generated from.

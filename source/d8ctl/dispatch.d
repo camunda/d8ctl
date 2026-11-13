@@ -76,14 +76,17 @@ string invoke(Transport client, const ref Result r)
     if (r.flags.dryRun)
         return formatDryRun(c, path, query, body_);
 
+    // Cluster-admin operations live at the bare root, not under /v2.
+    const server = c.rootServer ? ServerBase.root : ServerBase.api;
+
     if (c.kind == "void")
     {
-        client.requestVoid(c.method, path, body_, query);
+        client.requestVoid(c.method, path, body_, query, server);
         return "";
     }
     if (c.kind == "text")
-        return client.requestText(c.method, path, body_, query);
-    auto payload = client.requestJson(c.method, path, body_, query);
+        return client.requestText(c.method, path, body_, query, server);
+    auto payload = client.requestJson(c.method, path, body_, query, server);
     return payload.toPrettyString;
 }
 
@@ -203,6 +206,7 @@ string formatDryRun(const Command* c, string path, string[string] query, JSONVal
 {
     import std.format : format;
     auto s = format("dry-run %s %s", c.method, path);
+    if (c.rootServer) s ~= " (root server, not under /v2)";
     if (query.length)
     {
         s ~= " ?";
@@ -289,4 +293,14 @@ unittest
     }
     catch (UsageException) threw = true;
     assert(threw);
+}
+
+unittest
+{
+    // SDK #6: cluster-admin commands are resolved against the bare root.
+    import d8ctl.catalog : findByOperationId;
+    auto status = findByOperationId("getClusterStatus");
+    assert(status !is null && status.rootServer);
+    auto topo = findByOperationId("getTopology");
+    assert(topo !is null && !topo.rootServer);
 }
