@@ -130,7 +130,7 @@ Activate jobs
       </div>
       <pre class="term" aria-label="API Time Machine"><code><span class="ps">$</span> # same binary, two customers
 <span class="ps">$</span> d8ctl cluster --help          <span class="cmt"># 8.6 estate  → 91 operations</span>
-<span class="ps">$</span> d8ctl cluster --help          <span class="cmt"># 8.11 estate → 244 operations</span>
+<span class="ps">$</span> d8ctl cluster --help          <span class="cmt"># 8.11 estate → 247 operations</span>
 <span class="ps">$</span> d8ctl cluster jobs search     <span class="cmt"># 8.6: unknown (added in 8.8)</span></code></pre>
       <p class="note">
         Spike offers the full catalog. The version field is already on
@@ -151,7 +151,7 @@ Activate jobs
       </p>
       <p>
         A generator turns the spec into a table; one small engine handles
-        parsing, help, and HTTP for all 244 operations. Zero per-operation
+        parsing, help, and HTTP for all 247 operations. Zero per-operation
         code, so coverage cannot drift. A new endpoint is a regenerate, not
         a project — and when the cluster publishes its spec, not even that:
         new operations appear as catalog rows in the binary already installed.

@@ -9,3 +9,5 @@ __pycache__/
 docs-md/
 node_modules/
 orchestration-cluster-api-dlang/
+external-spec/upstream/
+package-lock.json

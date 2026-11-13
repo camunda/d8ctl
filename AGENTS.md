@@ -10,11 +10,14 @@
 Orchestration Cluster API. Design: https://github.com/camunda/d8ctl/issues/1.
 It is not a replacement for c8ctl.
 
-The command surface is generated from the D SDK's bundled spec-metadata.
+The command surface is generated from the Orchestration Cluster spec, fetched
+from camunda/camunda and bundled by `camunda-schema-bundler` (`npm run
+bundle:spec`, `SPEC_REF` default `main`) into the committed `external-spec/bundled/`.
 There is no hand-written per-operation handler.
 
-Upstream: [orchestration-cluster-api-dlang](https://github.com/camunda/orchestration-cluster-api-dlang)
-(path dependency `../orchestration-cluster-api-dlang`).
+Transport: `camunda-orchestration-sdk:runtime` from
+[orchestration-cluster-api-dlang](https://github.com/camunda/orchestration-cluster-api-dlang)
+(path dependency `../orchestration-cluster-api-dlang`). The SDK is not a spec source.
 
 ## Path map
 
@@ -27,7 +30,8 @@ Upstream: [orchestration-cluster-api-dlang](https://github.com/camunda/orchestra
 | `source/d8ctl/catalog.d` | Lookups over the generated table. |
 | `source/d8ctl/generated/catalog.d` | **Generated.** `make generate`. Never hand-edit. |
 | `source/d8ctl/version_.d` | SemVer stamp (`scripts/prepare-release.sh`). |
-| `scripts/generate.py` | Catalog generator. |
+| `scripts/generate.py` | Catalog generator. Reads `external-spec/bundled/`. |
+| `external-spec/bundled/` | Bundled spec + `spec-metadata.json` (`npm run bundle:spec`). Committed. |
 | `scripts/check-safe.sh` | `@safe` ratchet (same contract as the SDK). |
 | `scripts/prepare-release.sh` | Stamps `dub.json` + `version_.d` for semantic-release. |
 | `docs/` | GitHub Pages explainer (`camunda.github.io/d8ctl`). |
@@ -48,7 +52,8 @@ issues, not shipped yet.
 ## Commands
 
 ```bash
-make generate
+make generate        # bundle from camunda/camunda + rebuild catalog
+make generate-local  # rebuild from the committed bundle (CI drift gate)
 make test
 make lint
 make check

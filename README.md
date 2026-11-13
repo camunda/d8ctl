@@ -64,10 +64,22 @@ amd64+arm64 binaries. Install from the release assets until Homebrew /
 
 ## Generation
 
-`scripts/generate.py` reads the SDK's `external-spec/bundled/spec-metadata.json`
-and writes `source/d8ctl/generated/catalog.d` (244 rows). Do not hand-edit
-the catalog. There is no per-operation handler — dispatch walks the table
-and calls `CamundaClient.requestJson` / `requestVoid` / `requestText`.
+The spec comes straight from [camunda/camunda](https://github.com/camunda/camunda)
+(`zeebe/gateway-protocol/src/main/proto/v2`), fetched and bundled by
+`camunda-schema-bundler`, the same pipeline as the JS and D SDKs:
+
+```sh
+npm install
+make generate                          # bundle camunda/camunda main, then rebuild the catalog
+SPEC_REF=<branch|tag|sha> make generate
+make generate-local                    # rebuild from the committed external-spec/bundled/
+```
+
+`scripts/generate.py` reads `external-spec/bundled/{rest-api.bundle,spec-metadata}.json`
+and writes `source/d8ctl/generated/catalog.d` (one row per operation; 247 today).
+Do not hand-edit the catalog. There is no per-operation handler — dispatch
+walks the table and calls `Transport.requestJson` / `requestVoid` / `requestText`
+from `camunda-orchestration-sdk:runtime`.
 
 Multipart operations (`createDeployment`, `createDocument`, `createDocuments`)
 are refused until we add file flags.

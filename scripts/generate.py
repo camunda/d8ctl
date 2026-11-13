@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Generate the d8ctl command catalog from the D SDK's bundled spec.
+"""Generate the d8ctl command catalog from the Orchestration Cluster spec.
 
-Reads orchestration-cluster-api-dlang/external-spec/bundled/{spec-metadata,rest-api.bundle}.json
-and writes source/d8ctl/generated/catalog.d. Never hand-edit the output.
+Reads external-spec/bundled/{spec-metadata,rest-api.bundle}.json, which
+`npm run bundle:spec` fetches from camunda/camunda and bundles with
+camunda-schema-bundler (same pipeline as the JS and D SDKs), and writes source/d8ctl/generated/catalog.d. Never hand-edit the output.
 
 No extra D dependencies: the catalog is a static table of string slices.
 Top-level JSON body properties become documented --flags; nested values stay
@@ -17,14 +18,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-# Local sibling checkout, or the in-workspace copy CI checks out.
-_candidates = [
-    ROOT.parent / "orchestration-cluster-api-dlang",
-    ROOT / "orchestration-cluster-api-dlang",
-]
-SDK_DIR = next((p for p in _candidates if (p / "external-spec/bundled/spec-metadata.json").is_file()), _candidates[0])
-SDK_META = SDK_DIR / "external-spec" / "bundled" / "spec-metadata.json"
-SDK_SPEC = SDK_DIR / "external-spec" / "bundled" / "rest-api.bundle.json"
+SDK_META = ROOT / "external-spec" / "bundled" / "spec-metadata.json"
+SDK_SPEC = ROOT / "external-spec" / "bundled" / "rest-api.bundle.json"
 OUT = ROOT / "source" / "d8ctl" / "generated" / "catalog.d"
 
 # Longest-first so "search" wins over "se", "cancel" over "can", etc.
@@ -246,9 +241,9 @@ def d_body_fields(fields: list[dict]) -> str:
 
 def main() -> int:
     if not SDK_META.is_file():
-        sys.exit(f"missing SDK spec-metadata: {SDK_META}")
+        sys.exit(f"missing spec-metadata: {SDK_META} (run: npm install && npm run bundle:spec)")
     if not SDK_SPEC.is_file():
-        sys.exit(f"missing SDK OpenAPI bundle: {SDK_SPEC}")
+        sys.exit(f"missing OpenAPI bundle: {SDK_SPEC} (run: npm install && npm run bundle:spec)")
     meta = json.loads(SDK_META.read_text(encoding="utf-8"))
     spec = json.loads(SDK_SPEC.read_text(encoding="utf-8"))
     schemas = (spec.get("components") or {}).get("schemas") or {}
