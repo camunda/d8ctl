@@ -29,7 +29,8 @@ Upstream: [orchestration-cluster-api-dlang](https://github.com/camunda/orchestra
 | `source/d8ctl/version_.d` | SemVer stamp (`scripts/prepare-release.sh`). |
 | `scripts/generate.py` | Catalog generator. |
 | `scripts/check-safe.sh` | `@safe` ratchet (same contract as the SDK). |
-| `scripts/prepare-release.sh` | Stamps `dub.json` + `version.d` for semantic-release. |
+| `scripts/prepare-release.sh` | Stamps `dub.json` + `version_.d` for semantic-release. |
+| `docs/` | GitHub Pages explainer (`camunda.github.io/d8ctl`). |
 
 ## Strictness
 

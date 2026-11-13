@@ -59,7 +59,8 @@ Auth and address are the SDK's `CAMUNDA_*` environment variables
 
 Pushes to `main` cut a GitHub Release (`vX.Y.Z`) with linux/darwin
 amd64+arm64 binaries. Install from the release assets until Homebrew /
-`curl | sh` land.
+`curl | sh` land. The explainer site is `docs/` →
+[camunda.github.io/d8ctl](https://camunda.github.io/d8ctl/).
 
 ## Generation
 

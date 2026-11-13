@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>d8ctl — Agent CLI for API</title>
+  <meta name="description" content="d8ctl projects a REST API onto a native CLI. Zero hand-written commands. Progressive help is MCP in depth. The binary is 2 MiB of D.">
+  <link rel="canonical" href="https://camunda.github.io/d8ctl/">
+  <meta property="og:title" content="d8ctl — Agent CLI for API">
+  <meta property="og:description" content="Zero-touch projection of an API onto a CLI. Progressive disclosure. Native D. 9 ms to first output.">
+  <meta property="og:type" content="website">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="top">
+    <a class="mark" href="#top">d8ctl</a>
+    <nav>
+      <a href="#projection">Projection</a>
+      <a href="#help">Help as MCP</a>
+      <a href="#version">Version</a>
+      <a href="#d">Why D</a>
+      <a href="#try">Try it</a>
+    </nav>
+    <a class="gh" href="https://github.com/camunda/d8ctl">GitHub</a>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <p class="kicker">Technical Preview · Camunda 8 Orchestration Cluster</p>
+      <h1>Agent CLI for API.</h1>
+      <p class="lede">
+        d8ctl is a <em>projection</em>, not a product surface. The OpenAPI spec
+        is the command tree. There is no hand-written handler per operation.
+        An agent that can type <code>--help</code> can operate the whole cluster.
+      </p>
+      <div class="hero-stats">
+        <div><strong>244</strong><span>operations, one catalog</span></div>
+        <div><strong>2.2&nbsp;MiB</strong><span>one native binary</span></div>
+        <div><strong>9&nbsp;ms</strong><span>to first output</span></div>
+        <div><strong>7&nbsp;MiB</strong><span>RSS to print help</span></div>
+      </div>
+      <pre class="term hero-term" aria-label="d8ctl --help"><code><span class="ps">$</span> d8ctl --help
+d8ctl — Camunda 8 Orchestration Cluster CLI
+
+Usage:
+  d8ctl [--help] [--version] [--dry-run] cluster …
+
+The Orchestration Cluster surface is under `cluster` (244 operations).
+Both `cluster &lt;resource&gt; &lt;verb&gt;` and `cluster &lt;verb&gt; &lt;resource&gt;` parse.
+
+Start with: d8ctl cluster --help</code></pre>
+    </section>
+
+    <section id="projection">
+      <h2>Zero-touch projection</h2>
+      <p>
+        A generator reads the D SDK’s bundled spec-metadata and writes a static
+        table. Parse, help, and dispatch walk that table. If the API grows an
+        operation, regenerate — it is a command. No per-op switch, no YAML
+        command defs, no “we forgot to wrap <code>searchJobs</code>.”
+      </p>
+      <div class="split">
+        <div>
+          <h3>What is generated</h3>
+          <ul>
+            <li>244 rows: method, path, verb, resource, summary</li>
+            <li>Path params as positionals, in spec order</li>
+            <li>Query params as <code>--name=value</code></li>
+            <li>336 top-level body fields as documented flags</li>
+          </ul>
+        </div>
+        <div>
+          <h3>What is not</h3>
+          <ul>
+            <li>The HTTP client (D SDK + libcurl)</li>
+            <li>Auth, retry, backpressure (<code>CAMUNDA_*</code>)</li>
+            <li>The argv parser and progressive help</li>
+            <li>One <code>invoke()</code> that calls <code>requestJson</code></li>
+          </ul>
+        </div>
+      </div>
+      <pre class="term" aria-label="generation pipeline"><code><span class="ps">$</span> make generate
+generate: 244 commands, 121 with body flags (336 fields)
+
+<span class="ps">$</span> d8ctl cluster jobs activate --help   <span class="cmt"># flags came from JobActivationRequest</span>
+<span class="ps">$</span> d8ctl cluster process-instances search --filter='{"state":"ACTIVE"}'</code></pre>
+      <p class="note">
+        Multipart (deploy, documents) is refused until file flags exist.
+        Union bodies (create process instance) stay <code>--body='{…}'</code>
+        — there is no honest single shape to flatten.
+      </p>
+    </section>
+
+    <section id="help">
+      <h2>Progressive help is MCP, in depth</h2>
+      <p>
+        An MCP server is a catalog plus tool schemas plus a way to call them.
+        A well-factored CLI is the same object, already on <code>PATH</code>,
+        already streamable, already something every agent runtime knows how
+        to invoke. d8ctl treats <code>--help</code> as the schema endpoint.
+      </p>
+      <ol class="steps">
+        <li>
+          <strong>Root</strong> — there is one namespace: <code>cluster</code>.
+          The agent does not guess product names.
+        </li>
+        <li>
+          <strong>Resource list</strong> — <code>d8ctl cluster --help</code>
+          is the tool index. 166 resources, verbs beside each.
+        </li>
+        <li>
+          <strong>Verb</strong> — <code>d8ctl cluster jobs --help</code>
+          is <code>activate</code> and <code>search</code>, with HTTP method
+          and path.
+        </li>
+        <li>
+          <strong>Flags</strong> — <code>d8ctl cluster jobs activate --help</code>
+          is the JSON Schema: required starred, types hinted, first sentence
+          of the OpenAPI description. Nested objects stay JSON strings.
+        </li>
+      </ol>
+      <pre class="term" aria-label="progressive help"><code><span class="ps">$</span> d8ctl cluster jobs activate --help
+d8ctl cluster jobs activate
+
+Activate jobs
+  HTTP        POST /jobs/activation
+  operation   activateJobs
+  added in    8.6
+  body        flags below, or --body='{…}' (wins on conflict)
+
+Body flags (top-level JSON fields):
+ * --type=VALUE              The job type, as defined in the BPMN process
+   --worker=VALUE            The name of the worker activating the jobs
+ * --timeout=INT             Lease timeout in ms
+ * --maxJobsToActivate=INT   The maximum jobs to activate
+   --fetchVariable=JSON      Variables to fetch; empty means all
+   --requestTimeout=INT      Long-poll timeout
+   --withLease=true|false    Activate with a lease
+  * required unless supplied via --body.</code></pre>
+      <p>
+        Both orders parse: <code>cluster jobs activate</code> and
+        <code>cluster activate jobs</code>. <code>--order</code> only changes
+        how help lists them. An agent that learned kubectl’s noun-verb and
+        one that learned git’s verb-noun both land on the same operation.
+      </p>
+    </section>
+
+    <section id="version">
+      <h2>The API version <em>is</em> the CLI surface</h2>
+      <p>
+        The catalog is compiled from a specific spec hash. Change the spec,
+        regenerate, the binary’s command tree moves. That is the version
+        negotiation: you do not feature-flag commands in the CLI. You ship
+        the projection of the API the agent is talking to.
+      </p>
+      <ul>
+        <li>
+          <code>main</code> of the D SDK tracks Camunda <code>main</code>
+          (11.x alpha). <code>stable/N</code> tracks server 8.N and
+          releases N.x.
+        </li>
+        <li>
+          d8ctl’s catalog records <code>catalogSpecHash</code>.
+          <code>d8ctl --version</code> prints it. An agent can refuse to
+          run if the hash is not the one it planned against.
+        </li>
+        <li>
+          <code>added in 8.6</code> on each command is the floor, not a
+          compatibility shim. Old servers 404; the CLI does not pretend.
+        </li>
+      </ul>
+      <pre class="term" aria-label="version"><code><span class="ps">$</span> d8ctl --version
+d8ctl 0.1.0 (catalog sha256:e140ca0d…c0493ef)</code></pre>
+    </section>
+
+    <section id="d">
+      <h2>Why D</h2>
+      <p>
+        Agents pay process startup on every tool call. A Node CLI that does
+        the same job here boots in ~160&nbsp;ms and 110&nbsp;MiB just to print
+        <code>--version</code>. d8ctl is 9&nbsp;ms and 7&nbsp;MiB. Live calls
+        sit 3–8&nbsp;ms above curl. That is the tax you want when a planner
+        fans out twenty searches.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th></th><th>d8ctl</th><th>c8ctl (Node 24)</th><th>curl</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>On disk</td><td>2.2 MiB one file</td><td>114 MiB node + 59 MiB package</td><td>~0.5 MiB</td></tr>
+            <tr><td><code>--help</code> p50</td><td>9 ms / 7 MiB</td><td>156 ms / 108 MiB</td><td>—</td></tr>
+            <tr><td>GET topology p50</td><td>13 ms / 9 MiB</td><td>170 ms / 109 MiB</td><td>10 ms / 5 MiB</td></tr>
+            <tr><td>Search (limit=1)</td><td>19 ms / 9 MiB</td><td>242 ms / 139 MiB†</td><td>10 ms</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">
+        † c8ctl’s search often fetches a large default page and filters in
+        process. d8ctl sends the body you typed. Same Mac, same nano engine,
+        15-run p50s.
+      </p>
+      <div class="split">
+        <div>
+          <h3>Native, not “compiled JS”</h3>
+          <p>
+            LDC, Phobos statically linked, system libcurl. No GC warmup, no
+            module graph, no plugin discovery. The catalog is 76&nbsp;KiB of
+            static data in the binary.
+          </p>
+        </div>
+        <div>
+          <h3>The same <code>@safe</code> ratchet as the SDK</h3>
+          <p>
+            Every module <code>@safe:</code>. DIP1000, nosharedaccess, bounds
+            checks on in release. Two <code>@trusted</code> wrappers for
+            stdout/stderr. Zero extra dub packages.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="try">
+      <h2>In action</h2>
+      <pre class="term" aria-label="live examples"><code><span class="cmt"># both orders are the same command</span>
+<span class="ps">$</span> d8ctl cluster topology get
+<span class="ps">$</span> d8ctl cluster get topology
+
+<span class="cmt"># flags from the spec, not a hand-written parser</span>
+<span class="ps">$</span> d8ctl cluster jobs activate \
+    --type=probe:never --timeout=1000 --maxJobsToActivate=1
+
+<span class="cmt"># search: empty body is {}, or pass a filter</span>
+<span class="ps">$</span> d8ctl cluster process-instances search --page='{"limit":1}'
+<span class="ps">$</span> d8ctl cluster process-instances search \
+    --filter='{"state":"ACTIVE"}' --page='{"limit":5}'
+
+<span class="cmt"># path params are positional; --body still wins on conflict</span>
+<span class="ps">$</span> d8ctl cluster process-instance cancel 38197 --operationReference=1
+<span class="ps">$</span> d8ctl cluster process-instance create --body='{"processDefinitionId":"order"}'
+
+<span class="cmt"># see the wire without hitting it</span>
+<span class="ps">$</span> d8ctl cluster jobs activate --type=x --timeout=1 --maxJobsToActivate=1 --dry-run
+dry-run POST /jobs/activation
+{
+    "maxJobsToActivate": 1,
+    "timeout": 1,
+    "type": "x"
+}</code></pre>
+      <h3>Talk to a local cluster</h3>
+      <pre class="term" aria-label="environment"><code><span class="ps">$</span> export CAMUNDA_REST_ADDRESS=http://localhost:8080
+<span class="ps">$</span> export CAMUNDA_AUTH_STRATEGY=NONE
+<span class="ps">$</span> d8ctl cluster topology get</code></pre>
+      <h3>Get the binary</h3>
+      <p>
+        GitHub Releases ship <code>d8ctl-{linux,darwin}-{amd64,arm64}</code>
+        plus <code>.sha256</code> sidecars. Homebrew and <code>curl | sh</code>
+        are tracked, not shipped.
+      </p>
+      <p class="cta">
+        <a href="https://github.com/camunda/d8ctl/releases">Releases</a>
+        <a href="https://github.com/camunda/d8ctl">Source</a>
+        <a href="https://github.com/camunda/orchestration-cluster-api-dlang">D SDK</a>
+        <a href="https://github.com/camunda/d8ctl/issues/1">Design</a>
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    <p>Apache-2.0 · Camunda · A spike of the generated half of <a href="https://github.com/camunda/c8ctl/issues/767">c8ctl#767</a>.</p>
+  </footer>
+</body>
+</html>
