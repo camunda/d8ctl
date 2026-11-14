@@ -1,3 +1,10 @@
+# [0.4.0](https://github.com/camunda/d8ctl/compare/v0.3.0...v0.4.0) (2026-11-14)
+
+
+### Features
+
+* custom HTTP headers (--header, CAMUNDA_DEFAULT_HEADERS) ([#10](https://github.com/camunda/d8ctl/issues/10)) ([edb9fcb](https://github.com/camunda/d8ctl/commit/edb9fcbbcc10ff84ed15a99f11629840a3568b58)), closes [#7](https://github.com/camunda/d8ctl/issues/7)
+
 # [0.3.0](https://github.com/camunda/d8ctl/compare/v0.2.0...v0.3.0) (2026-11-14)
 
 
