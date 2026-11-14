@@ -1,0 +1,55 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommitTypeAll(chore)"],
+  "semanticCommits": "enabled",
+  "rebaseWhen": "behind-base-branch",
+  "customManagers": [
+    {
+      "description": "D SDK constraint in dub.json (Renovate has no dub manager). Versions come from the SDK's git tags, which are what code.dlang.org publishes.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^dub\\.json$/"],
+      "matchStrings": [
+        "\"camunda-orchestration-sdk(?::runtime)?\"\\s*:\\s*\"~>(?<currentValue>[^\"]+)\""
+      ],
+      "depNameTemplate": "camunda-orchestration-sdk",
+      "packageNameTemplate": "camunda/orchestration-cluster-api-dlang",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    },
+    {
+      "description": "D SDK lock in dub.selections.json, kept in step with dub.json.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^dub\\.selections\\.json$/"],
+      "matchStrings": [
+        "\"camunda-orchestration-sdk\"\\s*:\\s*\"(?<currentValue>[^\"]+)\""
+      ],
+      "depNameTemplate": "camunda-orchestration-sdk",
+      "packageNameTemplate": "camunda/orchestration-cluster-api-dlang",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "D SDK releases: one PR for dub.json + dub.selections.json, as soon as a tag appears. d8ctl tracks the main/11.x alpha line, so prereleases are wanted. fix(deps) so merging cuts a d8ctl release that ships the SDK fixes. Not auto-merged: review the PR.",
+      "matchDepNames": ["camunda-orchestration-sdk"],
+      "groupName": "D SDK",
+      "ignoreUnstable": false,
+      "respectLatest": false,
+      "minimumReleaseAge": null,
+      "schedule": ["at any time"],
+      "semanticCommitType": "fix",
+      "semanticCommitScope": "deps",
+      "addLabels": ["sdk-upgrade"],
+      "automerge": false
+    },
+    {
+      "description": "GitHub Actions: keep current, auto-merge non-major once CI is green.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "automerge": true
+    }
+  ]
+}
