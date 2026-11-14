@@ -310,5 +310,12 @@ unittest
     auto dry = formatDryRun(topo, "/topology", null, JSONValue(null), `{"X-Api-Key":"s3cret"}`);
     import std.string : indexOf;
     assert(dry.indexOf("s3cret") < 0 && dry.indexOf("X-Api-Key: ********") >= 0);
+    // Case variants collapse to one preview line, like the SDK's send path.
+    auto dup = formatDryRun(topo, "/topology", null, JSONValue(null),
+        `{"X-Api-Key":"a","x-api-key":"b"}`);
+    assert(dup.indexOf("X-Api-Key") < 0 && dup.indexOf("x-api-key: ********") >= 0);
+    // Whitespace-only CAMUNDA_DEFAULT_HEADERS is unset, not a parse error.
+    auto blank = formatDryRun(topo, "/topology", null, JSONValue(null), "   ");
+    assert(blank.indexOf("********") < 0);
     assert(topo !is null && !topo.rootServer);
 }

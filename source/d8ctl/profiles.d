@@ -122,15 +122,24 @@ Header parseHeaderSwitch(string raw)
     auto name = raw[0 .. colon].strip;
     foreach (ch; name)
         if (ch <= ' ' || ch >= 0x7f || "()<>@,;:\\\"/[]?={}".indexOf(ch) >= 0)
-            throw new ProfileException("--header: invalid header name '" ~ name ~ "'");
+            // Do not echo `name` either: `--header 'X-Api-Key=s3cret:tail'`
+            // parses `X-Api-Key=s3cret` as the name, and printing it would
+            // leak the credential just like echoing the raw argument would.
+            throw new ProfileException("--header: invalid header name");
     return Header(name, raw[colon + 1 .. $].strip);
 }
 
 /// Parse a `CAMUNDA_DEFAULT_HEADERS` value into ordered pairs. Empty → none.
+/// Like the SDK, a whitespace-only value is treated as unset (its config
+/// reader strips values before use), and case variants of one name collapse
+/// to a single header — the last spelling wins, as the SDK's own
+/// case-insensitive merge normalizes them before sending.
 Header[] headersFromJson(string raw)
 {
+    import std.string : strip;
+
     Header[] r;
-    if (!raw.length) return r;
+    if (!raw.strip.length) return r;
     JSONValue j;
     try j = parseJSON(raw);
     catch (JSONException e)
@@ -144,7 +153,39 @@ Header[] headersFromJson(string raw)
             throw new ProfileException(headersKey ~ " header '" ~ k ~ "' must have a string value");
         r ~= Header(k, v.str);
     }
-    return r;
+    // One entry per case-insensitive name: an object can carry both
+    // "X-Api-Key" and "x-api-key", but the SDK sends only one — the
+    // lexicographically last spelling (keys are sorted above, so the last
+    // one here wins, matching the SDK's dedupeHeadersCaseInsensitive).
+    Header[] deduped;
+    foreach (h; r)
+    {
+        bool replaced;
+        foreach (ref x; deduped)
+            if (x.name.toLower == h.name.toLower)
+            {
+                x = h;
+                replaced = true;
+            }
+        if (!replaced) deduped ~= h;
+    }
+    return deduped;
+}
+
+/// Reject headers the SDK would reject at request time (RFC 9110 field
+/// syntax via the SDK's own `validateHeader`), translated into the CLI's
+/// normal usage error. The SDK error names the header but never the value.
+void validateHeaders(const Header[] hs)
+{
+    import camunda.errors : ConfigException;
+    import camunda.transport : validateHeader;
+
+    foreach (h; hs)
+    {
+        try validateHeader(h.name, h.value, headersKey ~ " header");
+        catch (ConfigException e)
+            throw new ProfileException(e.msg);
+    }
 }
 
 /// Serialize headers as a `CAMUNDA_DEFAULT_HEADERS` JSON object.
@@ -567,8 +608,11 @@ string profileCommand(Dirs dirs, string[] args, const string[string] switches,
         if (headers.length)
             m[headersKey] = headersToJson(mergeHeaders(
                 headersFromJson(m.get(headersKey, null)), headers));
-        else if (auto hv = headersKey in m)
-            cast(void) headersFromJson(*hv); // validate before storing
+        // Validate the merged headers the way the SDK will when the profile
+        // is used — a bad name or a control character in a value must fail
+        // here, not save a profile every later command rejects.
+        if (auto hv = headersKey in m)
+            validateHeaders(headersFromJson(*hv));
         if (m.length == 0)
             throw new ProfileException("nothing to store. Pass --camunda-* switches "
                 ~ "(e.g. --camunda-rest-address=https://…) or --from-env.");
@@ -861,6 +905,12 @@ unittest
     assertThrown!ProfileException(headersFromJson("[1]"));
     assertThrown!ProfileException(headersFromJson(`{"A":1}`));
     assert(headersFromJson("").length == 0);
+    // Whitespace-only is unset, matching the SDK's stripped config lookup.
+    assert(headersFromJson("   ").length == 0);
+    assert(headersFromJson(" \t\n").length == 0);
+    // Case variants of one name collapse; the last spelling wins.
+    assert(headersFromJson(`{"X-Api-Key":"a","x-api-key":"b"}`)
+        == [Header("x-api-key", "b")]);
 
     // Malformed --header must not echo the raw argument (it can hold a
     // credential the user pasted with `=` instead of `:`).
@@ -871,6 +921,15 @@ unittest
     }
     catch (ProfileException e)
         assert(e.msg.indexOf("s3cret") < 0 && e.msg.indexOf("X-Api-Key=") < 0);
+    // The invalid-name path must not echo the parsed name either: with a
+    // colon later in the value, the "name" itself holds the credential.
+    try
+    {
+        cast(void) parseHeaderSwitch("X-Api-Key=s3cret:tail");
+        assert(false);
+    }
+    catch (ProfileException e)
+        assert(e.msg.indexOf("s3cret") < 0 && e.msg.indexOf("X-Api-Key") < 0);
 
     auto m = mergeHeaders([Header("X-Api-Key", "old"), Header("X-Keep", "k")],
         [Header("x-api-key", "new")]);
@@ -895,6 +954,19 @@ unittest
     assert(shown.indexOf("X-Api-Key") >= 0);
     assertThrown!ProfileException(profileCommand(dirs, ["add", "bad"],
         [headersKey: "nope"], none, noEnv));
+    // profile add rejects headers the SDK would reject at request time:
+    // a bad name in the JSON switch, a control character in a value, and a
+    // bad --header value — none of them may be saved into a profile.
+    assertThrown!ProfileException(profileCommand(dirs, ["add", "badname"],
+        ["CAMUNDA_REST_ADDRESS": "http://h", headersKey: `{"Bad Name":"v"}`], none, noEnv));
+    assertThrown!ProfileException(profileCommand(dirs, ["add", "badval"],
+        ["CAMUNDA_REST_ADDRESS": "http://h", headersKey: "{\"X-Api-Key\":\"a\\r\\nb\"}"], none, noEnv));
+    assertThrown!ProfileException(profileCommand(dirs, ["add", "badhdr"],
+        ["CAMUNDA_REST_ADDRESS": "http://h"], none, noEnv, [Header("X-Api-Key", "a\nb")]));
+    // ...and nothing was stored for any of them.
+    auto afterBad = loadStore(dirs.d8ctl);
+    assert("badname" !in afterBad.profiles && "badval" !in afterBad.profiles
+        && "badhdr" !in afterBad.profiles);
 
     // switch > profile > env, per header name, case-insensitively.
     auto src = loadSources(dirs);
@@ -935,6 +1007,11 @@ unittest
     assert(headersFromJson(r.overrides[headersKey]) == [
         Header("x-api-key", "sw"), Header("x-profile", "fromswitch")],
         r.overrides[headersKey]);
+    // A whitespace-only env value is unset (the SDK strips config values), so
+    // resolution and dry-run agree instead of failing on a JSON parse.
+    r = resolveConnection(src, "", "", null, envOf([headersKey: "   "]),
+        [Header("X-Cli", "c")]);
+    assert(headersFromJson(r.overrides[headersKey]) == [Header("X-Cli", "c")]);
 
     // profile add --from-env + --camunda-default-headers: the switch merges
     // over the copied env headers per name instead of dropping them.
