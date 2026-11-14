@@ -445,6 +445,9 @@ Resolved resolveConnection(const ref Sources s, string flagName, string envName,
     const Header[] headers = null)
 {
     Resolved r;
+    // Headers of the implicit c8ctl 'local' fallback rank *below* the
+    // CAMUNDA_DEFAULT_HEADERS env (it is a default, not a selection).
+    string fallbackHeaders;
     string name = flagName.length ? flagName : envName.length ? envName : activeName(s);
     if (name.length)
     {
@@ -469,6 +472,11 @@ Resolved resolveConnection(const ref Sources s, string flagName, string envName,
                 if (p.name == "local")
                 {
                     r.overrides = p.config.dup;
+                    if (auto fh = headersKey in r.overrides)
+                    {
+                        fallbackHeaders = *fh;
+                        r.overrides.remove(headersKey);
+                    }
                     r.source = "c8ctl profile 'local' (default)";
                 }
         }
@@ -491,12 +499,14 @@ Resolved resolveConnection(const ref Sources s, string flagName, string envName,
     }
     if (switches.length) r.source ~= " + --camunda-* switches";
     // Headers merge per name (case-insensitively): --header > switch/profile
-    // > CAMUNDA_DEFAULT_HEADERS env, instead of one layer replacing the other.
+    // > CAMUNDA_DEFAULT_HEADERS env > implicit 'local' fallback, instead of
+    // one layer replacing the other.
     auto envHeaders = getenv(headersKey);
-    if ((envHeaders.length && (headersKey in r.overrides) !is null) || headers.length)
+    if ((envHeaders.length && (headersKey in r.overrides) !is null) || headers.length
+        || fallbackHeaders.length)
     {
-        auto layered = mergeHeaders(headersFromJson(envHeaders),
-            headersFromJson(r.overrides.get(headersKey, null)));
+        auto layered = mergeHeaders(mergeHeaders(headersFromJson(fallbackHeaders),
+            headersFromJson(envHeaders)), headersFromJson(r.overrides.get(headersKey, null)));
         r.overrides[headersKey] = headersToJson(mergeHeaders(layered, headers));
     }
     if (headers.length) r.source ~= " + --header";
@@ -847,6 +857,26 @@ unittest
     auto r = resolveConnection(src, "", "", null, noGet);
     assert(r.source == "c8ctl profile 'local' (default)");
     assert(r.overrides["CAMUNDA_AUTH_STRATEGY"] == "BASIC");
+    {
+        // Fallback headers rank below CAMUNDA_DEFAULT_HEADERS env, above nothing.
+        auto hs = src;
+        hs.c8ctl = src.c8ctl.dup;
+        foreach (ref p; hs.c8ctl)
+            if (p.name == "local")
+            {
+                p.config = p.config.dup;
+                p.config[headersKey] = `{"X-Api-Key":"stale","X-Keep":"f"}`;
+            }
+        auto fr = resolveConnection(hs, "", "", null,
+            envOf([headersKey: `{"x-api-key":"fresh"}`]));
+        auto fh = headersFromJson(fr.overrides[headersKey]);
+        assert(fh.length == 2);
+        foreach (h; fh)
+            assert(h.name == "X-Keep" ? h.value == "f" : h.value == "fresh");
+        // Without env, the fallback's headers still apply.
+        fr = resolveConnection(hs, "", "", null, noGet);
+        assert(headersFromJson(fr.overrides[headersKey]).length == 2);
+    }
     // ...but not when CAMUNDA_REST_ADDRESS is set (SDK env wins).
     assert(resolveConnection(src, "", "", null,
         envOf(["CAMUNDA_REST_ADDRESS": "http://x"])).overrides.length == 0);
