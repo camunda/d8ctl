@@ -6,7 +6,7 @@
   "targetType": "executable",
   "targetName": "d8ctl",
   "dependencies": {
-    "camunda-orchestration-sdk:runtime": "~>11.0.0-alpha.2"
+    "camunda-orchestration-sdk:runtime": "~>11.0.0-alpha.3"
   },
   "toolchainRequirements": {
     "dmd": "no",

@@ -10,7 +10,7 @@ module d8ctl.parse;
 
 @safe:
 
-import d8ctl.profiles : switchToKey;
+import d8ctl.profiles : Header, parseHeaderSwitch, ProfileException, switchToKey;
 import d8ctl.catalog;
 import d8ctl.util : eqIgnoreCase;
 import std.algorithm : canFind, startsWith;
@@ -34,6 +34,8 @@ struct Flags
     string profile;
     /// `--camunda-<key>=<value>` switches, keyed by SDK config key.
     string[string] config;
+    /// `--header 'Name: value'` (repeatable), in argv order.
+    Header[] headers;
     /// Value-less `--flag`s. Only `profile` subcommands accept them.
     bool[string] bare;
 }
@@ -78,6 +80,11 @@ Result parse(string[] args)
             joined ~= "--profile=" ~ args[i + 1];
             i++;
         }
+        else if ((args[i] == "--header" || args[i] == "-H") && i + 1 < args.length)
+        {
+            joined ~= "--header=" ~ args[i + 1];
+            i++;
+        }
         else
             joined ~= args[i];
     }
@@ -118,6 +125,17 @@ Result parse(string[] args)
             flags.bodyJson = a[7 .. $];
             continue;
         }
+        if (a.startsWith("--header="))
+        {
+            try flags.headers ~= parseHeaderSwitch(a[9 .. $]);
+            catch (ProfileException e)
+            {
+                r.kind = Kind.error;
+                r.message = e.msg;
+                return r;
+            }
+            continue;
+        }
         if (a.startsWith("--profile="))
         {
             flags.profile = a[10 .. $];
@@ -135,7 +153,7 @@ Result parse(string[] args)
             auto eq = rest.indexOf('=');
             if (eq < 0)
             {
-                if (rest.startsWith("camunda-") || rest == "profile")
+                if (rest.startsWith("camunda-") || rest == "profile" || rest == "header")
                 {
                     r.kind = Kind.error;
                     r.message = "flag --" ~ rest ~ " needs a value (--" ~ rest ~ "=…)";
@@ -314,6 +332,20 @@ unittest
     assert(parse(["cluster", "topology", "get", "--profile"]).kind == Kind.error);
     assert(parse(["cluster", "topology", "get", "--from-env"]).kind == Kind.error);
     assert(parse(["--camunda-rest-address", "cluster"]).kind == Kind.error);
+
+    // --header: both spellings, repeatable, order kept; malformed is an error.
+    auto hd = parse(["--header", "X-Api-Key: abc", "--header=x-trace:  t1 ", "-H", "A:b:c",
+        "cluster", "topology", "get"]);
+    assert(hd.kind == Kind.invoke && hd.flags.headers.length == 3);
+    assert(hd.flags.headers[0] == Header("X-Api-Key", "abc"));
+    assert(hd.flags.headers[1] == Header("x-trace", "t1"));
+    assert(hd.flags.headers[2] == Header("A", "b:c"));
+    assert(parse(["--header=novalue", "cluster", "topology", "get"]).kind == Kind.error);
+    assert(parse(["--header=: v", "cluster", "topology", "get"]).kind == Kind.error);
+    assert(parse(["--header=Bad Name: v", "cluster", "topology", "get"]).kind == Kind.error);
+    assert(parse(["cluster", "topology", "get", "--header"]).kind == Kind.error);
+    auto ph = parse(["profile", "add", "x", "--header", "X-A: 1"]);
+    assert(ph.kind == Kind.profile && ph.flags.headers == [Header("X-A", "1")]);
 
     auto jobsVerb = parse(["cluster", "activate", "jobs"]);
     assert(jobsVerb.kind == Kind.invoke);

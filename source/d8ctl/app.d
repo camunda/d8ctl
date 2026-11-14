@@ -44,7 +44,7 @@ int run(string[] args)
         try
         {
             stdOut.write(profileCommand(defaultDirs(), r.positionals, r.flags.config,
-                r.flags.bare, configFromEnv()));
+                r.flags.bare, configFromEnv(), r.flags.headers));
             return 0;
         }
         catch (ProfileException e)
@@ -61,10 +61,10 @@ int run(string[] args)
             foreach (w; sources.warnings) stdErr.writeln("d8ctl: warning: ", w);
             auto conn = resolveConnection(sources, r.flags.profile,
                 environment.get("D8CTL_PROFILE"), r.flags.config,
-                (string k) => environment.get(k));
+                (string k) => environment.get(k), r.flags.headers);
             auto client = Transport.fromEnv(conn.overrides);
             client.userAgent = "d8ctl/" ~ cliVersion;
-            auto out_ = invoke(client, r);
+            auto out_ = invoke(client, r, conn.overrides.get(headersKey, null));
             if (out_.length) stdOut.write(out_);
             if (out_.length && out_[$ - 1] != '\n') stdOut.writeln();
             return 0;

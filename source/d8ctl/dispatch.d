@@ -29,7 +29,7 @@ string substitutePath(string path, const string[] names, const string[] values)
     return out_;
 }
 
-string invoke(Transport client, const ref Result r)
+string invoke(Transport client, const ref Result r, string headersJson = null)
 {
     auto c = r.command;
     if (c is null) throw new UsageException("no command");
@@ -74,7 +74,7 @@ string invoke(Transport client, const ref Result r)
     auto path = substitutePath(c.path, c.pathParams, r.positionals[0 .. c.pathParams.length]);
 
     if (r.flags.dryRun)
-        return formatDryRun(c, path, query, body_);
+        return formatDryRun(c, path, query, body_, headersJson);
 
     // Cluster-admin operations live at the bare root, not under /v2.
     const server = c.rootServer ? ServerBase.root : ServerBase.api;
@@ -202,8 +202,10 @@ string bodyKindHint(string kind)
     return "VALUE";
 }
 
-string formatDryRun(const Command* c, string path, string[string] query, JSONValue body_)
+string formatDryRun(const Command* c, string path, string[string] query, JSONValue body_,
+    string headersJson = null)
 {
+    import d8ctl.profiles : headersFromJson;
     import std.format : format;
     auto s = format("dry-run %s %s", c.method, path);
     if (c.rootServer) s ~= " (root server, not under /v2)";
@@ -218,6 +220,9 @@ string formatDryRun(const Command* c, string path, string[string] query, JSONVal
             s ~= k ~ "=" ~ v;
         }
     }
+    // Custom headers: names only, values are treated as secrets.
+    foreach (h; headersFromJson(headersJson))
+        s ~= "\n" ~ h.name ~ ": ********";
     if (body_.type != JSONType.null_)
         s ~= "\n" ~ body_.toPrettyString;
     else if (c.hasBody)
@@ -302,5 +307,8 @@ unittest
     auto status = findByOperationId("getClusterStatus");
     assert(status !is null && status.rootServer);
     auto topo = findByOperationId("getTopology");
+    auto dry = formatDryRun(topo, "/topology", null, JSONValue(null), `{"X-Api-Key":"s3cret"}`);
+    import std.string : indexOf;
+    assert(dry.indexOf("s3cret") < 0 && dry.indexOf("X-Api-Key: ********") >= 0);
     assert(topo !is null && !topo.rootServer);
 }

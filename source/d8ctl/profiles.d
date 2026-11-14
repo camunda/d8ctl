@@ -54,6 +54,7 @@ immutable string[] configKeys = [
     "CAMUNDA_BASIC_AUTH_USERNAME",
     "CAMUNDA_BASIC_AUTH_PASSWORD",
     "CAMUNDA_DEFAULT_TENANT_ID",
+    "CAMUNDA_DEFAULT_HEADERS",
     "CAMUNDA_TENANT_ID",
     "CAMUNDA_TENANT_IDS",
     "CAMUNDA_MTLS_CA",
@@ -96,6 +97,97 @@ bool isSecret(string key)
 {
     return key.indexOf("SECRET") >= 0 || key.indexOf("PASSWORD") >= 0
         || key.indexOf("PASSPHRASE") >= 0 || key == "CAMUNDA_MTLS_KEY";
+}
+
+/// The config key holding custom headers (a JSON object of name -> value).
+enum headersKey = "CAMUNDA_DEFAULT_HEADERS";
+
+/// One `--header 'Name: value'`.
+struct Header
+{
+    string name;
+    string value;
+}
+
+/// Parse `Name: value` (curl syntax). Throws on a missing colon or empty name.
+Header parseHeaderSwitch(string raw)
+{
+    import std.string : strip;
+
+    auto colon = raw.indexOf(':');
+    if (colon <= 0 || !raw[0 .. colon].strip.length)
+        throw new ProfileException("--header expects 'Name: value', got '" ~ raw ~ "'");
+    auto name = raw[0 .. colon].strip;
+    foreach (ch; name)
+        if (ch <= ' ' || ch >= 0x7f || "()<>@,;:\\\"/[]?={}".indexOf(ch) >= 0)
+            throw new ProfileException("--header: invalid header name '" ~ name ~ "'");
+    return Header(name, raw[colon + 1 .. $].strip);
+}
+
+/// Parse a `CAMUNDA_DEFAULT_HEADERS` value into ordered pairs. Empty → none.
+Header[] headersFromJson(string raw)
+{
+    Header[] r;
+    if (!raw.length) return r;
+    JSONValue j;
+    try j = parseJSON(raw);
+    catch (JSONException e)
+        throw new ProfileException(headersKey ~ " must be a JSON object of header name to value");
+    if (j.type != JSONType.object)
+        throw new ProfileException(headersKey ~ " must be a JSON object of header name to value");
+    foreach (k; j.objectNoRef.keys.sort.array)
+    {
+        auto v = j.objectNoRef[k];
+        if (v.type != JSONType.string)
+            throw new ProfileException(headersKey ~ " header '" ~ k ~ "' must have a string value");
+        r ~= Header(k, v.str);
+    }
+    return r;
+}
+
+/// Serialize headers as a `CAMUNDA_DEFAULT_HEADERS` JSON object.
+string headersToJson(const Header[] hs)
+{
+    JSONValue o = JSONValue(string[string].init);
+    foreach (h; hs) o[h.name] = h.value;
+    return o.toString;
+}
+
+/// Merge `top` over `base`; names compare case-insensitively and the later
+/// spelling wins (no duplicate header lines).
+Header[] mergeHeaders(const Header[] base, const Header[] top)
+{
+    Header[] r;
+    foreach (h; base) r ~= Header(h.name, h.value);
+    foreach (h; top)
+    {
+        bool replaced;
+        foreach (ref x; r)
+            if (x.name.toLower == h.name.toLower)
+            {
+                x = Header(h.name, h.value);
+                replaced = true;
+            }
+        if (!replaced) r ~= Header(h.name, h.value);
+    }
+    return r;
+}
+
+/// `CAMUNDA_DEFAULT_HEADERS` with every value masked (names stay visible).
+string maskHeadersJson(string raw)
+{
+    Header[] hs;
+    try hs = headersFromJson(raw);
+    catch (ProfileException) return "********";
+    foreach (ref h; hs) h.value = "********";
+    return headersToJson(hs);
+}
+
+/// A config value as `profile show` prints it.
+string displayValue(string key, string value)
+{
+    if (key == headersKey) return maskHeadersJson(value);
+    return isSecret(key) ? "********" : value;
 }
 
 /// d8ctl's own `profiles.json`.
@@ -306,7 +398,8 @@ struct Resolved
 /// Apply the precedence in the module comment. `getenv` reads the process
 /// environment (injected for tests).
 Resolved resolveConnection(const ref Sources s, string flagName, string envName,
-    const string[string] switches, string delegate(string) @safe getenv)
+    const string[string] switches, string delegate(string) @safe getenv,
+    const Header[] headers = null)
 {
     Resolved r;
     string name = flagName.length ? flagName : envName.length ? envName : activeName(s);
@@ -344,6 +437,16 @@ Resolved resolveConnection(const ref Sources s, string flagName, string envName,
         r.overrides[k] = v;
     }
     if (switches.length) r.source ~= " + --camunda-* switches";
+    // Headers merge per name (case-insensitively): --header > switch/profile
+    // > CAMUNDA_DEFAULT_HEADERS env, instead of one layer replacing the other.
+    auto envHeaders = getenv(headersKey);
+    if ((envHeaders.length && (headersKey in r.overrides) !is null) || headers.length)
+    {
+        auto layered = mergeHeaders(headersFromJson(envHeaders),
+            headersFromJson(r.overrides.get(headersKey, null)));
+        r.overrides[headersKey] = headersToJson(mergeHeaders(layered, headers));
+    }
+    if (headers.length) r.source ~= " + --header";
     return r;
 }
 
@@ -363,7 +466,7 @@ string[string] configFromEnv()
 
 /// `d8ctl profile <sub> …`. Returns text for stdout.
 string profileCommand(Dirs dirs, string[] args, const string[string] switches,
-    const bool[string] bare, string[string] envConfig)
+    const bool[string] bare, string[string] envConfig, const Header[] headers = null)
 {
     auto sub = args.length ? args[0] : "list";
     auto rest = args.length ? args[1 .. $] : (string[]).init;
@@ -422,7 +525,7 @@ string profileCommand(Dirs dirs, string[] args, const string[string] switches,
         buf.put(warn(s));
         buf.put(format("%s (%s%s)\n", p.name, originLabel(p.origin), isActive ? ", active" : ""));
         foreach (k; p.config.keys.sort.array)
-            buf.put(format("  %-36s %s\n", k, isSecret(k) ? "********" : p.config[k]));
+            buf.put(format("  %-36s %s\n", k, displayValue(k, p.config[k])));
         foreach (n; p.notes) buf.put("  note: " ~ n ~ "\n");
         return buf.data;
 
@@ -439,6 +542,11 @@ string profileCommand(Dirs dirs, string[] args, const string[string] switches,
             requireKnownKey(k);
             m[k] = v;
         }
+        if (headers.length)
+            m[headersKey] = headersToJson(mergeHeaders(
+                headersFromJson(m.get(headersKey, null)), headers));
+        else if (auto hv = headersKey in m)
+            cast(void) headersFromJson(*hv); // validate before storing
         if (m.length == 0)
             throw new ProfileException("nothing to store. Pass --camunda-* switches "
                 ~ "(e.g. --camunda-rest-address=https://…) or --from-env.");
@@ -513,7 +621,8 @@ string profileHelp()
     buf.put("Usage:\n");
     buf.put("  d8ctl profile list                          All profiles (* = active)\n");
     buf.put("  d8ctl profile show [<name>]                 Keys of a profile (secrets masked)\n");
-    buf.put("  d8ctl profile add <name> [--camunda-*=…] [--from-env] [--use] [--force]\n");
+    buf.put("  d8ctl profile add <name> [--camunda-*=…] [--header 'Name: value']…\n");
+    buf.put("                            [--from-env] [--use] [--force]\n");
     buf.put("  d8ctl profile use <name> | --none           Set or clear the active profile\n");
     buf.put("  d8ctl profile remove <name>\n");
     buf.put("c8ctl forms work too: d8ctl list profiles, d8ctl use profile <name>, …\n\n");
@@ -526,6 +635,13 @@ string profileHelp()
     buf.put("Config switches (any command; also what `profile add` stores):\n");
     foreach (k; configKeys)
         buf.put(format("  %-40s %s\n", keyToSwitch(k) ~ "=…", k));
+    buf.put("\nCustom HTTP headers (any command; `profile add` stores them):\n");
+    buf.put("  --header 'Name: value'   repeatable; sent on every API request (not to\n");
+    buf.put("                           the OAuth token endpoint); may replace Authorization\n");
+    buf.put("  Stored as " ~ headersKey ~ ", a JSON object, e.g.\n");
+    buf.put("  --camunda-default-headers='{\"X-Api-Key\":\"…\"}'. Header names merge\n");
+    buf.put("  case-insensitively: --header > profile / switch > env. Values are masked\n");
+    buf.put("  in `profile show` and --dry-run.\n");
     buf.put("\nPrecedence: --camunda-* switches > selected profile > CAMUNDA_* env\n");
     buf.put("> c8ctl CAMUNDA_BASE_URL env / c8ctl 'local' profile > SDK defaults.\n");
     return buf.data;
@@ -709,4 +825,64 @@ unittest
     write(buildPath(dirs.c8ctl, "profiles.json"), "{nope");
     src = loadSources(dirs);
     assert(src.c8ctl.length == 0 && src.warnings.length == 1);
+}
+
+unittest
+{
+    // Custom headers: parsing, merge, precedence, masking.
+    import std.exception : assertThrown;
+
+    assert(parseHeaderSwitch("X-Api-Key:  abc ") == Header("X-Api-Key", "abc"));
+    assert(parseHeaderSwitch("Authorization: Bearer a:b") == Header("Authorization", "Bearer a:b"));
+    assertThrown!ProfileException(parseHeaderSwitch("nocolon"));
+    assertThrown!ProfileException(parseHeaderSwitch(" : v"));
+    assertThrown!ProfileException(headersFromJson("[1]"));
+    assertThrown!ProfileException(headersFromJson(`{"A":1}`));
+    assert(headersFromJson("").length == 0);
+
+    auto m = mergeHeaders([Header("X-Api-Key", "old"), Header("X-Keep", "k")],
+        [Header("x-api-key", "new")]);
+    assert(m == [Header("x-api-key", "new"), Header("X-Keep", "k")]);
+
+    auto masked = maskHeadersJson(`{"X-Api-Key":"s3cret"}`);
+    assert(masked.indexOf("s3cret") < 0 && masked.indexOf("X-Api-Key") >= 0);
+    assert(displayValue(headersKey, "not json") == "********");
+    assert(displayValue("CAMUNDA_CLIENT_ID", "id") == "id");
+
+    auto dirs = testDirs("hdr");
+    scope (exit) cleanup(dirs);
+    bool[string] none;
+    string[string] noEnv;
+    profileCommand(dirs, ["add", "h"], ["CAMUNDA_REST_ADDRESS": "http://h",
+        headersKey: `{"X-Api-Key":"pv1","X-Profile":"p"}`], none, noEnv,
+        [Header("x-profile", "fromswitch")]);
+    auto stored = headersFromJson(loadStore(dirs.d8ctl).profiles["h"][headersKey]);
+    assert(stored == [Header("X-Api-Key", "pv1"), Header("x-profile", "fromswitch")]);
+    auto shown = profileCommand(dirs, ["show", "h"], null, none, noEnv);
+    assert(shown.indexOf("pv1") < 0 && shown.indexOf("fromswitch") < 0);
+    assert(shown.indexOf("X-Api-Key") >= 0);
+    assertThrown!ProfileException(profileCommand(dirs, ["add", "bad"],
+        [headersKey: "nope"], none, noEnv));
+
+    // switch > profile > env, per header name, case-insensitively.
+    auto src = loadSources(dirs);
+    auto env = envOf([headersKey: `{"X-Env":"e","X-API-KEY":"env"}`]);
+    auto r = resolveConnection(src, "h", "", null, env, [Header("X-Profile", "cli")]);
+    auto got = headersFromJson(r.overrides[headersKey]);
+    assert(got.length == 3);
+    foreach (h; got)
+    {
+        if (h.name.toLower == "x-api-key") assert(h.value == "pv1");
+        else if (h.name.toLower == "x-profile") assert(h.value == "cli" && h.name == "X-Profile");
+        else assert(h == Header("X-Env", "e"));
+    }
+    // No profile headers, no --header: the env value is left to the SDK.
+    profileCommand(dirs, ["use"], null, ["none": true], noEnv);
+    src = loadSources(dirs);
+    r = resolveConnection(src, "", "", null, env);
+    assert(headersKey !in r.overrides);
+    // Only --header: env headers still apply underneath.
+    r = resolveConnection(src, "", "", null, env, [Header("x-env", "cli")]);
+    assert(headersFromJson(r.overrides[headersKey]).length == 2);
+    assert(r.overrides[headersKey].indexOf(`"x-env":"cli"`) >= 0);
 }
