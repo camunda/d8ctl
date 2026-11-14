@@ -87,14 +87,40 @@ The first profile you add becomes active. Profiles live in
 `~/.config/d8ctl/profiles.json` (`$XDG_CONFIG_HOME/d8ctl`, or `$D8CTL_CONFIG_DIR`),
 written with mode 0600 because they can hold secrets.
 
+**Existing c8ctl profiles and Camunda Modeler connections** work as they are.
+d8ctl reads them (never writes them) from the same places c8ctl does
+(`C8CTL_DATA_DIR`, `C8CTL_MODELER_DIR`, or the platform default), so d8ctl can
+replace c8ctl without reconfiguring:
+
+```sh
+d8ctl list profiles                          # c8ctl spelling works too
+  local                    c8ctl    http://localhost:8080/v2
+* modeler:c8run (local)    modeler  http://localhost:8080/v2
+d8ctl --profile prod cluster topology get    # a c8ctl profile
+d8ctl --profile "modeler:c8run (local)" …    # a Modeler connection (name, or its id)
+d8ctl use profile prod                       # d8ctl's own active profile
+```
+
+- c8ctl's active profile and tenant (`c8 use profile`, `c8 use tenant`) apply
+  until you pick one in d8ctl; `d8ctl profile use --none` ignores them.
+- With no profile and no `CAMUNDA_REST_ADDRESS`, d8ctl falls back like c8ctl:
+  c8ctl's `CAMUNDA_BASE_URL` / `CAMUNDA_USERNAME` / `CAMUNDA_PASSWORD` variables,
+  then c8ctl's `local` profile.
+- Auth is chosen as c8ctl chooses it: OAuth if a client id and secret are set,
+  else Basic, else none. c8ctl's custom `headers` are not supported (`profile
+  show` says so).
+- A name resolves d8ctl first, then c8ctl, then Modeler.
+
 **Environment variables.** As for every Camunda SDK.
 
 When the same key comes from more than one place, the highest wins:
 
 1. `--camunda-*` switches
-2. the selected profile: `--profile`, else `D8CTL_PROFILE`, else the active profile
+2. the selected profile: `--profile`, else `D8CTL_PROFILE`, else d8ctl's active
+   profile, else c8ctl's
 3. `CAMUNDA_*` environment variables
-4. SDK defaults
+4. c8ctl's `CAMUNDA_BASE_URL` variables, else c8ctl's `local` profile
+5. SDK defaults
 
 `d8ctl profile --help` lists every switch.
 

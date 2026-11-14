@@ -43,7 +43,7 @@ int run(string[] args)
     case Kind.profile:
         try
         {
-            stdOut.write(profileCommand(configDir(), r.positionals, r.flags.config,
+            stdOut.write(profileCommand(defaultDirs(), r.positionals, r.flags.config,
                 r.flags.bare, configFromEnv()));
             return 0;
         }
@@ -57,9 +57,12 @@ int run(string[] args)
         {
             import std.process : environment;
 
-            auto store = loadStore(configDir());
-            auto name = selectedProfile(r.flags.profile, environment.get("D8CTL_PROFILE"), store);
-            auto client = Transport.fromEnv(resolveOverrides(name, store, r.flags.config));
+            auto sources = loadSources(defaultDirs());
+            foreach (w; sources.warnings) stdErr.writeln("d8ctl: warning: ", w);
+            auto conn = resolveConnection(sources, r.flags.profile,
+                environment.get("D8CTL_PROFILE"), r.flags.config,
+                (string k) => environment.get(k));
+            auto client = Transport.fromEnv(conn.overrides);
             client.userAgent = "d8ctl/" ~ cliVersion;
             auto out_ = invoke(client, r);
             if (out_.length) stdOut.write(out_);

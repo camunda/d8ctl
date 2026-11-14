@@ -13,7 +13,7 @@ module d8ctl.parse;
 import d8ctl.profiles : switchToKey;
 import d8ctl.catalog;
 import d8ctl.util : eqIgnoreCase;
-import std.algorithm : startsWith;
+import std.algorithm : canFind, startsWith;
 import std.string : indexOf;
 
 enum Order
@@ -68,6 +68,21 @@ Result parse(string[] args)
     Result r;
     Flags flags;
     string[] pos;
+
+    // c8ctl spelling: `--profile <name>` (space-separated).
+    string[] joined;
+    for (size_t i = 0; i < args.length; i++)
+    {
+        if (args[i] == "--profile" && i + 1 < args.length && !args[i + 1].startsWith("-"))
+        {
+            joined ~= "--profile=" ~ args[i + 1];
+            i++;
+        }
+        else
+            joined ~= args[i];
+    }
+    args = joined;
+
     foreach (a; args)
     {
         if (a == "--help" || a == "-h")
@@ -158,6 +173,11 @@ Result parse(string[] args)
         r.kind = Kind.helpRoot;
         return r;
     }
+
+    // c8ctl spelling: `list profiles`, `use profile <name>`, `add profile …`.
+    if (pos.length >= 2 && (pos[1] == "profile" || pos[1] == "profiles")
+        && ["list", "show", "add", "use", "remove", "rm", "delete"].canFind(pos[0]))
+        pos = ["profile", pos[0]] ~ pos[2 .. $];
 
     if (pos[0] == "profile")
     {
@@ -286,6 +306,12 @@ unittest
     assert(pr.kind == Kind.profile && pr.positionals == ["add", "x"]);
     assert("from-env" in pr.flags.bare && pr.flags.config["CAMUNDA_AUTH_STRATEGY"] == "NONE");
     assert(parse(["profile", "--help"]).kind == Kind.helpProfile);
+    auto c8 = parse(["use", "profile", "prod"]);
+    assert(c8.kind == Kind.profile && c8.positionals == ["use", "prod"]);
+    assert(parse(["list", "profiles"]).positionals == ["list"]);
+    auto sp = parse(["--profile", "prod", "cluster", "topology", "get"]);
+    assert(sp.kind == Kind.invoke && sp.flags.profile == "prod");
+    assert(parse(["cluster", "topology", "get", "--profile"]).kind == Kind.error);
     assert(parse(["cluster", "topology", "get", "--from-env"]).kind == Kind.error);
     assert(parse(["--camunda-rest-address", "cluster"]).kind == Kind.error);
 
