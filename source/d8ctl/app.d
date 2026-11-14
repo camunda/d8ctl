@@ -64,7 +64,12 @@ int run(string[] args)
                 (string k) => environment.get(k), r.flags.headers);
             auto client = Transport.fromEnv(conn.overrides);
             client.userAgent = "d8ctl/" ~ cliVersion;
-            auto out_ = invoke(client, r, conn.overrides.get(headersKey, null));
+            // Dry-run preview: env-only CAMUNDA_DEFAULT_HEADERS never enter
+            // conn.overrides (resolveConnection leaves them to the SDK), but
+            // Transport.fromEnv still sends them — show them either way.
+            auto previewHeaders = conn.overrides.get(headersKey,
+                environment.get(headersKey, null));
+            auto out_ = invoke(client, r, previewHeaders);
             if (out_.length) stdOut.write(out_);
             if (out_.length && out_[$ - 1] != '\n') stdOut.writeln();
             return 0;

@@ -115,8 +115,10 @@ Header parseHeaderSwitch(string raw)
     import std.string : strip;
 
     auto colon = raw.indexOf(':');
+    // Do not echo `raw`: a mistyped `--header 'X-Api-Key=secret'` would leak
+    // the credential into stderr / CI logs.
     if (colon <= 0 || !raw[0 .. colon].strip.length)
-        throw new ProfileException("--header expects 'Name: value', got '" ~ raw ~ "'");
+        throw new ProfileException("--header expects 'Name: value' (a colon after the header name)");
     auto name = raw[0 .. colon].strip;
     foreach (ch; name)
         if (ch <= ' ' || ch >= 0x7f || "()<>@,;:\\\"/[]?={}".indexOf(ch) >= 0)
@@ -431,9 +433,19 @@ Resolved resolveConnection(const ref Sources s, string flagName, string envName,
         }
     }
     if (!r.source.length) r.source = "environment";
+    // --camunda-default-headers replaces the profile's whole value below, so
+    // merge the switch's headers over the profile's per name first — a switch
+    // that adds X-Trace must not drop the profile's X-Api-Key.
+    if (auto sw = headersKey in switches)
+    {
+        requireKnownKey(headersKey);
+        r.overrides[headersKey] = headersToJson(mergeHeaders(
+            headersFromJson(r.overrides.get(headersKey, null)), headersFromJson(*sw)));
+    }
     foreach (k, v; switches)
     {
         requireKnownKey(k);
+        if (k == headersKey) continue; // already merged per name above
         r.overrides[k] = v;
     }
     if (switches.length) r.source ~= " + --camunda-* switches";
@@ -537,9 +549,19 @@ string profileCommand(Dirs dirs, string[] args, const string[string] switches,
         string[string] m;
         if ("from-env" in bare)
             foreach (k, v; envConfig) m[k] = v;
+        // --camunda-default-headers replaces the copied env value below, so
+        // merge the switch's headers over the env's per name first — a switch
+        // that adds X-Trace must not drop an env-only X-Api-Key.
+        if (auto sw = headersKey in switches)
+        {
+            requireKnownKey(headersKey);
+            m[headersKey] = headersToJson(mergeHeaders(
+                headersFromJson(m.get(headersKey, null)), headersFromJson(*sw)));
+        }
         foreach (k, v; switches)
         {
             requireKnownKey(k);
+            if (k == headersKey) continue; // already merged per name above
             m[k] = v;
         }
         if (headers.length)
@@ -840,6 +862,16 @@ unittest
     assertThrown!ProfileException(headersFromJson(`{"A":1}`));
     assert(headersFromJson("").length == 0);
 
+    // Malformed --header must not echo the raw argument (it can hold a
+    // credential the user pasted with `=` instead of `:`).
+    try
+    {
+        cast(void) parseHeaderSwitch("X-Api-Key=s3cret");
+        assert(false);
+    }
+    catch (ProfileException e)
+        assert(e.msg.indexOf("s3cret") < 0 && e.msg.indexOf("X-Api-Key=") < 0);
+
     auto m = mergeHeaders([Header("X-Api-Key", "old"), Header("X-Keep", "k")],
         [Header("x-api-key", "new")]);
     assert(m == [Header("x-api-key", "new"), Header("X-Keep", "k")]);
@@ -885,4 +917,41 @@ unittest
     r = resolveConnection(src, "", "", null, env, [Header("x-env", "cli")]);
     assert(headersFromJson(r.overrides[headersKey]).length == 2);
     assert(r.overrides[headersKey].indexOf(`"x-env":"cli"`) >= 0);
+
+    // --camunda-default-headers merges over the profile's headers per name
+    // instead of replacing the whole value (profile X-Api-Key survives).
+    // (`use --none` above cleared the active profile; select h explicitly.)
+    r = resolveConnection(src, "h", "", [headersKey: `{"X-Trace":"t"}`], env);
+    auto sw = headersFromJson(r.overrides[headersKey]);
+    assert(sw.length == 4); // X-Api-Key (profile), X-Profile, X-Trace (switch), X-Env (env)
+    foreach (h; sw)
+    {
+        if (h.name.toLower == "x-api-key") assert(h.value == "pv1");
+        else if (h.name.toLower == "x-trace") assert(h.value == "t");
+    }
+    // ...and a same-named switch header still wins over the profile's.
+    // (h stores x-profile=fromswitch: the --header won at add time.)
+    r = resolveConnection(src, "h", "", [headersKey: `{"x-api-key":"sw"}`], envOf(null));
+    assert(headersFromJson(r.overrides[headersKey]) == [
+        Header("x-api-key", "sw"), Header("x-profile", "fromswitch")],
+        r.overrides[headersKey]);
+
+    // profile add --from-env + --camunda-default-headers: the switch merges
+    // over the copied env headers per name instead of dropping them.
+    profileCommand(dirs, ["add", "envhdr"], [headersKey: `{"X-Trace":"t"}`],
+        ["from-env": true], ["CAMUNDA_REST_ADDRESS": "http://e",
+        headersKey: `{"X-Api-Key":"envsecret"}`]);
+    auto added = headersFromJson(loadStore(dirs.d8ctl).profiles["envhdr"][headersKey]);
+    assert(added == [Header("X-Api-Key", "envsecret"), Header("X-Trace", "t")]);
+    // A same-named switch header wins over the env one; --header wins over both.
+    profileCommand(dirs, ["add", "envhdr2"], [headersKey: `{"x-api-key":"sw"}`],
+        ["from-env": true], ["CAMUNDA_REST_ADDRESS": "http://e",
+        headersKey: `{"X-Api-Key":"envsecret"}`], [Header("X-New", "cli")]);
+    added = headersFromJson(loadStore(dirs.d8ctl).profiles["envhdr2"][headersKey]);
+    assert(added.length == 2, loadStore(dirs.d8ctl).profiles["envhdr2"][headersKey]);
+    foreach (h; added)
+    {
+        if (h.name.toLower == "x-api-key") assert(h.value == "sw");
+        else assert(h == Header("X-New", "cli"));
+    }
 }
