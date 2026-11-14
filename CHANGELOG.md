@@ -1,3 +1,10 @@
+# [0.3.0](https://github.com/camunda/d8ctl/compare/v0.2.0...v0.3.0) (2026-11-14)
+
+
+### Features
+
+* read c8ctl profiles and Camunda Modeler connections ([7ddfba2](https://github.com/camunda/d8ctl/commit/7ddfba26f29e9346fb842ee6b00cd3ef8c8d95b3))
+
 # [0.2.0](https://github.com/camunda/d8ctl/compare/v0.1.1...v0.2.0) (2026-11-14)
 
 
