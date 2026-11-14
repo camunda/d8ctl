@@ -1,3 +1,10 @@
+# [0.2.0](https://github.com/camunda/d8ctl/compare/v0.1.1...v0.2.0) (2026-11-14)
+
+
+### Features
+
+* connection profiles and --camunda-* config switches ([012c7f8](https://github.com/camunda/d8ctl/commit/012c7f8b36ee2e84d51e5214754291b66ec5798d))
+
 ## [0.1.1](https://github.com/camunda/d8ctl/compare/v0.1.0...v0.1.1) (2026-11-13)
 
 
