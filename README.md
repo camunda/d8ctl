@@ -15,8 +15,10 @@ verb-then-resource both parse.
 
 ## Build
 
-LDC ≥ 1.43, dub, libcurl. The SDK is a path dependency
-(`../orchestration-cluster-api-dlang`).
+LDC ≥ 1.43, dub, libcurl. The SDK comes from
+code.dlang.org (`camunda-orchestration-sdk:runtime`, pinned in `dub.json` and
+locked in `dub.selections.json`). To build against a local SDK checkout:
+`dub add-local ../orchestration-cluster-api-dlang` (undo with `dub remove-local`).
 
 ```sh
 make generate   # rebuild the catalog from the SDK's spec-metadata.json

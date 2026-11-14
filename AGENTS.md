@@ -17,7 +17,7 @@ There is no hand-written per-operation handler.
 
 Transport: `camunda-orchestration-sdk:runtime` from
 [orchestration-cluster-api-dlang](https://github.com/camunda/orchestration-cluster-api-dlang)
-(path dependency `../orchestration-cluster-api-dlang`). The SDK is not a spec source.
+(code.dlang.org `camunda-orchestration-sdk:runtime` `~>11.0.0-alpha.2`, the `main`/11.x alpha line; bump it in `dub.json` and refresh `dub.selections.json` with `dub upgrade`). The SDK is not a spec source.
 
 ## Path map
 

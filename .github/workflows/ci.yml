@@ -19,13 +19,6 @@ jobs:
         os: [ubuntu-24.04, macos-15]
     steps:
       - uses: actions/checkout@v5
-      - name: Check out the D SDK (path dependency)
-        uses: actions/checkout@v5
-        with:
-          repository: camunda/orchestration-cluster-api-dlang
-          path: orchestration-cluster-api-dlang
-      - name: Point dub.json at the in-workspace SDK
-        run: python3 scripts/ci-use-workspace-sdk.py
       - uses: dlang-community/setup-dlang@v2
         with:
           compiler: ldc-1.43.0
@@ -45,13 +38,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - name: Check out the D SDK (path dependency)
-        uses: actions/checkout@v5
-        with:
-          repository: camunda/orchestration-cluster-api-dlang
-          path: orchestration-cluster-api-dlang
-      - name: Point dub.json at the in-workspace SDK
-        run: python3 scripts/ci-use-workspace-sdk.py
       - uses: dlang-community/setup-dlang@v2
         with:
           compiler: ldc-1.43.0
