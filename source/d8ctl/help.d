@@ -139,7 +139,8 @@ string commandHelp(const Command* c)
     }
     else if (c.hasBody)
         buf.put("\nThis body has no documented top-level fields; use --body='{…}'.\n");
-    buf.put("\nGlobal flags: --dry-run  --help  --order=resource|verb\n");
+    buf.put("\nGlobal flags: --dry-run  --header='Name: value'  --help  "
+        ~ "--order=resource|verb  --profile=NAME\n");
     return buf.data;
 }
 

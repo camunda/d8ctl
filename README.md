@@ -107,8 +107,8 @@ d8ctl use profile prod                       # d8ctl's own active profile
   c8ctl's `CAMUNDA_BASE_URL` / `CAMUNDA_USERNAME` / `CAMUNDA_PASSWORD` variables,
   then c8ctl's `local` profile.
 - Auth is chosen as c8ctl chooses it: OAuth if a client id and secret are set,
-  else Basic, else none. c8ctl's custom `headers` are not supported (`profile
-  show` says so).
+  else Basic, else none. c8ctl's custom `headers` map to
+  `CAMUNDA_DEFAULT_HEADERS`.
 - A name resolves d8ctl first, then c8ctl, then Modeler.
 
 **Environment variables.** As for every Camunda SDK.
@@ -121,6 +121,20 @@ When the same key comes from more than one place, the highest wins:
 3. `CAMUNDA_*` environment variables
 4. c8ctl's `CAMUNDA_BASE_URL` variables, else c8ctl's `local` profile
 5. SDK defaults
+
+**Custom HTTP headers.** `--header 'Name: value'` (repeatable, curl syntax)
+adds a header to every API request of one command, or stores it with
+`profile add`. The SDK key is `CAMUNDA_DEFAULT_HEADERS`, a JSON object
+(`--camunda-default-headers='{"X-Api-Key":"…"}'`, the env var, or
+`--from-env`). Headers merge per name, case-insensitively: `--header` >
+profile / `--camunda-default-headers` > env. They are applied last, so they
+may replace `Authorization` (as in c8ctl), and are never sent to the OAuth
+token endpoint. Values are masked in `profile show` and `--dry-run`.
+
+```sh
+d8ctl --header 'X-Api-Key: …' cluster topology get
+d8ctl profile add gw --camunda-rest-address=https://gw/v2 --header 'X-Api-Key: …'
+```
 
 `d8ctl profile --help` lists every switch.
 

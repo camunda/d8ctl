@@ -1,6 +1,6 @@
 {
 	"fileVersion": 1,
 	"versions": {
-		"camunda-orchestration-sdk": "11.0.0-alpha.2"
+		"camunda-orchestration-sdk": "11.0.0-alpha.3"
 	}
 }

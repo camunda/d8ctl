@@ -123,9 +123,18 @@ Profile fromC8ctlProfile(const JSONValue p)
     c.tenantId = str(p, "defaultTenantId");
     c.exactBaseUrl = flag(p, "exactBaseUrl");
     Profile r = Profile(str(p, "name"), Origin.c8ctl, toSdkConfig(c));
+    // c8ctl Profile.headers → CAMUNDA_DEFAULT_HEADERS (string values only).
     if (auto h = "headers" in p.objectNoRef)
         if (h.type == JSONType.object && h.objectNoRef.length)
-            r.notes ~= "custom headers are not supported by d8ctl and are ignored";
+        {
+            JSONValue o = JSONValue(string[string].init);
+            foreach (k, v; h.objectNoRef)
+            {
+                if (v.type == JSONType.string) o[k] = v.str;
+                else r.notes ~= "header '" ~ k ~ "' has a non-string value and is ignored";
+            }
+            if (o.objectNoRef.length) r.config["CAMUNDA_DEFAULT_HEADERS"] = o.toString;
+        }
     return r;
 }
 
@@ -311,7 +320,12 @@ unittest
     assert(both.config["CAMUNDA_TOKEN_AUDIENCE"] == "a");
     assert(both.config["CAMUNDA_DEFAULT_TENANT_ID"] == "t1");
     assert(both.config["CAMUNDA_REST_ADDRESS_EXACT"] == "true");
-    assert(both.notes.length == 1);
+    assert(both.notes.length == 0);
+    assert(parseJSON(both.config["CAMUNDA_DEFAULT_HEADERS"]) == parseJSON(`{"X-Api-Key":"k"}`));
+    auto odd = fromC8ctlProfile(parseJSON(`{"name":"o","headers":{"A":"1","B":2}}`));
+    assert(parseJSON(odd.config["CAMUNDA_DEFAULT_HEADERS"]) == parseJSON(`{"A":"1"}`));
+    assert(odd.notes.length == 1);
+    assert("CAMUNDA_DEFAULT_HEADERS" !in local.config);
 
     // Modeler: SaaS gets the default OAuth URL; self-hosted with no auth.
     auto saas = fromModelerConnection(parseJSON(`{"id":"u1","name":"prod","targetType":"camundaCloud",
