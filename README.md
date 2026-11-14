@@ -54,8 +54,49 @@ evaluate decision, …) stay `--body` only.
 `--order=resource|verb` only changes how help lists commands. Both orders
 always parse.
 
-Auth and address are the SDK's `CAMUNDA_*` environment variables
-(`CAMUNDA_REST_ADDRESS`, `CAMUNDA_AUTH_STRATEGY`, …).
+## Connecting to clusters
+
+d8ctl uses the SDK's `CAMUNDA_*` settings (`CAMUNDA_REST_ADDRESS`,
+`CAMUNDA_AUTH_STRATEGY`, `CAMUNDA_CLIENT_ID`, …). There are three ways to supply them.
+
+**Explicit switches.** Every `CAMUNDA_*` key has a `--camunda-*` switch, so a
+command can carry its own address and credentials, with no environment set up:
+
+```sh
+d8ctl --camunda-rest-address=https://bru-2.zeebe.camunda.io/<cluster-id> \
+      --camunda-client-id=… --camunda-client-secret=… \
+      --camunda-oauth-url=https://login.cloud.camunda.io/oauth/token \
+      --camunda-token-audience=zeebe.camunda.io \
+      cluster topology get
+```
+
+**Profiles.** Named sets of the same keys, for working with several clusters:
+
+```sh
+d8ctl profile add local --camunda-rest-address=http://localhost:8080 --camunda-auth-strategy=NONE
+d8ctl profile add prod  --camunda-rest-address=https://… --camunda-client-id=… --camunda-client-secret=…
+d8ctl profile add ci --from-env          # snapshot the current CAMUNDA_* variables
+d8ctl profile list                       # * marks the active profile
+d8ctl profile use prod                   # the default from now on
+d8ctl --profile=local cluster topology get   # or D8CTL_PROFILE=local, for one command
+d8ctl profile show prod                  # secrets are masked
+d8ctl profile use --none                 # back to environment variables only
+```
+
+The first profile you add becomes active. Profiles live in
+`~/.config/d8ctl/profiles.json` (`$XDG_CONFIG_HOME/d8ctl`, or `$D8CTL_CONFIG_DIR`),
+written with mode 0600 because they can hold secrets.
+
+**Environment variables.** As for every Camunda SDK.
+
+When the same key comes from more than one place, the highest wins:
+
+1. `--camunda-*` switches
+2. the selected profile: `--profile`, else `D8CTL_PROFILE`, else the active profile
+3. `CAMUNDA_*` environment variables
+4. SDK defaults
+
+`d8ctl profile --help` lists every switch.
 
 ## Releases
 

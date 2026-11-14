@@ -26,6 +26,7 @@ Transport: `camunda-orchestration-sdk:runtime` from
 | `source/d8ctl/app.d` | Entry + `run`. |
 | `source/d8ctl/parse.d` | Argv. Accepts both resource-verb and verb-resource. |
 | `source/d8ctl/help.d` | Progressive help. |
+| `source/d8ctl/profiles.d` | Profiles (`profiles.json`) and `--camunda-*` switches → SDK config overrides. Precedence: switches > profile > env. |
 | `source/d8ctl/dispatch.d` | Generic live HTTP via `Transport.request*` (`camunda-orchestration-sdk:runtime`). |
 | `source/d8ctl/catalog.d` | Lookups over the generated table. |
 | `source/d8ctl/generated/catalog.d` | **Generated.** `make generate`. Never hand-edit. |

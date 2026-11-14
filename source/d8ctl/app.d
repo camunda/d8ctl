@@ -9,6 +9,7 @@ import d8ctl.version_ : cliVersion;
 import d8ctl.dispatch;
 import d8ctl.help;
 import d8ctl.parse;
+import d8ctl.profiles;
 import d8ctl.safeio : stdErr, stdOut;
 
 int run(string[] args)
@@ -33,18 +34,42 @@ int run(string[] args)
     case Kind.version_:
         stdOut.writeln(versionString);
         return 0;
+    case Kind.helpProfile:
+        stdOut.writeln(profileHelp());
+        return 0;
     case Kind.error:
         stdErr.writeln("d8ctl: ", r.message);
         return 2;
+    case Kind.profile:
+        try
+        {
+            stdOut.write(profileCommand(configDir(), r.positionals, r.flags.config,
+                r.flags.bare, configFromEnv()));
+            return 0;
+        }
+        catch (ProfileException e)
+        {
+            stdErr.writeln("d8ctl: ", e.msg);
+            return 2;
+        }
     case Kind.invoke:
         try
         {
-            auto client = Transport.fromEnv();
+            import std.process : environment;
+
+            auto store = loadStore(configDir());
+            auto name = selectedProfile(r.flags.profile, environment.get("D8CTL_PROFILE"), store);
+            auto client = Transport.fromEnv(resolveOverrides(name, store, r.flags.config));
             client.userAgent = "d8ctl/" ~ cliVersion;
             auto out_ = invoke(client, r);
             if (out_.length) stdOut.write(out_);
             if (out_.length && out_[$ - 1] != '\n') stdOut.writeln();
             return 0;
+        }
+        catch (ProfileException e)
+        {
+            stdErr.writeln("d8ctl: ", e.msg);
+            return 2;
         }
         catch (UsageException e)
         {

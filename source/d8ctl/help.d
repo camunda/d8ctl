@@ -3,6 +3,7 @@ module d8ctl.help;
 
 @safe:
 
+import d8ctl.profiles : profileHelp;
 import d8ctl.catalog;
 import d8ctl.parse : Kind, Order, Result;
 import d8ctl.util : eqIgnoreCase;
@@ -18,11 +19,17 @@ string rootHelp()
     auto buf = appender!string();
     buf.put("d8ctl — Camunda 8 Orchestration Cluster CLI (spike)\n\n");
     buf.put("Usage:\n");
-    buf.put("  d8ctl [--help] [--version] [--dry-run] [--order=resource|verb] cluster …\n\n");
+    buf.put("  d8ctl [--help] [--version] [--dry-run] [--order=resource|verb]\n");
+    buf.put("        [--profile=<name>] [--camunda-<key>=<value> …] cluster …\n");
+    buf.put("  d8ctl profile list|show|add|use|remove …\n\n");
     buf.put(format("The Orchestration Cluster surface is under `cluster` (%s operations).\n", catalogOperationCount));
     buf.put("Both `cluster <resource> <verb>` and `cluster <verb> <resource>` parse.\n");
     buf.put("`--order` only changes how help lists them (default: resource).\n");
     buf.put("See https://github.com/camunda/d8ctl/issues/1\n");
+    buf.put("\nConnection: CAMUNDA_* env vars, a profile (--profile=<name> or the active\n");
+    buf.put("one), or explicit switches such as --camunda-rest-address=<url>\n");
+    buf.put("--camunda-client-id=… --camunda-client-secret=…. Switches win over the\n");
+    buf.put("profile, which wins over env. See: d8ctl profile --help\n");
     buf.put("\nStart with: d8ctl cluster --help\n");
     return buf.data;
 }
@@ -157,7 +164,9 @@ string render(const ref Result r)
         return resourceHelp(r.ns, r.resource);
     case Kind.helpCommand:
         return commandHelp(r.command);
-    case Kind.invoke, Kind.error:
+    case Kind.helpProfile:
+        return profileHelp();
+    case Kind.invoke, Kind.profile, Kind.error:
         return r.message;
     }
 }

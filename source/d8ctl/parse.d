@@ -10,6 +10,7 @@ module d8ctl.parse;
 
 @safe:
 
+import d8ctl.profiles : switchToKey;
 import d8ctl.catalog;
 import d8ctl.util : eqIgnoreCase;
 import std.algorithm : startsWith;
@@ -29,6 +30,12 @@ struct Flags
     Order order = Order.resource;
     string[string] named;
     string bodyJson;
+    /// `--profile=<name>`.
+    string profile;
+    /// `--camunda-<key>=<value>` switches, keyed by SDK config key.
+    string[string] config;
+    /// Value-less `--flag`s. Only `profile` subcommands accept them.
+    bool[string] bare;
 }
 
 enum Kind
@@ -39,6 +46,8 @@ enum Kind
     helpCommand,
     version_,
     invoke,
+    profile,
+    helpProfile,
     error,
 }
 
@@ -94,15 +103,36 @@ Result parse(string[] args)
             flags.bodyJson = a[7 .. $];
             continue;
         }
+        if (a.startsWith("--profile="))
+        {
+            flags.profile = a[10 .. $];
+            if (!flags.profile.length)
+            {
+                r.kind = Kind.error;
+                r.message = "--profile= needs a profile name";
+                return r;
+            }
+            continue;
+        }
         if (a.startsWith("--") && a.length > 2)
         {
             auto rest = a[2 .. $];
             auto eq = rest.indexOf('=');
             if (eq < 0)
             {
-                r.kind = Kind.error;
-                r.message = "flag --" ~ rest ~ " needs a value (--" ~ rest ~ "=…)";
-                return r;
+                if (rest.startsWith("camunda-") || rest == "profile")
+                {
+                    r.kind = Kind.error;
+                    r.message = "flag --" ~ rest ~ " needs a value (--" ~ rest ~ "=…)";
+                    return r;
+                }
+                flags.bare[rest] = true;
+                continue;
+            }
+            if (rest.startsWith("camunda-") && eq > 8)
+            {
+                flags.config[switchToKey(rest[8 .. eq])] = rest[eq + 1 .. $];
+                continue;
             }
             flags.named[rest[0 .. eq]] = rest[eq + 1 .. $];
             continue;
@@ -126,6 +156,21 @@ Result parse(string[] args)
     if (pos.length == 0)
     {
         r.kind = Kind.helpRoot;
+        return r;
+    }
+
+    if (pos[0] == "profile")
+    {
+        r.positionals = pos[1 .. $];
+        r.kind = flags.help ? Kind.helpProfile : Kind.profile;
+        return r;
+    }
+
+    // Value-less flags are only meaningful to `profile` subcommands.
+    foreach (k, _; flags.bare)
+    {
+        r.kind = Kind.error;
+        r.message = "flag --" ~ k ~ " needs a value (--" ~ k ~ "=…)";
         return r;
     }
 
@@ -230,6 +275,19 @@ unittest
     auto jobs = parse(["cluster", "jobs", "activate"]);
     assert(jobs.kind == Kind.invoke);
     assert(jobs.command.operationId == "activateJobs");
+
+    auto sw = parse(["--profile=saas", "--camunda-rest-address=http://h:1", "cluster", "topology", "get"]);
+    assert(sw.kind == Kind.invoke);
+    assert(sw.flags.profile == "saas");
+    assert(sw.flags.config["CAMUNDA_REST_ADDRESS"] == "http://h:1");
+    assert("camunda-rest-address" !in sw.flags.named);
+
+    auto pr = parse(["profile", "add", "x", "--from-env", "--camunda-auth-strategy=NONE"]);
+    assert(pr.kind == Kind.profile && pr.positionals == ["add", "x"]);
+    assert("from-env" in pr.flags.bare && pr.flags.config["CAMUNDA_AUTH_STRATEGY"] == "NONE");
+    assert(parse(["profile", "--help"]).kind == Kind.helpProfile);
+    assert(parse(["cluster", "topology", "get", "--from-env"]).kind == Kind.error);
+    assert(parse(["--camunda-rest-address", "cluster"]).kind == Kind.error);
 
     auto jobsVerb = parse(["cluster", "activate", "jobs"]);
     assert(jobsVerb.kind == Kind.invoke);
