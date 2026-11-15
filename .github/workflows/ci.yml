@@ -25,7 +25,7 @@ jobs:
       - name: Linux build dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libcurl4-openssl-dev zlib1g-dev
-      - run: python3 scripts/generate.py
+      - run: dub run -q --single scripts/generate.d
       - name: Fail if the catalog drifted
         run: git diff --exit-code -- source/d8ctl/generated
       - run: dub test

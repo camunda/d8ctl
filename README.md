@@ -158,8 +158,12 @@ SPEC_REF=<branch|tag|sha> make generate
 make generate-local                    # rebuild from the committed external-spec/bundled/
 ```
 
-`scripts/generate.py` reads `external-spec/bundled/{rest-api.bundle,spec-metadata}.json`
-and writes `source/d8ctl/generated/catalog.d` (one row per operation; 247 today).
+`scripts/generate.d` (`dub run --single scripts/generate.d`; needs only LDC and
+dub) reads `external-spec/bundled/{rest-api.bundle,spec-metadata}.json` and
+writes `source/d8ctl/generated/catalog.d` (one row per operation; 247 today).
+The naming and flag rules live in `source/d8ctl/specmodel.d`, which reads
+the spec with `camunda-orchestration-sdk:openapi`. It also works on plain
+OpenAPI documents without Camunda `spec-metadata.json`.
 Do not hand-edit the catalog. There is no per-operation handler — dispatch
 walks the table and calls `Transport.requestJson` / `requestVoid` / `requestText`
 from `camunda-orchestration-sdk:runtime`.

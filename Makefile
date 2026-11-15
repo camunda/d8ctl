@@ -15,7 +15,7 @@ bundle-spec:
 generate: bundle-spec generate-local
 
 generate-local:
-	python3 scripts/generate.py
+	dub run -q --single scripts/generate.d
 
 test:
 	dub test
