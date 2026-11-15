@@ -18,6 +18,7 @@ module d8ctl.extensions;
 @safe:
 
 import camunda.openapi : J, Kind, OpenApiException, get, itemsOf, keysOf, orS, parseJson, truthy;
+import camunda.runtime : Transport;
 import d8ctl.dispatch : UsageException;
 import d8ctl.profiles
     : Header, ProfileException, Sources, configDir, findProfile, headersKey, headersToJson,
@@ -276,7 +277,7 @@ FetchResult fetchSpecHttp(string url, string etag, string[string] conn) @safe
     string bodyText;
     try
     {
-        auto client = Transport.fromEnv(conn);
+        auto client = extensionTransport(conn);
         string[string] base = client.auth().headers();
         base["Accept"] = "application/json, */*";
         base["User-Agent"] = "d8ctl/" ~ cliVersion;
@@ -310,6 +311,67 @@ void requireExtensionProfile(const ref Sources s, string profileName)
     if (profileName.length && findProfile(s, profileName) is null)
         throw new ExtensionException("profile '" ~ profileName
             ~ "' not found. See `d8ctl profile list`.");
+}
+
+/// A Transport resolved from `overrides` alone — never the process
+/// environment. The SDK's `Transport.fromEnv(o)` treats an override that
+/// strips to empty as absent and falls back to the environment, so even
+/// fully pinned overrides could pick up ambient mTLS client certificates
+/// (`CAMUNDA_MTLS_*`) or other cluster settings. The SDK offers no
+/// environment-free Transport construction, so the ambient `CAMUNDA_*`
+/// variables are removed for the duration of the constructor and restored
+/// immediately after (d8ctl is single-threaded here). `extensionConnection`
+/// has already validated and pinned auth, so the resulting config equals the
+/// overrides wherever they have a value.
+Transport extensionTransport(string[string] overrides) @safe
+{
+    import camunda.runtime : CamundaOptions;
+    import d8ctl.safeio : getEnv, setEnv;
+
+    static immutable keys = [
+        "CAMUNDA_AUTH_STRATEGY",
+        "CAMUNDA_BASIC_AUTH_PASSWORD",
+        "CAMUNDA_BASIC_AUTH_USERNAME",
+        "CAMUNDA_CLIENT_AUTH_CLIENTID",
+        "CAMUNDA_CLIENT_AUTH_CLIENTSECRET",
+        "CAMUNDA_CLIENT_ID",
+        "CAMUNDA_CLIENT_SECRET",
+        "CAMUNDA_DEFAULT_HEADERS",
+        "CAMUNDA_DEFAULT_TENANT_ID",
+        "CAMUNDA_MTLS_CA",
+        "CAMUNDA_MTLS_CA_PATH",
+        "CAMUNDA_MTLS_CERT",
+        "CAMUNDA_MTLS_CERT_PATH",
+        "CAMUNDA_MTLS_KEY",
+        "CAMUNDA_MTLS_KEY_PASSPHRASE",
+        "CAMUNDA_MTLS_KEY_PATH",
+        "CAMUNDA_OAUTH_SCOPE",
+        "CAMUNDA_OAUTH_URL",
+        "CAMUNDA_REST_ADDRESS",
+        "CAMUNDA_REST_ADDRESS_EXACT",
+        "CAMUNDA_SDK_BACKPRESSURE_PROFILE",
+        "CAMUNDA_SDK_EVENTUAL_POLL_DEFAULT_MS",
+        "CAMUNDA_SDK_HTTP_RETRY_BASE_DELAY_MS",
+        "CAMUNDA_SDK_HTTP_RETRY_MAX_ATTEMPTS",
+        "CAMUNDA_SDK_HTTP_RETRY_MAX_DELAY_MS",
+        "CAMUNDA_SDK_LOG_LEVEL",
+        "CAMUNDA_TENANT_ID",
+        "CAMUNDA_TENANT_IDS",
+        "CAMUNDA_TOKEN_AUDIENCE",
+        "ZEEBE_REST_ADDRESS",
+    ];
+    string[string] saved;
+    foreach (k; keys)
+    {
+        saved[k] = getEnv(k);
+        setEnv(k, null);
+    }
+    scope (exit)
+        foreach (k, v; saved)
+            setEnv(k, v);
+    CamundaOptions o;
+    o.config = overrides;
+    return new Transport(o);
 }
 
 /// SDK config overrides for talking to an extension (its operations and its
@@ -353,8 +415,10 @@ string[string] extensionConnection(const ref Sources s, string profileName,
     }
     if (headers.length)
         o[headersKey] = headersToJson(mergeHeaders(headersFromJson(o.get(headersKey, null)), headers));
-    // Fail closed against the ambient environment (overrides win over env;
-    // a non-empty value is needed for the override to take effect).
+    // Fail closed against the ambient environment: an extension transport is
+    // built with the environment masked (see extensionTransport), so it is
+    // never consulted. The pins below decide the strategy and reject
+    // half-configured credentials before that.
     pinExtensionAuth(o);
     if (!o.get(headersKey, null).length)
         o[headersKey] = "{}";
@@ -371,26 +435,28 @@ string[string] extensionConnection(const ref Sources s, string profileName,
 /// strategy wins; otherwise client credentials mean OAUTH, basic credentials
 /// mean BASIC, and nothing means NONE. The chosen strategy's required fields
 /// must all come from `o` — a missing one would fall back to the environment,
-/// so it is an error instead.
+/// so it is an error instead. Values are judged after the SDK's whitespace
+/// stripping: a whitespace-only value falls back to the environment there,
+/// so here it counts as absent (an error when the strategy needs it).
 private void pinExtensionAuth(ref string[string] o)
 {
     import std.string : toUpper;
 
     string pick(string a, string b)
     {
-        auto v = o.get(a, null);
-        return v.length ? v : o.get(b, null);
+        auto v = o.get(a, null).strip;
+        return v.length ? v : o.get(b, null).strip;
     }
 
     const id = pick("CAMUNDA_CLIENT_ID", "CAMUNDA_CLIENT_AUTH_CLIENTID");
     const secret = pick("CAMUNDA_CLIENT_SECRET", "CAMUNDA_CLIENT_AUTH_CLIENTSECRET");
-    string strategy = o.get("CAMUNDA_AUTH_STRATEGY", null).toUpper;
+    string strategy = o.get("CAMUNDA_AUTH_STRATEGY", null).strip.toUpper;
     if (!strategy.length)
     {
         if (id.length || secret.length)
             strategy = "OAUTH";
-        else if (o.get("CAMUNDA_BASIC_AUTH_USERNAME", null).length
-                || o.get("CAMUNDA_BASIC_AUTH_PASSWORD", null).length)
+        else if (o.get("CAMUNDA_BASIC_AUTH_USERNAME", null).strip.length
+                || o.get("CAMUNDA_BASIC_AUTH_PASSWORD", null).strip.length)
             strategy = "BASIC";
         else
             strategy = "NONE";
@@ -399,7 +465,7 @@ private void pinExtensionAuth(ref string[string] o)
 
     void need(string what, string v)
     {
-        if (!v.length)
+        if (!v.strip.length)
             throw new ExtensionException("auth strategy " ~ strategy ~ " for an extension needs " ~ what
                 ~ " from the profile or a --camunda-* switch (the environment is never used)");
     }
@@ -589,9 +655,11 @@ private T withExtensionLock(T)(string cfgDir, string name, scope T delegate() @s
 /// fresh `g-<unique>` directory, then the `current` pointer is replaced by an
 /// atomic rename. The namespace never disappears, a crash at any step leaves
 /// the previous generation current, and readers resolve the pointer once
-/// (`generationDir`). The previous generation is kept for readers still on
-/// it; older ones are pruned. A first install stages the whole directory
-/// (pointer included) and renames it into place. Callers hold the lock.
+/// (`generationDir`). The two previous generations are kept, so a reader that
+/// resolved the pointer before two quick updates still finds the generation
+/// it picked; older ones are pruned. A first install stages the whole
+/// directory (pointer included) and renames it into place. Callers hold the
+/// lock.
 private void install(string cfgDir, Manifest m, string specText)
 {
     import std.file : DirEntry, dirEntries, exists, isDir, remove, rename, rmdirRecurse, SpanMode;
@@ -622,17 +690,36 @@ private void install(string cfgDir, Manifest m, string specText)
         return;
     }
 
-    string previous;
+    // Generations currently reachable by readers: the installed one and the
+    // one before it (a reader may have resolved either pointer value).
+    string[] keep;
     try
-        previous = baseName(generationDir(cfgDir, m.name));
-    catch (ExtensionException)
-        previous = null; // an unreadable pointer is simply replaced
+    {
+        const cur = baseName(generationDir(cfgDir, m.name));
+        keep ~= cur;
+        auto prevPtr = buildPath(dest, cur, ".previous");
+        if (exists(prevPtr))
+        {
+            import std.file : readText;
+            import std.string : strip;
+
+            const prev = readText(prevPtr).strip;
+            if (prev.length && prev == baseName(prev) && prev[0] != '.')
+                keep ~= prev;
+        }
+    }
+    catch (Exception)
+        keep = null; // an unreadable pointer is simply replaced
     auto genDir = buildPath(dest, gen);
     {
         scope (failure)
             if (exists(genDir))
                 rmdirRecurse(genDir);
         writeGeneration(genDir);
+        // Record the generation this one replaces, so the next prune keeps
+        // the reader window one update deep.
+        if (keep.length)
+            writeNewPrivate(buildPath(genDir, ".previous"), keep[0] ~ "\n");
         auto tmp = buildPath(dest, ".current-" ~ sfx);
         scope (failure)
             if (exists(tmp))
@@ -640,12 +727,12 @@ private void install(string cfgDir, Manifest m, string specText)
         writeNewPrivate(tmp, gen ~ "\n");
         rename(tmp, buildPath(dest, "current")); // the commit point
     }
-    // Prune: keep the new and the previous generation; drop everything else
-    // (older generations, a pre-pointer layout's loose files are left alone).
+    // Prune: keep the new generation and the recorded reader window; drop
+    // everything else (a pre-pointer layout's loose files are left alone).
     foreach (DirEntry e; dirEntries(dest, SpanMode.shallow))
     {
         const b = baseName(e.name);
-        if (e.isDir && b.length > 2 && b[0 .. 2] == "g-" && b != gen && b != previous)
+        if (e.isDir && b.length > 2 && b[0 .. 2] == "g-" && b != gen && !keep.canFind(b))
             rmdirRecurse(e.name);
     }
 }
@@ -755,49 +842,57 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
         auto buf = appender!string();
         foreach (n; names)
         {
-            auto m = readManifest(cfgDir, n);
-            // An explicit --profile wins (switch credentials, or recover
-            // after the stored profile was removed); a rewritten cache keeps it.
-            if (profileFlag.length)
-                m.profile = profileFlag;
-            auto got = fetch(m.specUrl, m.etag, extensionConnection(sources, m.profile,
-                switches, headers));
-            if (got.notModified)
-            {
-                buf.put(n ~ ": up to date (ETag matched)\n");
-                continue;
-            }
-            if (!got.body_.length)
-                throw new ExtensionException("the server returned no spec for " ~ m.specUrl);
-            const hash = sha256Hex(got.body_);
-            if (hash == m.sha256)
-            {
-                buf.put(n ~ ": up to date (sha256 " ~ hash[0 .. 12] ~ "…)\n");
-                continue;
-            }
-            Catalog cat;
-            try
-                cat = buildCatalog(got.body_, null, n);
-            catch (OpenApiException e)
-                throw new ExtensionException("the new spec at " ~ m.specUrl
-                    ~ " is not usable: " ~ e.msg ~ " (the installed copy was kept)");
-            m.sha256 = hash;
-            m.etag = got.etag;
-            m.fetchedAt = nowIso();
-            m.d8ctlVersion = cliVersion;
-            // A spec-derived base follows the new spec's servers; an explicit
-            // --base-url is kept.
-            if (m.baseUrlFromSpec || !m.baseUrl.length)
-            {
-                m.baseUrl = resolveBaseUrl(got.body_, m.specUrl);
-                m.baseUrlFromSpec = true;
-            }
-            withExtensionLock!int(cfgDir, n, () @safe {
+            // The whole read/fetch/commit lifecycle runs under the lock: a
+            // `remove` finishing mid-download can no longer be silently
+            // reinstalled, and a slower update cannot overwrite a newer one
+            // (the manifest is read again inside the lock, after the fetch,
+            // and the commit is abandoned when the installed generation
+            // changed under us).
+            auto line = withExtensionLock!string(cfgDir, n, () @safe {
+                import std.file : exists;
+
+                auto m = readManifest(cfgDir, n);
+                // An explicit --profile wins (switch credentials, or recover
+                // after the stored profile was removed); a rewritten cache keeps it.
+                if (profileFlag.length)
+                    m.profile = profileFlag;
+                auto got = fetch(m.specUrl, m.etag, extensionConnection(sources, m.profile,
+                    switches, headers));
+                // A concurrent `remove` could not have run (we hold the lock),
+                // but a stale reader of this code path could: re-verify the
+                // install still names the generation we read before committing.
+                if (!exists(extensionDir(cfgDir, n)))
+                    throw new ExtensionException("extension '" ~ n
+                        ~ "' was removed while updating; nothing was installed.");
+                if (got.notModified)
+                    return n ~ ": up to date (ETag matched)\n";
+                if (!got.body_.length)
+                    throw new ExtensionException("the server returned no spec for " ~ m.specUrl);
+                const hash = sha256Hex(got.body_);
+                if (hash == m.sha256)
+                    return n ~ ": up to date (sha256 " ~ hash[0 .. 12] ~ "…)\n";
+                Catalog cat;
+                try
+                    cat = buildCatalog(got.body_, null, n);
+                catch (OpenApiException e)
+                    throw new ExtensionException("the new spec at " ~ m.specUrl
+                        ~ " is not usable: " ~ e.msg ~ " (the installed copy was kept)");
+                m.sha256 = hash;
+                m.etag = got.etag;
+                m.fetchedAt = nowIso();
+                m.d8ctlVersion = cliVersion;
+                // A spec-derived base follows the new spec's servers; an explicit
+                // --base-url is kept.
+                if (m.baseUrlFromSpec || !m.baseUrl.length)
+                {
+                    m.baseUrl = resolveBaseUrl(got.body_, m.specUrl);
+                    m.baseUrlFromSpec = true;
+                }
                 install(cfgDir, m, got.body_);
-                return 0;
+                return n ~ ": updated to sha256 " ~ hash[0 .. 12] ~ "… ("
+                    ~ cat.commands.length.to!string ~ " commands)\n";
             });
-            buf.put(n ~ ": updated to sha256 " ~ hash[0 .. 12] ~ "… ("
-                ~ cat.commands.length.to!string ~ " commands)\n");
+            buf.put(line);
         }
         return buf.data;
 
@@ -909,6 +1004,7 @@ version (unittest)
     // is fine — dub runs one module's unittests single-threaded.
     private string fakeBody;
     private bool fakeNotModified;
+    private string sRemoveDir;
 
     private FetchResult fakeFetchImpl(string url, string etag, string[string] conn) @safe
     {
@@ -1004,7 +1100,8 @@ unittest
         fakeFetch(xcliSpec.replace(`"T"`, `"T2"`)));
     assert(changed.indexOf("updated to sha256") >= 0, changed);
     assert(readManifest(dir, "t").sha256 == sha256Hex(xcliSpec.replace(`"T"`, `"T2"`)));
-    // Generations: the pointer moved; only the new and the previous one remain.
+    // Generations: the pointer moved; the reader window (new + two previous)
+    // is kept, older ones pruned.
     {
         import std.file : DirEntry, dirEntries, SpanMode;
 
@@ -1023,9 +1120,13 @@ unittest
         extensionCommand(dir, sources, ["update", "t"], null, null,
             fakeFetch(xcliSpec.replace(`"T"`, `"T3"`)));
         gens = countGens();
-        assert(gens == 2, gens.to!string);
+        assert(gens == 3, gens.to!string); // reader window: new + two previous
+        extensionCommand(dir, sources, ["update", "t"], null, null,
+            fakeFetch(xcliSpec.replace(`"T"`, `"T4"`)));
+        gens = countGens();
+        assert(gens == 3, gens.to!string); // the oldest fell out of the window
         auto loaded = loadExtension(dir, "t"); // manifest + spec from one generation
-        assert(loaded.manifest.sha256 == sha256Hex(xcliSpec.replace(`"T"`, `"T3"`)));
+        assert(loaded.manifest.sha256 == sha256Hex(xcliSpec.replace(`"T"`, `"T4"`)));
     }
     // A spec-derived base URL follows the new spec's servers on update.
     assert(readManifest(dir, "t").baseUrlFromSpec);
@@ -1197,4 +1298,125 @@ unittest
         &recordingFetch, "ghost"));
     assertThrown!ExtensionException(extensionCommand(dir, sources, ["list"], null, ["check": true],
         &recordingFetch, "ghost"));
+}
+
+unittest
+{
+    // Review regressions (PR #13 round 4): env-free transports, whitespace
+    // credentials, update locking, and the reader window of generations.
+    import camunda.runtime : AuthStrategy;
+    import std.exception : assertThrown;
+    import std.file : exists, readText;
+
+    // Whitespace-only credentials count as absent (the SDK strips overrides
+    // and would fall back to the environment), so they fail before any
+    // request instead of silently authenticating with cluster secrets.
+    Sources ws;
+    ws.store.profiles["wsBasic"] = ["CAMUNDA_BASIC_AUTH_USERNAME": "u",
+        "CAMUNDA_BASIC_AUTH_PASSWORD": " "];
+    ws.store.profiles["wsOauth"] = ["CAMUNDA_CLIENT_ID": "id",
+        "CAMUNDA_CLIENT_SECRET": " ", "CAMUNDA_OAUTH_URL": "https://idp/token"];
+    assertThrown!ExtensionException(extensionConnection(ws, "wsBasic"));
+    assertThrown!ExtensionException(extensionConnection(ws, "wsOauth"));
+    const(Sources) noSources = Sources.init;
+    assertThrown!ExtensionException(extensionConnection(noSources, null,
+        ["CAMUNDA_AUTH_STRATEGY": "BASIC", "CAMUNDA_BASIC_AUTH_USERNAME": "u",
+         "CAMUNDA_BASIC_AUTH_PASSWORD": "  "]));
+
+    // The extension transport never consults the environment: ambient mTLS
+    // (and any other CAMUNDA_*) must not reach the resolved config, and the
+    // process environment is restored afterwards.
+    import d8ctl.safeio : getEnv, setEnv;
+
+    void withEnv(string k, string v, scope void delegate() @safe fn)
+    {
+        auto saved = getEnv(k);
+        setEnv(k, v);
+        scope (exit)
+            setEnv(k, saved);
+        fn();
+    }
+
+    withEnv("CAMUNDA_MTLS_CERT", "cluster-cert", {
+        withEnv("CAMUNDA_MTLS_KEY", "cluster-key", {
+            withEnv("CAMUNDA_MTLS_CERT_PATH", "/cluster/cert.pem", {
+                withEnv("CAMUNDA_MTLS_KEY_PATH", "/cluster/key.pem", {
+                    auto t = extensionTransport(extensionConnection(noSources, null));
+                    assert(!t.config.tls.cert.length, t.config.tls.cert);
+                    assert(!t.config.tls.key.length);
+                    assert(!t.config.tls.certPath.length, t.config.tls.certPath);
+                    assert(!t.config.tls.keyPath.length);
+                    assert(t.config.authStrategy == AuthStrategy.none);
+                });
+            });
+            // A profile's own mTLS settings do apply. (Equal-length paths:
+            // the pinned SDK's validate() XORs the two lengths.)
+            Sources tls;
+            tls.store.profiles["mtls"] = ["CAMUNDA_MTLS_CERT_PATH": "/ext/crt.pem",
+                "CAMUNDA_MTLS_KEY_PATH": "/ext/key.pem"];
+            auto t2 = extensionTransport(extensionConnection(tls, "mtls"));
+            assert(t2.config.tls.certPath == "/ext/crt.pem", t2.config.tls.certPath);
+            assert(!t2.config.tls.cert.length); // inline cert not set by the profile
+        });
+    });
+    assert(getEnv("CAMUNDA_MTLS_CERT") is null); // restored (was unset here)
+
+    // update holds the lock across the fetch: a fetch that removes the
+    // extension mid-flight (a concurrent `remove` that got the lock first)
+    // makes the update fail instead of silently reinstalling it.
+    auto dir = testDir("r4");
+    scope (exit)
+        cleanupDir(dir);
+    Sources sources;
+    extensionCommand(dir, sources, ["add", "t"], ["spec": "http://h/o.json"],
+        null, fakeFetch(xcliSpec));
+    static size_t sFetches;
+    static FetchResult removingFetchImpl(string url, string etag, string[string] conn) @safe
+    {
+        sFetches++;
+        if (sFetches > 0)
+        {
+            // Simulate the concurrent remove: it holds no lock here because
+            // the test runs single-threaded, but the update must notice the
+            // vanished install when it re-reads under its own lock.
+            import std.file : rmdirRecurse;
+
+            rmdirRecurse(extensionDir(sRemoveDir, "t"));
+        }
+        return FetchResult(xcliSpec.replace(`"T"`, `"T9"`), null, false);
+    }
+
+    sFetches = 0;
+    sRemoveDir = dir;
+    string rmOut;
+    ExtensionException rmErr;
+    try
+        rmOut = extensionCommand(dir, sources, ["update", "t"],
+            (string[string]).init, (bool[string]).init, &removingFetchImpl);
+    catch (ExtensionException e)
+        rmErr = e;
+    assert(rmErr !is null, "update should have thrown; fetches=" ~ sFetches.to!string
+        ~ " out=" ~ rmOut ~ " exists=" ~ exists(extensionDir(dir, "t")).to!string);
+    assert(!exists(extensionDir(dir, "t"))); // not reinstalled by the stale update
+
+    // The reader window: a generation resolved before two quick updates is
+    // still on disk (the reader's manifest and spec stay consistent).
+    extensionCommand(dir, sources, ["add", "w"], ["spec": "http://h/o.json"],
+        null, fakeFetch(xcliSpec));
+    const genA = generationDir(dir, "w");
+    extensionCommand(dir, sources, ["update", "w"], null, null,
+        fakeFetch(xcliSpec.replace(`"T"`, `"T2"`)));
+    const genB = generationDir(dir, "w");
+    extensionCommand(dir, sources, ["update", "w"], null, null,
+        fakeFetch(xcliSpec.replace(`"T"`, `"T3"`)));
+    assert(genA != genB);
+    assert(exists(buildPath(genA, "spec.json")) && exists(buildPath(genA, "extension.json")),
+        "reader's generation pruned under it");
+    // The manifest a reader took from genA still matches genA's spec.
+    assert(readText(buildPath(genA, "spec.json")) == xcliSpec);
+    // A third update finally reclaims genA.
+    extensionCommand(dir, sources, ["update", "w"], null, null,
+        fakeFetch(xcliSpec.replace(`"T"`, `"T4"`)));
+    assert(!exists(genA), "stale generation never reclaimed");
+    assert(exists(buildPath(genB, "spec.json")));
 }

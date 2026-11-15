@@ -67,8 +67,15 @@ string nsHelp(string ns, Order order, const(Catalog)* overlay = null,
         buf.put("Commands:\n");
         string[] lines;
         foreach (c; cmds)
+        {
+            // Explicit x-cli paths parse only in their authored order, so a
+            // verb-first table would list an uninvokable spelling; they are
+            // listed verbatim in the x-cli-path section below instead.
+            if (c.paths.length)
+                continue;
             lines ~= format("  %-12s %-32s %s%s", c.verb, c.resource, c.summary,
                 c.operatorOnly ? "  [operator]" : "");
+        }
         lines.sort();
         foreach (line; lines) { buf.put(line); buf.put("\n"); }
     }
@@ -252,6 +259,37 @@ unittest
     auto createHelp = commandHelp(create);
     assert(createHelp.canFind("no documented top-level fields"));
     assert(createHelp.canFind("--body='{…}'"));
+}
+
+unittest
+{
+    // PR #13 round 4: with --order=verb the resource/verb table must not list
+    // explicit x-cli paths reversed (they parse only in their authored order);
+    // they stay in the dedicated x-cli-path section.
+    import d8ctl.parse : Order;
+    import d8ctl.specmodel : buildCatalog;
+
+    auto cat = new Catalog;
+    *cat = buildCatalog(`{"openapi":"3.0.3","info":{"title":"T","version":"1"},
+      "servers":[{"url":"http://h"}],
+      "paths": {
+        "/status": {"get": {"operationId": "getStatus",
+            "responses": {"200": {"description": "ok"}}}},
+        "/runs/{id}/cancel": {"post": {"operationId": "cancelRun",
+            "x-cli": {"command": ["pr", "run", "cancel"], "positional": ["id"]},
+            "parameters": [{"name": "id", "in": "path", "required": true}],
+            "responses": {"200": {"description": "ok"}}}}
+      }}`, null, "t");
+    import d8ctl.catalog : overlayRows;
+
+    auto rows = overlayRows(cat);
+    auto verb = nsHelp("t", Order.verb, cat, rows);
+    assert(!verb.canFind("cancel pr run") && !verb.canFind("cancel  pr"),
+        verb);
+    assert(verb.canFind("pr run cancel"), verb); // verbatim in the path section
+    assert(verb.canFind("get"), verb); // derived commands still listed
+    auto res = nsHelp("t", Order.resource, cat, rows);
+    assert(res.canFind("pr run cancel"), res);
 }
 
 private bool canFind(string hay, string needle)

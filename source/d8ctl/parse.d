@@ -10,7 +10,7 @@ module d8ctl.parse;
 
 @safe:
 
-import d8ctl.extensions : Extension, ExtensionException;
+import d8ctl.extensions : Extension, ExtensionException, Manifest;
 import d8ctl.profiles : Header, parseHeaderSwitch, ProfileException, switchToKey;
 import d8ctl.catalog;
 import d8ctl.specmodel : Catalog;
@@ -71,6 +71,10 @@ struct Result
     const(Catalog)* extCatalog;
     /// `extCatalog` materialized as a `Command` table; `command` points into it.
     const(Command)[] extRows;
+    /// The manifest snapshot loaded with `extCatalog` (one cache generation).
+    /// Invocation uses this — never a fresh read — so an update between parse
+    /// and invoke cannot pair an old command model with a new base URL.
+    const(Manifest)* extManifest;
     Flags flags;
     string[] positionals;
 }
@@ -90,13 +94,15 @@ Result parse(string[] args, string cfgDir)
     Flags flags;
     string[] pos;
 
-    // c8ctl spelling: `--profile <name>` (space-separated).
+    // c8ctl spelling: `--profile <name>` (space-separated); the documented
+    // extension switches `--spec <url>` and `--base-url <url>` likewise.
     string[] joined;
     for (size_t i = 0; i < args.length; i++)
     {
-        if (args[i] == "--profile" && i + 1 < args.length && !args[i + 1].startsWith("-"))
+        if ((args[i] == "--profile" || args[i] == "--spec" || args[i] == "--base-url")
+            && i + 1 < args.length && !args[i + 1].startsWith("-"))
         {
-            joined ~= "--profile=" ~ args[i + 1];
+            joined ~= args[i] ~ "=" ~ args[i + 1];
             i++;
         }
         else if ((args[i] == "--header" || args[i] == "-H") && i + 1 < args.length)
@@ -262,6 +268,9 @@ Result parse(string[] args, string cfgDir)
             *catCopy = e.catalog;
             extCat = catCopy;
             extRows = overlayRows(extCat);
+            auto manCopy = new Manifest;
+            *manCopy = e.manifest;
+            r.extManifest = manCopy;
             r.extCatalog = extCat;
             r.extRows = extRows;
             goto extensionNs;
@@ -610,4 +619,23 @@ unittest
     // Unknown namespace still errors; reserved name never parses as extension.
     assert(parse(["nope"], dir).kind == Kind.error);
     assert(parse(["cluster", "topology", "get"], dir).extCatalog is null);
+
+    // The manifest snapshot rides along with the parse (one generation).
+    assert(st.extManifest !is null);
+    assert(st.extManifest.name == "t" && st.extManifest.baseUrl == "http://h/api");
+
+    // Documented space-separated value flags: --spec <url> / --base-url <url>
+    // parse exactly like the = forms (PR #13 round 4).
+    auto sp = parse(["extension", "add", "n2", "--spec", "http://h/o.json"], dir);
+    assert(sp.kind == Kind.extension && sp.flags.named["spec"] == "http://h/o.json",
+        sp.kind.to!string ~ " " ~ sp.message);
+    assert(sp.positionals == ["add", "n2"], sp.positionals.to!string);
+    auto bu = parse(["extension", "add", "n2", "--spec=http://h/o.json",
+        "--base-url", "http://h/b"], dir);
+    assert(bu.flags.named["base-url"] == "http://h/b" && bu.positionals == ["add", "n2"]);
+    // A value that starts with '-' is not swallowed (it would be a flag):
+    // --spec becomes a bare flag and the extension subcommand reports it.
+    auto neg = parse(["extension", "add", "n2", "--spec", "--base-url=x"], dir);
+    assert(neg.kind == Kind.extension && "spec" !in neg.flags.named
+        && ("spec" in neg.flags.bare) !is null, neg.message);
 }

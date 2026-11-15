@@ -140,16 +140,23 @@ int run(string[] args, Dirs dirs)
 /// manifest's default or `--profile`) supplies only auth and headers — never
 /// its cluster address; `--camunda-*` switches and `--header` apply on top.
 /// With no profile, requests send no auth and no ambient default headers.
+/// The manifest is the snapshot parsed with the command model (one cache
+/// generation): an update between parse and invoke never pairs an old model
+/// with a new base URL or profile.
 private int invokeExtension(Dirs dirs, const ref Sources sources, const ref Result r)
 {
-    auto m = readManifest(dirs.d8ctl, r.ns);
+    Manifest m;
+    if (r.extManifest !is null)
+        m = *r.extManifest;
+    else
+        m = readManifest(dirs.d8ctl, r.ns); // defensive: parse always sets it
     auto profileName = r.flags.profile.length ? r.flags.profile : m.profile;
     // Root-server operations go to the bare origin, not the spec's
     // top-level server path (which need not end in the SDK's `/v2`).
     auto base = r.command !is null && r.command.rootServer ? originOf(m.baseUrl) : m.baseUrl;
     auto overrides = extensionConnection(sources, profileName, r.flags.config,
         r.flags.headers, base);
-    auto client = Transport.fromEnv(overrides);
+    auto client = extensionTransport(overrides);
     client.userAgent = "d8ctl/" ~ cliVersion;
     auto previewHeaders = overrides.get(headersKey, null);
     auto out_ = invoke(client, r, previewHeaders, base);
