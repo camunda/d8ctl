@@ -47,48 +47,57 @@ string invoke(Transport client, const ref Result r, string headersJson = null, s
             "missing positional argument(s). Need: " ~ joinComma(posNames)
             ~ ". See `d8ctl " ~ c.namespace ~ " " ~ c.resource ~ " " ~ c.verb ~ " --help`.");
 
-    auto extra = r.positionals.length - posNames.length;
-    if (extra > 0)
+    if (r.positionals.length > posNames.length)
         throw new UsageException("unexpected extra argument(s).");
 
+    // Bind positionals: path parameters fill the path; with x-cli.positional
+    // a name may also be a query parameter or a body field, which binds it
+    // exactly like the matching `--name=` flag (before any validation).
+    string[string] named;
+    foreach (k, v; r.flags.named)
+        named[k] = v;
+    string[] pathNames, pathValues;
+    foreach (i, p; posNames)
+    {
+        if (isPathParam(c, p))
+        {
+            pathNames ~= p;
+            pathValues ~= r.positionals[i];
+            continue;
+        }
+        if (p in named)
+            throw new UsageException("'" ~ p ~ "' was given both positionally and as --" ~ p ~ "=.");
+        named[p] = r.positionals[i];
+    }
+    foreach (p; c.pathParams)
+        if (!isPathParam(pathNames, p))
+            throw new UsageException("internal: path parameter '" ~ p ~ "' has no positional binding");
+
     foreach (q; c.requiredQuery)
-        if (q !in r.flags.named)
+        if (q !in named)
             throw new UsageException("missing required flag --" ~ q ~ "=…");
 
     string[string] query;
     foreach (q; c.requiredQuery)
-        query[q] = r.flags.named[q];
+        query[q] = named[q];
     foreach (q; c.optionalQuery)
-        if (q in r.flags.named) query[q] = r.flags.named[q];
+        if (q in named) query[q] = named[q];
 
     JSONValue body_ = JSONValue(null);
     if (c.hasBody)
-        body_ = buildBody(c, r);
+        body_ = buildBody(c, named, r.flags.bodyJson);
     else if (r.flags.bodyJson.length)
         throw new UsageException("this operation does not take --body.");
     else
     {
-        foreach (name, _; r.flags.named)
+        foreach (name, _; named)
             if (!isQueryFlag(c, name))
                 throw new UsageException(
                     "unknown flag --" ~ name ~ "=. See `d8ctl "
                     ~ c.namespace ~ " " ~ c.resource ~ " " ~ c.verb ~ " --help`.");
     }
 
-    string path = c.path;
-    if (c.positional.length)
-    {
-        // x-cli.positional names which parameter each argument fills.
-        string[] names, values;
-        foreach (i, p; c.positional)
-        {
-            names ~= p;
-            values ~= r.positionals[i];
-        }
-        path = substitutePath(path, names, values);
-    }
-    else
-        path = substitutePath(path, c.pathParams, r.positionals[0 .. c.pathParams.length]);
+    auto path = substitutePath(c.path, pathNames, pathValues);
 
     if (r.flags.dryRun)
         return formatDryRun(c, path, query, body_, headersJson, baseUrl);
@@ -105,6 +114,18 @@ string invoke(Transport client, const ref Result r, string headersJson = null, s
         return client.requestText(c.method, path, body_, query, server);
     auto payload = client.requestJson(c.method, path, body_, query, server);
     return payload.toPrettyString;
+}
+
+bool isPathParam(const Command* c, string name)
+{
+    return isPathParam(c.pathParams, name);
+}
+
+bool isPathParam(const string[] names, string name)
+{
+    foreach (p; names)
+        if (p == name) return true;
+    return false;
 }
 
 bool isQueryFlag(const Command* c, string name)
@@ -174,9 +195,14 @@ JSONValue parseBodyObject(string raw)
 
 JSONValue buildBody(const Command* c, const ref Result r)
 {
+    return buildBody(c, r.flags.named, r.flags.bodyJson);
+}
+
+JSONValue buildBody(const Command* c, const string[string] named, string bodyJson)
+{
     auto obj = emptyObject();
 
-    foreach (name, raw; r.flags.named)
+    foreach (name, raw; named)
     {
         if (isQueryFlag(c, name)) continue;
         auto f = findBodyField(c, name);
@@ -187,14 +213,14 @@ JSONValue buildBody(const Command* c, const ref Result r)
         obj[name] = parseTyped(f, raw);
     }
 
-    if (r.flags.bodyJson.length)
+    if (bodyJson.length)
     {
-        auto extra = parseBodyObject(r.flags.bodyJson);
+        auto extra = parseBodyObject(bodyJson);
         foreach (k, v; extra.objectNoRef)
             obj[k] = v;
     }
 
-    if (obj.objectNoRef.length == 0 && !r.flags.bodyJson.length && c.bodyFields.length == 0)
+    if (obj.objectNoRef.length == 0 && !bodyJson.length && c.bodyFields.length == 0)
         throw new UsageException(
             "this operation has a JSON body; pass --body='{…}'.");
 
@@ -225,7 +251,7 @@ string formatDryRun(const Command* c, string path, string[string] query, JSONVal
     import d8ctl.profiles : headersFromJson;
     import std.format : format;
     auto s = format("dry-run %s %s%s", c.method, baseUrl.length ? baseUrl : "", path);
-    if (c.rootServer) s ~= " (root server, not under /v2)";
+    if (c.rootServer && !baseUrl.length) s ~= " (root server, not under /v2)";
     if (query.length)
     {
         s ~= " ?";

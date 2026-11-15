@@ -460,7 +460,7 @@ unittest
 
     // Install a tiny x-cli extension via a fake fetch (no network).
     static string body_;
-    static FetchResult ff(string, string, const Header[]) @safe
+    static FetchResult ff(string, string, string[string]) @safe
     {
         return FetchResult(body_, null, false);
     }
@@ -473,6 +473,16 @@ unittest
             "responses": {"200": {"description": "ok"}}}},
         "/doors": {"post": {"operationId": "openDoor",
             "x-cli": {"command": "door open", "audience": "operator"},
+            "responses": {"200": {"description": "ok"}}}},
+        "/search": {"get": {"operationId": "searchThings",
+            "x-cli": {"command": "things search", "positional": ["q"]},
+            "parameters": [{"name": "q", "in": "query"}],
+            "responses": {"200": {"description": "ok"}}}},
+        "/notes/{id}": {"post": {"operationId": "addNote",
+            "x-cli": {"command": "note add", "positional": ["id", "text"]},
+            "parameters": [{"name": "id", "in": "path", "required": true}],
+            "requestBody": {"required": true, "content": {"application/json": {"schema":
+              {"type": "object", "required": ["text"], "properties": {"text": {"type": "string"}}}}}},
             "responses": {"200": {"description": "ok"}}}}
       }}`;
     auto sources = Sources.init;
@@ -487,6 +497,24 @@ unittest
     assert(th.positionals == ["42"]);
     auto th2 = parse(["t", "show", "thing", "42"], dir);
     assert(th2.kind == Kind.invoke && th2.command.operationId == "getThing");
+
+    // Positionals bind query parameters and body fields too (x-cli.positional).
+    {
+        import camunda.runtime : Transport;
+        import d8ctl.dispatch : invoke, UsageException;
+        import std.exception : assertThrown;
+
+        auto client = Transport.fromEnv(["CAMUNDA_AUTH_STRATEGY": "NONE",
+            "CAMUNDA_REST_ADDRESS": "http://h/api", "CAMUNDA_REST_ADDRESS_EXACT": "true"]);
+        auto sq = parse(["t", "things", "search", "foo", "--dry-run"], dir);
+        auto dq = invoke(client, sq, null, "http://h/api");
+        assert(dq.indexOf("GET http://h/api/search ?q=foo") >= 0, dq);
+        auto na = parse(["t", "note", "add", "7", "hello", "--dry-run"], dir);
+        auto dn = invoke(client, na, null, "http://h/api");
+        assert(dn.indexOf("POST http://h/api/notes/7") >= 0 && dn.indexOf(`"text": "hello"`) >= 0, dn);
+        auto both = parse(["t", "things", "search", "foo", "--q=bar", "--dry-run"], dir);
+        assertThrown!UsageException(invoke(client, both, null, "http://h/api"));
+    }
 
     // Operator-only: refused without --operator, allowed with it.
     auto door = parse(["t", "door", "open"], dir);

@@ -75,7 +75,8 @@ int run(string[] args, Dirs dirs)
             auto sources = loadSources(dirs);
             foreach (w; sources.warnings) stdErr.writeln("d8ctl: warning: ", w);
             stdOut.write(extensionCommand(dirs.d8ctl, sources, r.positionals,
-                r.flags.named, r.flags.bare, &fetchSpecHttp, r.flags.profile));
+                r.flags.named, r.flags.bare, &fetchSpecHttp, r.flags.profile,
+                r.flags.config, r.flags.headers));
             return 0;
         }
         catch (ExtensionException e)
@@ -137,24 +138,21 @@ int run(string[] args, Dirs dirs)
 
 /// Run one extension command against its own base URL. The profile (the
 /// manifest's default or `--profile`) supplies only auth and headers — never
-/// its cluster address. With no profile, requests send no auth.
+/// its cluster address; `--camunda-*` switches and `--header` apply on top.
+/// With no profile, requests send no auth and no ambient default headers.
 private int invokeExtension(Dirs dirs, const ref Sources sources, const ref Result r)
 {
-    import std.process : environment;
-
     auto m = readManifest(dirs.d8ctl, r.ns);
     auto profileName = r.flags.profile.length ? r.flags.profile : m.profile;
-    auto overrides = extensionOverrides(sources, profileName);
-    // The extension's own base URL; EXACT stops the SDK appending /v2.
-    overrides["CAMUNDA_REST_ADDRESS"] = m.baseUrl;
-    overrides["CAMUNDA_REST_ADDRESS_EXACT"] = "true";
-    if (r.flags.headers.length)
-        overrides[headersKey] = headersToJson(mergeHeaders(
-            headersFromJson(overrides.get(headersKey, null)), r.flags.headers));
+    // Root-server operations go to the bare origin, not the spec's
+    // top-level server path (which need not end in the SDK's `/v2`).
+    auto base = r.command !is null && r.command.rootServer ? originOf(m.baseUrl) : m.baseUrl;
+    auto overrides = extensionConnection(sources, profileName, r.flags.config,
+        r.flags.headers, base);
     auto client = Transport.fromEnv(overrides);
     client.userAgent = "d8ctl/" ~ cliVersion;
     auto previewHeaders = overrides.get(headersKey, null);
-    auto out_ = invoke(client, r, previewHeaders, m.baseUrl);
+    auto out_ = invoke(client, r, previewHeaders, base);
     if (out_.length) stdOut.write(out_);
     if (out_.length && out_[$ - 1] != '\n') stdOut.writeln();
     return 0;

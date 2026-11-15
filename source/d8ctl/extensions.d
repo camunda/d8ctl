@@ -7,7 +7,7 @@
 /// `<configDir()>/extensions/<name>/` (`spec.json` byte for byte, plus an
 /// `extension.json` manifest). Ordinary `d8ctl <name> …` commands read only
 /// the cache — never the network. `extension update` re-downloads (skipping
-/// on a matching ETag), `extension list [--check]` reports freshness, and
+/// on a matching sha256), `extension list [--check]` reports freshness, and
 /// `extension remove` deletes the cache.
 ///
 /// Naming: `x-cli.command` when the spec carries it (nano-ide#617), else the
@@ -77,6 +77,9 @@ bool isValidExtensionName(string name) pure
 immutable string[] RESERVED_NAMES = [
     "cluster", "extension", "extensions", "profile", "profiles",
     "help", "version", "completion",
+    // `<verb> profile…` is rewritten to profile management before namespaces
+    // are looked up (parse.d), so these would be shadowed.
+    "list", "show", "add", "use", "remove", "rm", "delete",
 ];
 
 void requireExtensionName(string name)
@@ -223,40 +226,49 @@ struct FetchResult
     bool notModified;
 }
 
-/// Function that downloads `url` (GET, `If-None-Match` when `etag` is set).
+/// Function that downloads `url` (GET, `If-None-Match` when `etag` is set)
+/// with the auth, TLS and headers of `conn` (see `extensionConnection`).
 /// Injectable so unit tests never touch the network.
-alias FetchFn = FetchResult function(string url, string etag, const Header[] headers) @safe;
+alias FetchFn = FetchResult function(string url, string etag, string[string] conn) @safe;
 
-/// Live download over the SDK's curl layer. Auth comes from the extension's
-/// profile headers only — spec URLs are operator infrastructure, and the
-/// common case (LAN nwf) needs none.
-FetchResult fetchSpecHttp(string url, string etag, const Header[] headers) @safe
+/// Live download over the SDK's curl layer, authenticated like the
+/// extension's operations: `conn` supplies auth (Basic/OAuth), TLS and
+/// custom headers; the request goes to the spec URL, never the base URL.
+FetchResult fetchSpecHttp(string url, string etag, string[string] conn) @safe
 {
-    import camunda.errors : NetworkException;
+    import camunda.errors : CamundaException;
     import camunda.http : HttpRequest, perform;
+    import camunda.runtime : Transport;
+    import camunda.transport : mergeHeadersCaseInsensitive;
     import d8ctl.version_ : cliVersion;
 
     HttpRequest req;
     req.method = "GET";
     req.url = url;
-    req.headers["Accept"] = "application/json, */*";
-    req.headers["User-Agent"] = "d8ctl/" ~ cliVersion;
-    if (etag.length)
-        req.headers["If-None-Match"] = etag;
-    foreach (h; headers)
-        req.headers[h.name] = h.value;
     int status;
     string bodyText;
     try
     {
+        auto client = Transport.fromEnv(conn);
+        string[string] base = client.auth().headers();
+        base["Accept"] = "application/json, */*";
+        base["User-Agent"] = "d8ctl/" ~ cliVersion;
+        if (etag.length)
+            base["If-None-Match"] = etag;
+        req.headers = mergeHeadersCaseInsensitive(base, client.headers);
+        req.certPath = client.config.tls.certPath;
+        req.keyPath = client.config.tls.keyPath;
+        req.caPath = client.config.tls.caPath;
+        req.keyPassphrase = client.config.tls.keyPassphrase;
         auto r = perform(req);
         status = r.status;
         bodyText = r.body_;
     }
-    catch (NetworkException e)
+    catch (CamundaException e)
         throw new ExtensionException("cannot download the spec from " ~ url ~ ": " ~ e.msg);
-    // The SDK's response type keeps only the body; ETag revalidation still
-    // works whenever the server answers 304 to our If-None-Match.
+    // The pinned SDK's HttpResponse exposes no response headers, so no ETag
+    // is captured; freshness is decided by the spec's sha256 instead. A
+    // manifest that carries an ETag still revalidates with If-None-Match.
     if (status == 304)
         return FetchResult(null, etag, true);
     if (status < 200 || status >= 300)
@@ -265,55 +277,102 @@ FetchResult fetchSpecHttp(string url, string etag, const Header[] headers) @safe
     return FetchResult(bodyText, null, false);
 }
 
-/// Headers from the named profile (auth material lives there; an extension
-/// never uses the profile's cluster base URL).
-Header[] profileHeaders(const ref Sources s, string profileName)
+/// Fail unless `profileName` (when set) names an existing profile.
+void requireExtensionProfile(const ref Sources s, string profileName)
 {
-    if (!profileName.length)
-        return null;
-    auto p = findProfile(s, profileName);
-    if (p is null)
+    if (profileName.length && findProfile(s, profileName) is null)
         throw new ExtensionException("profile '" ~ profileName
             ~ "' not found. See `d8ctl profile list`.");
-    Header[] hs;
-    if (auto raw = headersKey in p.config)
-    {
-        import d8ctl.profiles : headersFromJson;
-
-        hs = headersFromJson(*raw);
-    }
-    return hs;
 }
 
-/// Auth+header overrides of the named profile for one invocation. The
-/// profile's CAMUNDA_REST_ADDRESS is dropped: an extension has its own base
-/// URL (its manifest's), set by the caller.
-string[string] extensionOverrides(const ref Sources s, string profileName)
+/// SDK config overrides for talking to an extension (its operations and its
+/// spec URL). Layers: the named profile's auth/TLS/headers (never its cluster
+/// address) < `--camunda-*` switches < `--header`. Ambient
+/// `CAMUNDA_AUTH_STRATEGY`/credentials and `CAMUNDA_DEFAULT_HEADERS` from the
+/// environment never apply: with no profile and no switch, requests send no
+/// auth and no custom headers — cluster secrets must not leak to an
+/// unrelated server. `baseUrl` (when set) becomes the exact REST address.
+string[string] extensionConnection(const ref Sources s, string profileName,
+    const string[string] switches = null, const Header[] headers = null, string baseUrl = null)
 {
+    import d8ctl.profiles : headersFromJson, requireKnownKey;
+
     string[string] o;
-    if (!profileName.length)
-        return o;
-    auto p = findProfile(s, profileName);
-    if (p is null)
-        throw new ExtensionException("profile '" ~ profileName
-            ~ "' not found. See `d8ctl profile list`.");
-    foreach (k, v; p.config)
-        if (k != "CAMUNDA_REST_ADDRESS" && k != "CAMUNDA_REST_ADDRESS_EXACT")
+    if (profileName.length)
+    {
+        auto p = findProfile(s, profileName);
+        if (p is null)
+            throw new ExtensionException("profile '" ~ profileName
+                ~ "' not found. See `d8ctl profile list`.");
+        foreach (k, v; p.config)
             o[k] = v;
+    }
+    o.remove("CAMUNDA_REST_ADDRESS");
+    o.remove("CAMUNDA_REST_ADDRESS_EXACT");
+    if (auto sw = headersKey in switches)
+    {
+        requireKnownKey(headersKey);
+        o[headersKey] = headersToJson(mergeHeaders(
+            headersFromJson(o.get(headersKey, null)), headersFromJson(*sw)));
+    }
+    foreach (k, v; switches)
+    {
+        requireKnownKey(k);
+        if (k == "CAMUNDA_REST_ADDRESS" || k == "CAMUNDA_REST_ADDRESS_EXACT")
+            throw new ExtensionException("--camunda-rest-address does not apply to an extension; "
+                ~ "it uses its own base URL (re-add it with --base-url=<url>)");
+        if (k != headersKey)
+            o[k] = v;
+    }
+    if (headers.length)
+        o[headersKey] = headersToJson(mergeHeaders(headersFromJson(o.get(headersKey, null)), headers));
+    // Fail closed against the ambient environment (overrides win over env;
+    // a non-empty value is needed for the override to take effect).
+    // A profile's own auth (incl. a strategy the SDK infers from its
+    // credentials) is kept; only the profile-less case is forced to NONE.
+    if (!profileName.length && !o.get("CAMUNDA_AUTH_STRATEGY", null).length)
+        o["CAMUNDA_AUTH_STRATEGY"] = "NONE";
+    if (!o.get(headersKey, null).length)
+        o[headersKey] = "{}";
+    if (baseUrl.length)
+    {
+        o["CAMUNDA_REST_ADDRESS"] = baseUrl;
+        o["CAMUNDA_REST_ADDRESS_EXACT"] = "true";
+    }
     return o;
 }
 
-/// Write `path` atomically (temp file + rename) with mode 0600.
-private void writeAtomic(string path, string content)
+/// `scheme://authority` of `url` — the base for operations whose spec
+/// server is the bare root (`rootServer`), whatever the top-level path is.
+string originOf(string url)
 {
-    import std.file : append, rename, setAttributes, write;
+    const i = url.indexOf("://");
+    if (i < 0)
+        return url;
+    const slash = url.indexOf('/', i + 3);
+    return slash < 0 ? url : url[0 .. slash];
+}
 
-    auto tmp = path ~ ".tmp";
-    write(tmp, "");
+/// A per-process, per-call unique suffix for staging paths.
+private string uniqueSuffix()
+{
+    import std.process : thisProcessID;
+    import std.random : uniform;
+
+    return thisProcessID.to!string ~ "-" ~ uniform!uint().to!string;
+}
+
+/// Write a new private file (mode 0600 from the start; fails if it exists).
+private void writeNewPrivate(string path, string content)
+{
+    import std.file : append, exists, setAttributes, write;
+
+    if (exists(path))
+        throw new ExtensionException("refusing to overwrite " ~ path);
+    write(path, "");
     version (Posix)
-        setAttributes(tmp, octal600);
-    append(tmp, content);
-    rename(tmp, path);
+        setAttributes(path, octal600);
+    append(path, content);
 }
 
 private enum uint octal600 = 6 * 64;
@@ -405,18 +464,67 @@ Extension loadExtension(string cfgDir, string name)
     return e;
 }
 
+/// Hold `<extensions>/.<name>.lock` (an exclusive mkdir) while `fn` runs,
+/// so concurrent add/update/remove of one extension serialize instead of
+/// interleaving their cache commits.
+private T withExtensionLock(T)(string cfgDir, string name, scope T delegate() @safe fn)
+{
+    import std.file : FileException, mkdir, rmdirRecurse;
+    import std.path : buildPath;
+
+    makePrivateDir(extensionsRoot(cfgDir));
+    auto lock = buildPath(extensionsRoot(cfgDir), "." ~ name ~ ".lock");
+    try
+        mkdir(lock);
+    catch (FileException)
+        throw new ExtensionException("extension '" ~ name ~ "' is being changed by another d8ctl"
+            ~ " (if none is running, remove " ~ lock ~ ")");
+    scope (exit)
+        rmdirRecurse(lock);
+    return fn();
+}
+
+/// Commit spec + manifest as one cache generation: both are written into a
+/// fresh staging directory, which then replaces `<extensions>/<name>` by
+/// rename. A failure at any step leaves the previous generation in place.
+/// Staging names start with '.', so `listExtensionNames` never sees them.
 private void install(string cfgDir, Manifest m, string specText)
 {
-    makePrivateDir(extensionDir(cfgDir, m.name));
-    writeAtomic(specPath(cfgDir, m.name), specText);
-    writeAtomic(manifestPath(cfgDir, m.name), manifestJson(m));
+    import std.file : exists, rename, rmdirRecurse;
+    import std.path : buildPath;
+
+    makePrivateDir(extensionsRoot(cfgDir));
+    const sfx = uniqueSuffix();
+    auto stage = buildPath(extensionsRoot(cfgDir), "." ~ m.name ~ ".stage-" ~ sfx);
+    auto old = buildPath(extensionsRoot(cfgDir), "." ~ m.name ~ ".old-" ~ sfx);
+    auto dest = extensionDir(cfgDir, m.name);
+    makePrivateDir(stage);
+    scope (failure)
+        if (exists(stage))
+            rmdirRecurse(stage);
+    writeNewPrivate(buildPath(stage, "spec.json"), specText);
+    writeNewPrivate(buildPath(stage, "extension.json"), manifestJson(m));
+    const hadOld = exists(dest);
+    if (hadOld)
+        rename(dest, old);
+    try
+        rename(stage, dest);
+    catch (Exception e)
+    {
+        if (hadOld)
+            rename(old, dest); // restore the previous generation
+        throw e;
+    }
+    if (hadOld)
+        rmdirRecurse(old);
 }
 
 /// `d8ctl extension <sub> …`. Returns text for stdout. `fetch` downloads
 /// specs; tests inject a fixture reader. `profileFlag` is the global
 /// `--profile=<name>` switch (a default profile for `add`).
 string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
-    string[string] named, const bool[string] bare, FetchFn fetch, string profileFlag = null)
+    string[string] named, const bool[string] bare, FetchFn fetch, string profileFlag = null,
+    const string[string] switches = null, const Header[] headers = null)
 {
     import d8ctl.version_ : cliVersion;
 
@@ -445,10 +553,9 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
         if (!specUrl.length)
             throw new ExtensionException("extension add needs --spec=<url>");
         auto profile = takeFlag("profile").length ? takeFlag("profile") : profileFlag;
-        if (profile.length)
-            cast(void) profileHeaders(sources, profile); // must exist
+        requireExtensionProfile(sources, profile);
         auto baseOverride = takeFlag("base-url");
-        auto got = fetch(specUrl, null, profileHeaders(sources, profile));
+        auto got = fetch(specUrl, null, extensionConnection(sources, profile, switches, headers));
         if (got.notModified || !got.body_.length)
             throw new ExtensionException("the server returned no spec for " ~ specUrl);
         // Untrusted input: the hardened reader's limits apply; a bad spec
@@ -468,7 +575,12 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
         m.etag = got.etag;
         m.fetchedAt = nowIso();
         m.d8ctlVersion = cliVersion;
-        install(cfgDir, m, got.body_);
+        withExtensionLock!int(cfgDir, name, () @safe {
+            if (listExtensionNames(cfgDir).canFind(name))
+                throw new ExtensionException("extension '" ~ name ~ "' was installed concurrently");
+            install(cfgDir, m, got.body_);
+            return 0;
+        });
         return "Installed extension '" ~ name ~ "' (" ~ cat.commands.length.to!string
             ~ " commands) from " ~ specUrl ~ "\n  base URL: " ~ m.baseUrl
             ~ "\n  sha256:   " ~ m.sha256[0 .. 12] ~ "…\nTry: d8ctl " ~ name ~ " --help\n";
@@ -487,7 +599,8 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
                 buf.put("  profile " ~ m.profile);
             if ("check" in bare)
             {
-                auto got = fetch(m.specUrl, m.etag, profileHeaders(sources, m.profile));
+                auto got = fetch(m.specUrl, m.etag, extensionConnection(sources,
+                    profileFlag.length ? profileFlag : m.profile, switches, headers));
                 if (got.notModified)
                     buf.put("  [up to date]");
                 else if (got.body_.length && sha256Hex(got.body_) == m.sha256)
@@ -511,7 +624,12 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
         foreach (n; names)
         {
             auto m = readManifest(cfgDir, n);
-            auto got = fetch(m.specUrl, m.etag, profileHeaders(sources, m.profile));
+            // An explicit --profile wins (switch credentials, or recover
+            // after the stored profile was removed); a rewritten cache keeps it.
+            if (profileFlag.length)
+                m.profile = profileFlag;
+            auto got = fetch(m.specUrl, m.etag, extensionConnection(sources, m.profile,
+                switches, headers));
             if (got.notModified)
             {
                 buf.put(n ~ ": up to date (ETag matched)\n");
@@ -537,7 +655,10 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
             m.d8ctlVersion = cliVersion;
             if (!m.baseUrl.length)
                 m.baseUrl = resolveBaseUrl(got.body_, m.specUrl);
-            install(cfgDir, m, got.body_);
+            withExtensionLock!int(cfgDir, n, () @safe {
+                install(cfgDir, m, got.body_);
+                return 0;
+            });
             buf.put(n ~ ": updated to sha256 " ~ hash[0 .. 12] ~ "… ("
                 ~ cat.commands.length.to!string ~ " commands)\n");
         }
@@ -552,7 +673,10 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
                 ~ "' is not installed. See `d8ctl extension list`.");
         import std.file : rmdirRecurse;
 
-        rmdirRecurse(extensionDir(cfgDir, name));
+        withExtensionLock!int(cfgDir, name, () @safe {
+            rmdirRecurse(extensionDir(cfgDir, name));
+            return 0;
+        });
         return "Removed extension '" ~ name ~ "'\n";
 
     default:
@@ -570,7 +694,7 @@ string extensionHelp()
     buf.put("  d8ctl extension add <name> --spec=<url> [--base-url=<url>] [--profile=<name>]\n");
     buf.put("                            Download the spec, generate commands, cache them\n");
     buf.put("  d8ctl extension list [--check]            Installed extensions (age, sha256, source)\n");
-    buf.put("  d8ctl extension update [<name>|--all]     Re-download (skips on a matching ETag)\n");
+    buf.put("  d8ctl extension update [<name>|--all]     Re-download (skips on a matching sha256)\n");
     buf.put("  d8ctl extension remove <name>\n\n");
     buf.put("An extension <name> becomes a namespace next to `cluster`: `d8ctl <name>\n");
     buf.put("<resource> <verb>` (either order), with help, --dry-run and body flags from\n");
@@ -581,7 +705,9 @@ string extensionHelp()
     buf.put("removes them completely. Reserved names: " ~ RESERVED_NAMES.join(", ") ~ ".\n\n");
     buf.put("The namespace has its own base URL (the spec's servers[0].url resolved\n");
     buf.put("against the spec URL, or --base-url). A profile supplies only auth and\n");
-    buf.put("headers — never its cluster address. With no profile, requests send no auth.\n");
+    buf.put("headers — never its cluster address. With no profile, requests send no auth\n");
+    buf.put("and no CAMUNDA_DEFAULT_HEADERS from the environment. --camunda-* switches and\n");
+    buf.put("--header apply on top; spec downloads use the same connection.\n");
     return buf.data;
 }
 
@@ -646,7 +772,7 @@ version (unittest)
     private string fakeBody;
     private bool fakeNotModified;
 
-    private FetchResult fakeFetchImpl(string url, string etag, const Header[] headers) @safe
+    private FetchResult fakeFetchImpl(string url, string etag, string[string] conn) @safe
     {
         return FetchResult(fakeNotModified ? null : fakeBody, null, fakeNotModified);
     }
@@ -803,4 +929,79 @@ private string repeat32plus(string s)
     foreach (_; 0 .. 33)
         s ~= "a";
     return s;
+}
+
+unittest
+{
+    // Review regressions (PR #13): connection isolation, switches, origin.
+    import std.exception : assertThrown;
+
+    Sources none;
+    auto bare = extensionConnection(none, null);
+    assert(bare["CAMUNDA_AUTH_STRATEGY"] == "NONE"); // ambient auth never applies
+    assert(bare[headersKey] == "{}"); // nor ambient CAMUNDA_DEFAULT_HEADERS
+    assert("CAMUNDA_REST_ADDRESS" !in bare);
+
+    auto sw = extensionConnection(none, null, ["CAMUNDA_AUTH_STRATEGY": "BASIC",
+        headersKey: `{"X-A":"1"}`], [Header("x-a", "2"), Header("X-B", "3")], "http://h/api");
+    assert(sw["CAMUNDA_AUTH_STRATEGY"] == "BASIC");
+    assert(sw[headersKey].indexOf(`"x-a":"2"`) >= 0 && sw[headersKey].indexOf("X-B") >= 0, sw[headersKey]);
+    assert(sw["CAMUNDA_REST_ADDRESS"] == "http://h/api" && sw["CAMUNDA_REST_ADDRESS_EXACT"] == "true");
+    assertThrown!ExtensionException(extensionConnection(none, null,
+        ["CAMUNDA_REST_ADDRESS": "http://elsewhere"]));
+    assertThrown!ExtensionException(extensionConnection(none, "missing"));
+
+    assert(originOf("https://h:8/api/v1") == "https://h:8");
+    assert(originOf("https://h") == "https://h");
+
+    // Profile-alias verbs are reserved (parse.d rewrites `list profile…`).
+    foreach (n; ["list", "show", "add", "use", "remove", "rm", "delete"])
+        assertThrown!ExtensionException(requireExtensionName(n));
+}
+
+version (unittest)
+{
+    private string lastConnAuth;
+
+    private FetchResult recordingFetch(string url, string etag, string[string] conn) @safe
+    {
+        lastConnAuth = conn.get("CAMUNDA_AUTH_STRATEGY", null);
+        return FetchResult(fakeBody, null, false);
+    }
+}
+
+unittest
+{
+    // A held lock refuses concurrent changes; a commit leaves no staging dirs.
+    import std.exception : assertThrown;
+    import std.file : dirEntries, mkdir, rmdir, SpanMode;
+
+    auto dir = testDir("lock");
+    scope (exit)
+        cleanupDir(dir);
+    Sources sources;
+    fakeBody = xcliSpec;
+    extensionCommand(dir, sources, ["add", "t"], ["spec": "http://h/o.json"], null, &recordingFetch);
+    assert(lastConnAuth == "NONE");
+    auto lock = buildPath(extensionsRoot(dir), ".t.lock");
+    mkdir(lock);
+    fakeBody = xcliSpec.replace(`"T"`, `"T3"`);
+    assertThrown!ExtensionException(extensionCommand(dir, sources, ["update", "t"], null, null,
+        &recordingFetch));
+    assert(readManifest(dir, "t").sha256 == sha256Hex(xcliSpec)); // previous generation kept
+    assertThrown!ExtensionException(extensionCommand(dir, sources, ["remove", "t"], null, null,
+        &recordingFetch));
+    rmdir(lock);
+    auto upd = extensionCommand(dir, sources, ["update", "t"], null, null, &recordingFetch);
+    assert(upd.indexOf("updated") >= 0, upd);
+    size_t entries;
+    foreach (e; dirEntries(extensionsRoot(dir), SpanMode.shallow))
+        entries++;
+    assert(entries == 1); // only `t`: no .stage-/.old-/.lock leftovers
+    // An explicit --profile that does not exist is honoured (and fails),
+    // rather than silently using the stored one.
+    assertThrown!ExtensionException(extensionCommand(dir, sources, ["update", "t"], null, null,
+        &recordingFetch, "ghost"));
+    assertThrown!ExtensionException(extensionCommand(dir, sources, ["list"], null, ["check": true],
+        &recordingFetch, "ghost"));
 }

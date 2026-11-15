@@ -66,7 +66,7 @@ d8ctl nwf --help                    # the namespace, from the cached spec
 d8ctl nwf escalations list          # live: GET …/api/escalations
 d8ctl nwf feature start --body='{…}' --dry-run
 d8ctl extension list [--check]      # installed extensions (age, sha256, source)
-d8ctl extension update [nwf|--all]  # re-download (skips on a matching ETag)
+d8ctl extension update [nwf|--all]  # re-download (skips on a matching sha256)
 d8ctl extension remove nwf
 ```
 

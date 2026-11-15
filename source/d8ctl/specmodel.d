@@ -421,6 +421,11 @@ CliExt parseCliExt(J vendorExtensions, string where)
             c.audience = x.fields[k].isStr ? x.fields[k].text : null;
             if (c.audience is null)
                 throw new SpecModelException("x-cli.audience must be a string", where ~ "/x-cli/audience");
+            // Only `operator` is defined; anything else (a typo such as
+            // `operater`) would otherwise silently publish the operation.
+            if (c.audience != "operator")
+                throw new SpecModelException("unsupported x-cli.audience '" ~ c.audience
+                    ~ "' (only 'operator' is defined)", where ~ "/x-cli/audience");
             break;
         case "exclude":
             if (x.fields[k].kind == Kind.bool_)
@@ -696,9 +701,41 @@ Catalog buildCatalog(Spec spec, string ns = "cluster")
         c.operatorOnly = cli.audience == "operator"
             || (!cli.present && isMcpExcluded(op.vendorExtensions));
         c.positional = cli.positional;
+        validatePositional(c, "#/paths/" ~ pointerEscape(op.path) ~ "/" ~ op.method.toLower);
         cat.commands ~= c;
     }
     return cat;
+}
+
+/// `x-cli.positional` must name each path/query parameter or body field at
+/// most once, and (when given) bind every path parameter — an unbound
+/// placeholder would otherwise reach the request URL.
+private void validatePositional(const ref ModelCommand c, string where)
+{
+    import std.algorithm : canFind;
+
+    if (!c.positional.length)
+        return;
+    bool[string] seen;
+    foreach (i, p; c.positional)
+    {
+        const at = where ~ "/x-cli/positional/" ~ i.to!string;
+        if (p in seen)
+            throw new SpecModelException("duplicate x-cli.positional name '" ~ p ~ "'", at);
+        seen[p] = true;
+        bool known = c.pathParams.canFind(p) || c.requiredQuery.canFind(p)
+            || c.optionalQuery.canFind(p);
+        foreach (f; c.bodyFields)
+            if (f.name == p)
+                known = true;
+        if (!known)
+            throw new SpecModelException("x-cli.positional name '" ~ p
+                ~ "' is not a path/query parameter or body field of " ~ c.operationId, at);
+    }
+    foreach (p; c.pathParams)
+        if (p !in seen)
+            throw new SpecModelException("x-cli.positional omits path parameter '" ~ p ~ "' of "
+                ~ c.operationId, where ~ "/x-cli/positional");
 }
 
 /// True when `x-mcp` excludes the operation (`x-mcp: false` or
@@ -995,6 +1032,25 @@ unittest
         {"operationId": "getX", "x-cli": {"positional": "id"}, "responses": {}}}}}`));
     assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x": {"get":
         {"operationId": "getX", "x-cli": {"exclude": "yes"}, "responses": {}}}}}`));
+    // Unsupported audience fails closed (a typo must not publish the op).
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x": {"get":
+        {"operationId": "getX", "x-cli": {"audience": "operater"}, "x-mcp": {"exclude": true},
+        "responses": {}}}}}`));
+    // Positional: unknown name, duplicate name, unbound path parameter.
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x": {"get":
+        {"operationId": "getX", "x-cli": {"positional": ["nope"]}, "responses": {}}}}}`));
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x/{a}": {"get":
+        {"operationId": "getX", "x-cli": {"positional": ["a", "a"]},
+        "parameters": [{"name": "a", "in": "path", "required": true}], "responses": {}}}}}`));
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x/{a}/{b}": {"get":
+        {"operationId": "getX", "x-cli": {"positional": ["a"]},
+        "parameters": [{"name": "a", "in": "path", "required": true},
+          {"name": "b", "in": "path", "required": true}], "responses": {}}}}}`));
+    // Positional may name a query parameter.
+    auto q = buildCatalog(`{"paths": {"/x": {"get": {"operationId": "getX",
+        "x-cli": {"positional": ["q"]},
+        "parameters": [{"name": "q", "in": "query"}], "responses": {}}}}}`, null, "nwf");
+    assert(q.commands[0].positional == ["q"]);
 
     // x-mcp: false also excludes (the MCP surface's off switch).
     auto mcpOff = buildCatalog(`{"paths": {"/x": {"get":
