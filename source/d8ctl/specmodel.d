@@ -158,7 +158,7 @@ private string unwrapType(Spec spec, J schema, ref bool[string] seen, size_t dep
     }
     if (auto t = schema.get("type"))
         if (truthy(t))
-            return pyStr(t);
+            return t.isStr ? t.text : null; // 3.1 type unions (arrays) → json
     if (truthy(schema.get("enum")))
         return "string";
     if (truthy(schema.get("oneOf")) || truthy(schema.get("anyOf")))
@@ -227,17 +227,26 @@ private Flat flattenSchema(Spec spec, string name, J schema, ref bool[string] se
             if (nested.isUnion)
                 return nested;
             foreach (pn; nested.names)
-            {
                 out_.put(pn, nested.props[pn]);
-                if (pn in nested.required)
-                    out_.required[pn] = true;
-            }
+            foreach (rn; nested.required.byKey)
+                out_.required[rn] = true;
             continue;
         }
         if (truthy(part.get("oneOf")) || truthy(part.get("anyOf")))
         {
             out_.isUnion = true;
             return out_;
+        }
+        if (part !is schema && truthy(part.get("allOf")))
+        {
+            auto nested = flattenSchema(spec, null, part, seen, depth + 1);
+            if (nested.isUnion)
+                return nested;
+            foreach (pn; nested.names)
+                out_.put(pn, nested.props[pn]);
+            foreach (rn; nested.required.byKey)
+                out_.required[rn] = true;
+            continue;
         }
         auto props = part.get("properties");
         foreach (pn; keysOf(props))
@@ -408,10 +417,12 @@ private string[] splitHyphen(string s)
 private J resolveComponent(Spec spec, J node, string kind, string where)
 {
     const prefix = "#/components/" ~ kind ~ "/";
-    foreach (_; 0 .. spec.limits.maxRefChain)
+    foreach (_; 0 .. spec.limits.maxRefChain + 1)
     {
         if (node is null || !node.has("$ref"))
             return node;
+        if (_ == spec.limits.maxRefChain)
+            break;
         const r = fragmentDecode(node.get("$ref").orS(""));
         if (!r.startsWith(prefix))
             throw new OpenApiException("unsupported $ref: " ~ r, where);
@@ -462,6 +473,8 @@ private OpInfo fromPaths(Spec spec, J op)
     }
     auto raw = spec.spec.get("paths").get(o.path).get(o.method);
     auto responses = raw.get("responses");
+    // Consider every 2xx: the first sets the status, but a later one with a
+    // JSON body wins so member order never turns a payload into `void`.
     bool found;
     foreach (code; keysOf(responses))
     {
@@ -469,15 +482,22 @@ private OpInfo fromPaths(Spec spec, J op)
             continue;
         import std.conv : ConvException;
 
+        long status;
         try
-            o.successStatus = code.to!long;
+            status = code.to!long;
         catch (ConvException)
             continue;
         auto resp = resolveComponent(spec, responses.fields[code], "responses", where ~ "/responses/" ~ code);
         auto media = jsonContent(resp.get("content"));
-        o.hasResponseSchema = media !is null && truthy(media.get("schema"));
+        const hasSchema = media !is null && truthy(media.get("schema"));
+        if (!found || (hasSchema && !o.hasResponseSchema))
+        {
+            o.successStatus = status;
+            o.hasResponseSchema = hasSchema;
+        }
         found = true;
-        break;
+        if (hasSchema)
+            break;
     }
     if (!found)
         o.successStatus = 200;
@@ -520,6 +540,9 @@ Catalog buildCatalog(Spec spec, string ns = "cluster")
             resource = kebab(verb);
         if ((ns ~ "\0" ~ resource ~ "\0" ~ verb) in seen)
             resource = kebab(op.operationId);
+        if ((ns ~ "\0" ~ resource ~ "\0" ~ verb) in seen)
+            throw new SpecModelException("duplicate command '" ~ resource ~ " " ~ verb ~ "' for "
+                ~ op.operationId, "#/paths/" ~ pointerEscape(op.path));
         seen[ns ~ "\0" ~ resource ~ "\0" ~ verb] = true;
         ModelCommand c;
         c.operationId = op.operationId;
@@ -755,4 +778,47 @@ unittest
     assertThrown!SpecModelException(buildCatalog(`{"servers": [{"url": "http://h/v2"}],
         "paths": {"/x": {"servers": [{"url": "http://h/other"}],
         "get": {"operationId": "getX", "responses": {}}}}}`));
+}
+
+/// Review regressions: response order, type unions, required merge, nested allOf, ref limit, collisions.
+unittest
+{
+    import std.exception : assertThrown;
+
+    enum spec = `{
+      "paths": {
+        "/a": {"get": {"operationId": "getA", "responses": {
+          "204": {"description": "none"},
+          "200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}}},
+        "/b": {"get": {"operationId": "getB", "responses": {
+          "200": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}},
+          "204": {"description": "none"}}}},
+        "/c": {"post": {"operationId": "createC",
+          "requestBody": {"$ref": "#/components/requestBodies/C"},
+          "responses": {"204": {"description": "none"}}}}
+      },
+      "components": {
+        "requestBodies": {"C": {"content": {"application/json": {"schema": {"allOf": [
+          {"$ref": "#/components/schemas/RequiredName"},
+          {"properties": {"name": {"type": "string"}, "u": {"type": ["string", "null"]}}},
+          {"allOf": [{"properties": {"deep": {"type": "integer"}}, "required": ["deep"]}]}
+        ]}}}}},
+        "schemas": {"RequiredName": {"required": ["name"]}}
+      }
+    }`;
+    auto spec_ = new Spec(parseJson(spec), null);
+    spec_.limits.maxRefChain = 1;
+    auto cat = buildCatalog(spec_);
+    assert(cat.commands[0].kind == "json");
+    assert(cat.commands[1].kind == "json");
+    assert(cat.commands[2].bodyFields == [
+        ModelField("name", "string", true, ""),
+        ModelField("u", "json", false, ""),
+        ModelField("deep", "integer", true, ""),
+    ]);
+
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {
+        "/foo-bar": {"get": {"responses": {}}},
+        "/foo_bar": {"get": {"responses": {}}},
+        "/foo/bar": {"get": {"responses": {}}}}}`));
 }
