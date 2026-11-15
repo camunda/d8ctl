@@ -15,7 +15,7 @@ module d8ctl.specmodel;
 
 @safe:
 
-import std.array : appender, join;
+import std.array : appender, join, replace;
 import std.conv : to;
 import std.regex : ctRegex, matchFirst, replaceAll;
 import std.string : endsWith, indexOf, startsWith, strip, stripRight, toLower, toUpper;
@@ -351,6 +351,10 @@ private string serverPath(J servers)
     if (!list.length)
         return null;
     string rest = list[0].get("url").orS("");
+    // Server variables take their declared defaults (as resolveBaseUrl does).
+    if (auto vars = list[0].get("variables"))
+        foreach (k; keysOf(vars))
+            rest = rest.replace("{" ~ k ~ "}", vars.get(k).get("default").orS(""));
     const sep = rest.indexOf("://");
     string p;
     if (sep >= 0)
@@ -1331,4 +1335,10 @@ unittest
         null, "t");
     foreach (c; cat.commands)
         assert(c.rootServer == (c.operationId == "getHealth"), c.operationId);
+
+    // Server-variable defaults apply before comparing: `/{version}` (v1) == `/v1`.
+    auto vcat = buildCatalog(`{"servers": [{"url": "/{version}", "variables": {"version": {"default": "v1"}}}],
+      "paths": {"/x": {"get": {"operationId": "getX", "servers": [{"url": "/v1"}],
+        "responses": {"200": {"description": "ok"}}}}}}`, null, "t");
+    assert(!vcat.commands[0].rootServer);
 }
