@@ -5,6 +5,7 @@ module d8ctl.app;
 
 import camunda.runtime;
 import d8ctl.catalog : catalogOperationCount;
+import d8ctl.extensions;
 import d8ctl.version_ : cliVersion;
 import d8ctl.dispatch;
 import d8ctl.help;
@@ -14,19 +15,32 @@ import d8ctl.safeio : stdErr, stdOut;
 
 int run(string[] args)
 {
+    return run(args, defaultDirs());
+}
+
+/// `run` against explicit profile/config dirs (tests pass a temp dir).
+int run(string[] args, Dirs dirs)
+{
     // args[0] is the program name.
     auto argv = args.length > 1 ? args[1 .. $] : (string[]).init;
-    auto r = parse(argv);
+    Result r;
+    try
+        r = parse(argv, dirs.d8ctl);
+    catch (ExtensionException e)
+    {
+        stdErr.writeln("d8ctl: ", e.msg);
+        return 2;
+    }
     final switch (r.kind)
     {
     case Kind.helpRoot:
         stdOut.writeln(rootHelp());
         return 0;
     case Kind.helpNs:
-        stdOut.writeln(nsHelp(r.ns, r.flags.order));
+        stdOut.writeln(nsHelp(r.ns, r.flags.order, r.extCatalog, r.extRows, r.flags.operator));
         return 0;
     case Kind.helpResource:
-        stdOut.writeln(resourceHelp(r.ns, r.resource));
+        stdOut.writeln(resourceHelp(r.ns, r.resource, r.extCatalog, r.extRows, r.flags.operator));
         return 0;
     case Kind.helpCommand:
         stdOut.writeln(commandHelp(r.command));
@@ -37,15 +51,37 @@ int run(string[] args)
     case Kind.helpProfile:
         stdOut.writeln(profileHelp());
         return 0;
+    case Kind.helpExtension:
+        stdOut.writeln(extensionHelp());
+        return 0;
     case Kind.error:
         stdErr.writeln("d8ctl: ", r.message);
         return 2;
     case Kind.profile:
         try
         {
-            stdOut.write(profileCommand(defaultDirs(), r.positionals, r.flags.config,
+            stdOut.write(profileCommand(dirs, r.positionals, r.flags.config,
                 r.flags.bare, configFromEnv(), r.flags.headers));
             return 0;
+        }
+        catch (ProfileException e)
+        {
+            stdErr.writeln("d8ctl: ", e.msg);
+            return 2;
+        }
+    case Kind.extension:
+        try
+        {
+            auto sources = loadSources(dirs);
+            foreach (w; sources.warnings) stdErr.writeln("d8ctl: warning: ", w);
+            stdOut.write(extensionCommand(dirs.d8ctl, sources, r.positionals,
+                r.flags.named, r.flags.bare, &fetchSpecHttp, r.flags.profile));
+            return 0;
+        }
+        catch (ExtensionException e)
+        {
+            stdErr.writeln("d8ctl: ", e.msg);
+            return 2;
         }
         catch (ProfileException e)
         {
@@ -57,8 +93,10 @@ int run(string[] args)
         {
             import std.process : environment;
 
-            auto sources = loadSources(defaultDirs());
+            auto sources = loadSources(dirs);
             foreach (w; sources.warnings) stdErr.writeln("d8ctl: warning: ", w);
+            if (r.extCatalog !is null)
+                return invokeExtension(dirs, sources, r);
             auto conn = resolveConnection(sources, r.flags.profile,
                 environment.get("D8CTL_PROFILE"), r.flags.config,
                 (string k) => environment.get(k), r.flags.headers);
@@ -79,6 +117,11 @@ int run(string[] args)
             stdErr.writeln("d8ctl: ", e.msg);
             return 2;
         }
+        catch (ExtensionException e)
+        {
+            stdErr.writeln("d8ctl: ", e.msg);
+            return 2;
+        }
         catch (UsageException e)
         {
             stdErr.writeln("d8ctl: ", e.msg);
@@ -90,6 +133,31 @@ int run(string[] args)
             return 1;
         }
     }
+}
+
+/// Run one extension command against its own base URL. The profile (the
+/// manifest's default or `--profile`) supplies only auth and headers — never
+/// its cluster address. With no profile, requests send no auth.
+private int invokeExtension(Dirs dirs, const ref Sources sources, const ref Result r)
+{
+    import std.process : environment;
+
+    auto m = readManifest(dirs.d8ctl, r.ns);
+    auto profileName = r.flags.profile.length ? r.flags.profile : m.profile;
+    auto overrides = extensionOverrides(sources, profileName);
+    // The extension's own base URL; EXACT stops the SDK appending /v2.
+    overrides["CAMUNDA_REST_ADDRESS"] = m.baseUrl;
+    overrides["CAMUNDA_REST_ADDRESS_EXACT"] = "true";
+    if (r.flags.headers.length)
+        overrides[headersKey] = headersToJson(mergeHeaders(
+            headersFromJson(overrides.get(headersKey, null)), r.flags.headers));
+    auto client = Transport.fromEnv(overrides);
+    client.userAgent = "d8ctl/" ~ cliVersion;
+    auto previewHeaders = overrides.get(headersKey, null);
+    auto out_ = invoke(client, r, previewHeaders, m.baseUrl);
+    if (out_.length) stdOut.write(out_);
+    if (out_.length && out_[$ - 1] != '\n') stdOut.writeln();
+    return 0;
 }
 
 unittest

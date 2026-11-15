@@ -29,7 +29,7 @@ string substitutePath(string path, const string[] names, const string[] values)
     return out_;
 }
 
-string invoke(Transport client, const ref Result r, string headersJson = null)
+string invoke(Transport client, const ref Result r, string headersJson = null, string baseUrl = null)
 {
     auto c = r.command;
     if (c is null) throw new UsageException("no command");
@@ -38,12 +38,16 @@ string invoke(Transport client, const ref Result r, string headersJson = null)
             c.operationId ~ " is multipart; file flags are not in this spike. "
             ~ "Use the SDK's deployResources helper or wait for the next slice.");
 
-    if (r.positionals.length < c.pathParams.length)
+    // Positional arguments: path parameters in path order, or the order
+    // x-cli.positional declares (runtime extensions, #9).
+    auto posNames = c.positional.length ? c.positional : c.pathParams;
+
+    if (r.positionals.length < posNames.length)
         throw new UsageException(
-            "missing path parameter(s). Need: " ~ joinComma(c.pathParams)
+            "missing positional argument(s). Need: " ~ joinComma(posNames)
             ~ ". See `d8ctl " ~ c.namespace ~ " " ~ c.resource ~ " " ~ c.verb ~ " --help`.");
 
-    auto extra = r.positionals.length - c.pathParams.length;
+    auto extra = r.positionals.length - posNames.length;
     if (extra > 0)
         throw new UsageException("unexpected extra argument(s).");
 
@@ -71,10 +75,23 @@ string invoke(Transport client, const ref Result r, string headersJson = null)
                     ~ c.namespace ~ " " ~ c.resource ~ " " ~ c.verb ~ " --help`.");
     }
 
-    auto path = substitutePath(c.path, c.pathParams, r.positionals[0 .. c.pathParams.length]);
+    string path = c.path;
+    if (c.positional.length)
+    {
+        // x-cli.positional names which parameter each argument fills.
+        string[] names, values;
+        foreach (i, p; c.positional)
+        {
+            names ~= p;
+            values ~= r.positionals[i];
+        }
+        path = substitutePath(path, names, values);
+    }
+    else
+        path = substitutePath(path, c.pathParams, r.positionals[0 .. c.pathParams.length]);
 
     if (r.flags.dryRun)
-        return formatDryRun(c, path, query, body_, headersJson);
+        return formatDryRun(c, path, query, body_, headersJson, baseUrl);
 
     // Cluster-admin operations live at the bare root, not under /v2.
     const server = c.rootServer ? ServerBase.root : ServerBase.api;
@@ -203,11 +220,11 @@ string bodyKindHint(string kind)
 }
 
 string formatDryRun(const Command* c, string path, string[string] query, JSONValue body_,
-    string headersJson = null)
+    string headersJson = null, string baseUrl = null)
 {
     import d8ctl.profiles : headersFromJson;
     import std.format : format;
-    auto s = format("dry-run %s %s", c.method, path);
+    auto s = format("dry-run %s %s%s", c.method, baseUrl.length ? baseUrl : "", path);
     if (c.rootServer) s ~= " (root server, not under /v2)";
     if (query.length)
     {

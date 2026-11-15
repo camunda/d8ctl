@@ -54,6 +54,36 @@ evaluate decision, …) stay `--body` only.
 `--order=resource|verb` only changes how help lists commands. Both orders
 always parse.
 
+## Runtime extensions
+
+Beyond the built-in `cluster` namespace, d8ctl can install namespaces
+generated at runtime from a running server's OpenAPI spec (first target:
+Nano Workforce):
+
+```sh
+d8ctl extension add nwf --spec=http://merlin.local:8080/.../app/api-docs/openapi.json [--profile=merlin]
+d8ctl nwf --help                    # the namespace, from the cached spec
+d8ctl nwf escalations list          # live: GET …/api/escalations
+d8ctl nwf feature start --body='{…}' --dry-run
+d8ctl extension list [--check]      # installed extensions (age, sha256, source)
+d8ctl extension update [nwf|--all]  # re-download (skips on a matching ETag)
+d8ctl extension remove nwf
+```
+
+The spec is cached under `<configDir>/extensions/<name>/` (`spec.json` byte
+for byte plus an `extension.json` manifest, written 0600 in a 0700 dir).
+Ordinary `d8ctl <name> …` commands read only the cache — never the network.
+The namespace has its own base URL (the spec's `servers[0].url` resolved
+against the spec URL, or `--base-url`); a profile supplies only auth and
+headers, never its cluster address.
+
+Command names come from the spec's `x-cli.command` when present, else from
+splitting the `operationId`. Operations with `x-cli.audience: operator` (or
+excluded from the MCP surface with no `x-cli`) are hidden from help and
+refused unless you pass `--operator`; `x-cli.exclude` removes them
+completely. Extension names are reserved against the built-ins (`cluster`,
+`profile`, `extension`, …). See `d8ctl extension --help`.
+
 ## Connecting to clusters
 
 d8ctl uses the SDK's `CAMUNDA_*` settings (`CAMUNDA_REST_ADDRESS`,

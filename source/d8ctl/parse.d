@@ -10,8 +10,10 @@ module d8ctl.parse;
 
 @safe:
 
+import d8ctl.extensions : Extension, ExtensionException;
 import d8ctl.profiles : Header, parseHeaderSwitch, ProfileException, switchToKey;
 import d8ctl.catalog;
+import d8ctl.specmodel : Catalog;
 import d8ctl.util : eqIgnoreCase;
 import std.algorithm : canFind, startsWith;
 import std.string : indexOf;
@@ -27,6 +29,8 @@ struct Flags
     bool help;
     bool version_;
     bool dryRun;
+    /// Reveal and allow operator-audience extension operations (per-invocation).
+    bool operator;
     Order order = Order.resource;
     string[string] named;
     string bodyJson;
@@ -36,7 +40,7 @@ struct Flags
     string[string] config;
     /// `--header 'Name: value'` (repeatable), in argv order.
     Header[] headers;
-    /// Value-less `--flag`s. Only `profile` subcommands accept them.
+    /// Value-less `--flag`s. Only `profile`/`extension` subcommands accept them.
     bool[string] bare;
 }
 
@@ -50,6 +54,8 @@ enum Kind
     invoke,
     profile,
     helpProfile,
+    extension,
+    helpExtension,
     error,
 }
 
@@ -61,11 +67,24 @@ struct Result
     string resource;
     string verb;
     const(Command)* command;
+    /// Set when `ns` is a runtime extension: the model built from its cache.
+    const(Catalog)* extCatalog;
+    /// `extCatalog` materialized as a `Command` table; `command` points into it.
+    const(Command)[] extRows;
     Flags flags;
     string[] positionals;
 }
 
 Result parse(string[] args)
+{
+    import d8ctl.profiles : configDir;
+
+    return parse(args, configDir());
+}
+
+/// Full parse. `cfgDir` locates installed runtime extensions (`<cfgDir>/extensions/`);
+/// production passes `configDir()`, tests a temp dir.
+Result parse(string[] args, string cfgDir)
 {
     Result r;
     Flags flags;
@@ -105,6 +124,11 @@ Result parse(string[] args)
         if (a == "--dry-run")
         {
             flags.dryRun = true;
+            continue;
+        }
+        if (a == "--operator")
+        {
+            flags.operator = true;
             continue;
         }
         if (a.startsWith("--order="))
@@ -204,7 +228,20 @@ Result parse(string[] args)
         return r;
     }
 
-    // Value-less flags are only meaningful to `profile` subcommands.
+    if (pos[0] == "help" && pos.length >= 2 && (pos[1] == "extensions" || pos[1] == "extension"))
+    {
+        r.kind = Kind.helpExtension;
+        return r;
+    }
+
+    if (pos[0] == "extension" || pos[0] == "extensions")
+    {
+        r.positionals = pos[1 .. $];
+        r.kind = flags.help ? Kind.helpExtension : Kind.extension;
+        return r;
+    }
+
+    // Value-less flags are only meaningful to `profile`/`extension` subcommands.
     foreach (k, _; flags.bare)
     {
         r.kind = Kind.error;
@@ -212,14 +249,30 @@ Result parse(string[] args)
         return r;
     }
 
+    const(Command)* cmd;
+    const(Catalog)* extCat;
+    const(Command)[] extRows;
     if (!isNamespace(pos[0]))
     {
+        // Runtime extensions: a cached spec becomes a namespace (#9).
+        if (auto e = tryLoadExtension(cfgDir, pos[0]))
+        {
+            r.ns = pos[0];
+            auto catCopy = new Catalog;
+            *catCopy = e.catalog;
+            extCat = catCopy;
+            extRows = overlayRows(extCat);
+            r.extCatalog = extCat;
+            r.extRows = extRows;
+            goto extensionNs;
+        }
         r.kind = Kind.error;
         r.message = "unknown namespace '" ~ pos[0] ~ "'. See `d8ctl --help`.";
         return r;
     }
     r.ns = pos[0];
 
+extensionNs:
     if (pos.length == 1)
     {
         r.kind = Kind.helpNs;
@@ -229,11 +282,11 @@ Result parse(string[] args)
     auto a = pos[1];
     string b = pos.length > 2 ? pos[2] : null;
 
-    // Prefer the order that actually matches a command.
-    const(Command)* cmd;
+    // Prefer the order that actually matches a command. Operator-only rows
+    // stay invisible without --operator — even from lookup.
     if (b.length)
     {
-        cmd = findExact(r.ns, a, b);
+        cmd = findExact(r.ns, a, b, extCat, extRows, flags.operator);
         if (cmd !is null)
         {
             r.resource = a;
@@ -241,7 +294,7 @@ Result parse(string[] args)
         }
         else
         {
-            cmd = findExact(r.ns, b, a);
+            cmd = findExact(r.ns, b, a, extCat, extRows, flags.operator);
             if (cmd !is null)
             {
                 r.resource = b;
@@ -252,7 +305,7 @@ Result parse(string[] args)
     if (cmd is null && !b.length)
     {
         // `d8ctl cluster topology` — resource help if it is a resource.
-        auto res = commandsFor(r.ns, a);
+        auto res = commandsFor(r.ns, a, extCat, extRows, flags.operator);
         if (res.length)
         {
             r.resource = a;
@@ -260,7 +313,7 @@ Result parse(string[] args)
             return r;
         }
         // `d8ctl cluster get` — verb help (list resources that accept get).
-        if (isVerb(a))
+        if (isVerb(a, extCat, extRows))
         {
             r.verb = a;
             r.kind = Kind.helpNs;
@@ -273,6 +326,20 @@ Result parse(string[] args)
     }
     if (cmd is null)
     {
+        // An operator-only row exists but is hidden: say so, don't say "unknown".
+        if (extCat !is null && !flags.operator)
+        {
+            auto hit = findExact(r.ns, a, b, extCat, extRows, true);
+            if (hit is null && b.length)
+                hit = findExact(r.ns, b, a, extCat, extRows, true);
+            if (hit !is null)
+            {
+                r.kind = Kind.error;
+                r.message = "operation " ~ hit.resource ~ " " ~ hit.verb
+                    ~ " is operator-only; re-run with --operator";
+                return r;
+            }
+        }
         r.kind = Kind.error;
         r.message = "unknown command in namespace '" ~ r.ns ~ "': " ~ a
             ~ (b.length ? " " ~ b : "");
@@ -285,6 +352,30 @@ Result parse(string[] args)
     if (pos.length > 3) r.positionals = pos[3 .. $];
     r.kind = flags.help ? Kind.helpCommand : Kind.invoke;
     return r;
+}
+
+/// The extension named `name`, or null when none is installed. A corrupt
+/// cache is a parse error naming the fix.
+private Extension* tryLoadExtension(string cfgDir, string name)
+{
+    import d8ctl.extensions : isValidExtensionName, loadExtension;
+
+    if (!isValidExtensionName(name))
+        return null;
+    import std.file : exists;
+
+    if (!exists(manifestPathOf(cfgDir, name)))
+        return null;
+    auto loaded = new Extension;
+    *loaded = loadExtension(cfgDir, name);
+    return loaded;
+}
+
+private string manifestPathOf(string cfgDir, string name)
+{
+    import d8ctl.extensions : manifestPath;
+
+    return manifestPath(cfgDir, name);
 }
 
 unittest
@@ -350,4 +441,64 @@ unittest
     auto jobsVerb = parse(["cluster", "activate", "jobs"]);
     assert(jobsVerb.kind == Kind.invoke);
     assert(jobsVerb.command.operationId == "activateJobs");
+}
+
+/// Runtime extensions (#9): a cached spec becomes a namespace; the operator
+/// gate hides and refuses operator-only operations without --operator.
+unittest
+{
+    import d8ctl.extensions : extensionCommand, FetchFn, FetchResult;
+    import d8ctl.profiles : Sources;
+    import std.file : exists, rmdirRecurse, tempDir;
+    import std.path : buildPath;
+    import std.process : thisProcessID;
+    import std.conv : to;
+
+    auto dir = buildPath(tempDir, "d8ctl-parse-ext-" ~ thisProcessID.to!string);
+    scope (exit)
+        if (exists(dir)) rmdirRecurse(dir);
+
+    // Install a tiny x-cli extension via a fake fetch (no network).
+    static string body_;
+    static FetchResult ff(string, string, const Header[]) @safe
+    {
+        return FetchResult(body_, null, false);
+    }
+    body_ = `{"openapi":"3.0.3","info":{"title":"T","version":"1"},"servers":[{"url":"api"}],
+      "paths": {
+        "/status": {"get": {"operationId": "getStatus", "responses": {"200": {"description": "ok"}}}},
+        "/things/{id}": {"get": {"operationId": "getThing",
+            "x-cli": {"command": "thing show", "positional": ["id"]},
+            "parameters": [{"name": "id", "in": "path", "required": true}],
+            "responses": {"200": {"description": "ok"}}}},
+        "/doors": {"post": {"operationId": "openDoor",
+            "x-cli": {"command": "door open", "audience": "operator"},
+            "responses": {"200": {"description": "ok"}}}}
+      }}`;
+    auto sources = Sources.init;
+    extensionCommand(dir, sources, ["add", "t"], ["spec": "http://h/openapi.json"], null, &ff);
+
+    // The namespace parses; both orders; x-cli naming and positional.
+    auto st = parse(["t", "status", "get"], dir);
+    assert(st.kind == Kind.invoke && st.extCatalog !is null);
+    assert(st.command.operationId == "getStatus");
+    auto th = parse(["t", "thing", "show", "42"], dir);
+    assert(th.kind == Kind.invoke && th.command.operationId == "getThing");
+    assert(th.positionals == ["42"]);
+    auto th2 = parse(["t", "show", "thing", "42"], dir);
+    assert(th2.kind == Kind.invoke && th2.command.operationId == "getThing");
+
+    // Operator-only: refused without --operator, allowed with it.
+    auto door = parse(["t", "door", "open"], dir);
+    assert(door.kind == Kind.error && door.message.indexOf("operator-only") >= 0);
+    auto doorOp = parse(["t", "door", "open", "--operator"], dir);
+    assert(doorOp.kind == Kind.invoke && doorOp.command.operationId == "openDoor");
+
+    // Namespace help lists it; operator rows hidden unless --operator.
+    assert(parse(["t"], dir).kind == Kind.helpNs);
+    assert(parse(["t", "--operator"], dir).flags.operator);
+
+    // Unknown namespace still errors; reserved name never parses as extension.
+    assert(parse(["nope"], dir).kind == Kind.error);
+    assert(parse(["cluster", "topology", "get"], dir).extCatalog is null);
 }
