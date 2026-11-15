@@ -29,7 +29,7 @@ string substitutePath(string path, const string[] names, const string[] values)
     return out_;
 }
 
-string invoke(Transport client, const ref Result r, string headersJson = null)
+string invoke(Transport client, const ref Result r, string headersJson = null, string baseUrl = null)
 {
     auto c = r.command;
     if (c is null) throw new UsageException("no command");
@@ -38,43 +38,76 @@ string invoke(Transport client, const ref Result r, string headersJson = null)
             c.operationId ~ " is multipart; file flags are not in this spike. "
             ~ "Use the SDK's deployResources helper or wait for the next slice.");
 
-    if (r.positionals.length < c.pathParams.length)
+    // Positional arguments: path parameters in path order, or the order
+    // x-cli.positional declares (runtime extensions, #9).
+    auto posNames = c.positional.length ? c.positional : c.pathParams;
+
+    // Path parameters are always required positionally. An x-cli.positional
+    // query/body field may be omitted (or given as a flag / via --body); the
+    // query and body validation below still enforces the required ones.
+    size_t needed;
+    foreach (i, p; posNames)
+        if (isPathParam(c, p))
+            needed = i + 1;
+    if (r.positionals.length < needed)
         throw new UsageException(
-            "missing path parameter(s). Need: " ~ joinComma(c.pathParams)
+            "missing positional argument(s). Need: " ~ joinComma(posNames[0 .. needed])
             ~ ". See `d8ctl " ~ c.namespace ~ " " ~ c.resource ~ " " ~ c.verb ~ " --help`.");
 
-    auto extra = r.positionals.length - c.pathParams.length;
-    if (extra > 0)
+    if (r.positionals.length > posNames.length)
         throw new UsageException("unexpected extra argument(s).");
 
+    // Bind positionals: path parameters fill the path; with x-cli.positional
+    // a name may also be a query parameter or a body field, which binds it
+    // exactly like the matching `--name=` flag (before any validation).
+    string[string] named;
+    foreach (k, v; r.flags.named)
+        named[k] = v;
+    string[] pathNames, pathValues;
+    foreach (i, p; posNames[0 .. r.positionals.length])
+    {
+        if (isPathParam(c, p))
+        {
+            pathNames ~= p;
+            pathValues ~= r.positionals[i];
+            continue;
+        }
+        if (p in named)
+            throw new UsageException("'" ~ p ~ "' was given both positionally and as --" ~ p ~ "=.");
+        named[p] = r.positionals[i];
+    }
+    foreach (p; c.pathParams)
+        if (!isPathParam(pathNames, p))
+            throw new UsageException("internal: path parameter '" ~ p ~ "' has no positional binding");
+
     foreach (q; c.requiredQuery)
-        if (q !in r.flags.named)
+        if (q !in named)
             throw new UsageException("missing required flag --" ~ q ~ "=…");
 
     string[string] query;
     foreach (q; c.requiredQuery)
-        query[q] = r.flags.named[q];
+        query[q] = named[q];
     foreach (q; c.optionalQuery)
-        if (q in r.flags.named) query[q] = r.flags.named[q];
+        if (q in named) query[q] = named[q];
 
     JSONValue body_ = JSONValue(null);
     if (c.hasBody)
-        body_ = buildBody(c, r);
+        body_ = buildBody(c, named, r.flags.bodyJson);
     else if (r.flags.bodyJson.length)
         throw new UsageException("this operation does not take --body.");
     else
     {
-        foreach (name, _; r.flags.named)
+        foreach (name, _; named)
             if (!isQueryFlag(c, name))
                 throw new UsageException(
                     "unknown flag --" ~ name ~ "=. See `d8ctl "
                     ~ c.namespace ~ " " ~ c.resource ~ " " ~ c.verb ~ " --help`.");
     }
 
-    auto path = substitutePath(c.path, c.pathParams, r.positionals[0 .. c.pathParams.length]);
+    auto path = substitutePath(c.path, pathNames, pathValues);
 
     if (r.flags.dryRun)
-        return formatDryRun(c, path, query, body_, headersJson);
+        return formatDryRun(c, path, query, body_, headersJson, baseUrl);
 
     // Cluster-admin operations live at the bare root, not under /v2.
     const server = c.rootServer ? ServerBase.root : ServerBase.api;
@@ -88,6 +121,18 @@ string invoke(Transport client, const ref Result r, string headersJson = null)
         return client.requestText(c.method, path, body_, query, server);
     auto payload = client.requestJson(c.method, path, body_, query, server);
     return payload.toPrettyString;
+}
+
+bool isPathParam(const Command* c, string name)
+{
+    return isPathParam(c.pathParams, name);
+}
+
+bool isPathParam(const string[] names, string name)
+{
+    foreach (p; names)
+        if (p == name) return true;
+    return false;
 }
 
 bool isQueryFlag(const Command* c, string name)
@@ -157,9 +202,14 @@ JSONValue parseBodyObject(string raw)
 
 JSONValue buildBody(const Command* c, const ref Result r)
 {
+    return buildBody(c, r.flags.named, r.flags.bodyJson);
+}
+
+JSONValue buildBody(const Command* c, const string[string] named, string bodyJson)
+{
     auto obj = emptyObject();
 
-    foreach (name, raw; r.flags.named)
+    foreach (name, raw; named)
     {
         if (isQueryFlag(c, name)) continue;
         auto f = findBodyField(c, name);
@@ -170,14 +220,14 @@ JSONValue buildBody(const Command* c, const ref Result r)
         obj[name] = parseTyped(f, raw);
     }
 
-    if (r.flags.bodyJson.length)
+    if (bodyJson.length)
     {
-        auto extra = parseBodyObject(r.flags.bodyJson);
+        auto extra = parseBodyObject(bodyJson);
         foreach (k, v; extra.objectNoRef)
             obj[k] = v;
     }
 
-    if (obj.objectNoRef.length == 0 && !r.flags.bodyJson.length && c.bodyFields.length == 0)
+    if (obj.objectNoRef.length == 0 && !bodyJson.length && c.bodyFields.length == 0)
         throw new UsageException(
             "this operation has a JSON body; pass --body='{…}'.");
 
@@ -203,12 +253,12 @@ string bodyKindHint(string kind)
 }
 
 string formatDryRun(const Command* c, string path, string[string] query, JSONValue body_,
-    string headersJson = null)
+    string headersJson = null, string baseUrl = null)
 {
     import d8ctl.profiles : headersFromJson;
     import std.format : format;
-    auto s = format("dry-run %s %s", c.method, path);
-    if (c.rootServer) s ~= " (root server, not under /v2)";
+    auto s = format("dry-run %s %s%s", c.method, baseUrl.length ? baseUrl : "", path);
+    if (c.rootServer && !baseUrl.length) s ~= " (root server, not under /v2)";
     if (query.length)
     {
         s ~= " ?";

@@ -41,6 +41,12 @@ struct Command
     BodyField[] bodyFields;
     /// Resolved against the bare root (`{schema}://{host}:{port}`), not `/v2`.
     bool rootServer;
+    /// Hidden unless `--operator` (runtime extensions, d8ctl#9).
+    bool operatorOnly;
+    /// Positional argument names from `x-cli.positional`; empty = path order.
+    string[] positional;
+    /// Explicit command paths from `x-cli.command`/`aliases`; empty = resource/verb.
+    string[][] paths;
 }
 
 /// SHA-256 of the bundled spec this catalog was generated from.

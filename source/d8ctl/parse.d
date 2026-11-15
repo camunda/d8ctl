@@ -10,8 +10,10 @@ module d8ctl.parse;
 
 @safe:
 
+import d8ctl.extensions : Extension, ExtensionException, Manifest;
 import d8ctl.profiles : Header, parseHeaderSwitch, ProfileException, switchToKey;
 import d8ctl.catalog;
+import d8ctl.specmodel : Catalog;
 import d8ctl.util : eqIgnoreCase;
 import std.algorithm : canFind, startsWith;
 import std.string : indexOf;
@@ -27,6 +29,8 @@ struct Flags
     bool help;
     bool version_;
     bool dryRun;
+    /// Reveal and allow operator-audience extension operations (per-invocation).
+    bool operator;
     Order order = Order.resource;
     string[string] named;
     string bodyJson;
@@ -36,7 +40,7 @@ struct Flags
     string[string] config;
     /// `--header 'Name: value'` (repeatable), in argv order.
     Header[] headers;
-    /// Value-less `--flag`s. Only `profile` subcommands accept them.
+    /// Value-less `--flag`s. Only `profile`/`extension` subcommands accept them.
     bool[string] bare;
 }
 
@@ -50,6 +54,8 @@ enum Kind
     invoke,
     profile,
     helpProfile,
+    extension,
+    helpExtension,
     error,
 }
 
@@ -61,23 +67,42 @@ struct Result
     string resource;
     string verb;
     const(Command)* command;
+    /// Set when `ns` is a runtime extension: the model built from its cache.
+    const(Catalog)* extCatalog;
+    /// `extCatalog` materialized as a `Command` table; `command` points into it.
+    const(Command)[] extRows;
+    /// The manifest snapshot loaded with `extCatalog` (one cache generation).
+    /// Invocation uses this — never a fresh read — so an update between parse
+    /// and invoke cannot pair an old command model with a new base URL.
+    const(Manifest)* extManifest;
     Flags flags;
     string[] positionals;
 }
 
 Result parse(string[] args)
 {
+    import d8ctl.profiles : configDir;
+
+    return parse(args, configDir());
+}
+
+/// Full parse. `cfgDir` locates installed runtime extensions (`<cfgDir>/extensions/`);
+/// production passes `configDir()`, tests a temp dir.
+Result parse(string[] args, string cfgDir)
+{
     Result r;
     Flags flags;
     string[] pos;
 
-    // c8ctl spelling: `--profile <name>` (space-separated).
+    // c8ctl spelling: `--profile <name>` (space-separated); the documented
+    // extension switches `--spec <url>` and `--base-url <url>` likewise.
     string[] joined;
     for (size_t i = 0; i < args.length; i++)
     {
-        if (args[i] == "--profile" && i + 1 < args.length && !args[i + 1].startsWith("-"))
+        if ((args[i] == "--profile" || args[i] == "--spec" || args[i] == "--base-url")
+            && i + 1 < args.length && !args[i + 1].startsWith("-"))
         {
-            joined ~= "--profile=" ~ args[i + 1];
+            joined ~= args[i] ~ "=" ~ args[i + 1];
             i++;
         }
         else if ((args[i] == "--header" || args[i] == "-H") && i + 1 < args.length)
@@ -105,6 +130,11 @@ Result parse(string[] args)
         if (a == "--dry-run")
         {
             flags.dryRun = true;
+            continue;
+        }
+        if (a == "--operator")
+        {
+            flags.operator = true;
             continue;
         }
         if (a.startsWith("--order="))
@@ -204,7 +234,20 @@ Result parse(string[] args)
         return r;
     }
 
-    // Value-less flags are only meaningful to `profile` subcommands.
+    if (pos[0] == "help" && pos.length >= 2 && (pos[1] == "extensions" || pos[1] == "extension"))
+    {
+        r.kind = Kind.helpExtension;
+        return r;
+    }
+
+    if (pos[0] == "extension" || pos[0] == "extensions")
+    {
+        r.positionals = pos[1 .. $];
+        r.kind = flags.help ? Kind.helpExtension : Kind.extension;
+        return r;
+    }
+
+    // Value-less flags are only meaningful to `profile`/`extension` subcommands.
     foreach (k, _; flags.bare)
     {
         r.kind = Kind.error;
@@ -212,28 +255,87 @@ Result parse(string[] args)
         return r;
     }
 
+    const(Command)* cmd;
+    const(Catalog)* extCat;
+    const(Command)[] extRows;
     if (!isNamespace(pos[0]))
     {
+        // Runtime extensions: a cached spec becomes a namespace (#9).
+        if (auto e = tryLoadExtension(cfgDir, pos[0]))
+        {
+            r.ns = pos[0];
+            auto catCopy = new Catalog;
+            *catCopy = e.catalog;
+            extCat = catCopy;
+            extRows = overlayRows(extCat);
+            auto manCopy = new Manifest;
+            *manCopy = e.manifest;
+            r.extManifest = manCopy;
+            r.extCatalog = extCat;
+            r.extRows = extRows;
+            goto extensionNs;
+        }
         r.kind = Kind.error;
         r.message = "unknown namespace '" ~ pos[0] ~ "'. See `d8ctl --help`.";
         return r;
     }
     r.ns = pos[0];
 
+extensionNs:
     if (pos.length == 1)
     {
         r.kind = Kind.helpNs;
         return r;
     }
 
+    // Explicit x-cli command paths (nano-ide ADR 0068): matched word-for-word
+    // as authored, longest first; never reordered.
+    if (extCat !is null)
+    {
+        size_t used;
+        auto hit = findPath(extRows, pos[1 .. $], used, flags.operator);
+        if (hit is null && !flags.operator)
+        {
+            size_t hidden;
+            auto op = findPath(extRows, pos[1 .. $], hidden, true);
+            if (op !is null)
+            {
+                import std.array : join;
+
+                r.kind = Kind.error;
+                r.message = "operation " ~ pos[1 .. 1 + hidden].join(" ")
+                    ~ " is operator-only; re-run with --operator";
+                return r;
+            }
+        }
+        if (hit !is null)
+        {
+            r.command = hit;
+            r.resource = hit.resource;
+            r.verb = hit.verb;
+            r.positionals = pos[1 + used .. $];
+            r.kind = flags.help ? Kind.helpCommand : Kind.invoke;
+            return r;
+        }
+        // A strict prefix of a path is a command group: show its leaves.
+        if (commandsUnderPath(extRows, pos[1 .. $], flags.operator).length)
+        {
+            import std.array : join;
+
+            r.resource = pos[1 .. $].join(" ");
+            r.kind = Kind.helpResource;
+            return r;
+        }
+    }
+
     auto a = pos[1];
     string b = pos.length > 2 ? pos[2] : null;
 
-    // Prefer the order that actually matches a command.
-    const(Command)* cmd;
+    // Prefer the order that actually matches a command. Operator-only rows
+    // stay invisible without --operator — even from lookup.
     if (b.length)
     {
-        cmd = findExact(r.ns, a, b);
+        cmd = findExact(r.ns, a, b, extCat, extRows, flags.operator);
         if (cmd !is null)
         {
             r.resource = a;
@@ -241,7 +343,7 @@ Result parse(string[] args)
         }
         else
         {
-            cmd = findExact(r.ns, b, a);
+            cmd = findExact(r.ns, b, a, extCat, extRows, flags.operator);
             if (cmd !is null)
             {
                 r.resource = b;
@@ -252,7 +354,7 @@ Result parse(string[] args)
     if (cmd is null && !b.length)
     {
         // `d8ctl cluster topology` — resource help if it is a resource.
-        auto res = commandsFor(r.ns, a);
+        auto res = commandsFor(r.ns, a, extCat, extRows, flags.operator);
         if (res.length)
         {
             r.resource = a;
@@ -260,7 +362,7 @@ Result parse(string[] args)
             return r;
         }
         // `d8ctl cluster get` — verb help (list resources that accept get).
-        if (isVerb(a))
+        if (isVerb(a, extCat, extRows))
         {
             r.verb = a;
             r.kind = Kind.helpNs;
@@ -273,6 +375,20 @@ Result parse(string[] args)
     }
     if (cmd is null)
     {
+        // An operator-only row exists but is hidden: say so, don't say "unknown".
+        if (extCat !is null && !flags.operator)
+        {
+            auto hit = findExact(r.ns, a, b, extCat, extRows, true);
+            if (hit is null && b.length)
+                hit = findExact(r.ns, b, a, extCat, extRows, true);
+            if (hit !is null)
+            {
+                r.kind = Kind.error;
+                r.message = "operation " ~ hit.resource ~ " " ~ hit.verb
+                    ~ " is operator-only; re-run with --operator";
+                return r;
+            }
+        }
         r.kind = Kind.error;
         r.message = "unknown command in namespace '" ~ r.ns ~ "': " ~ a
             ~ (b.length ? " " ~ b : "");
@@ -285,6 +401,30 @@ Result parse(string[] args)
     if (pos.length > 3) r.positionals = pos[3 .. $];
     r.kind = flags.help ? Kind.helpCommand : Kind.invoke;
     return r;
+}
+
+/// The extension named `name`, or null when none is installed. A corrupt
+/// cache is a parse error naming the fix.
+private Extension* tryLoadExtension(string cfgDir, string name)
+{
+    import d8ctl.extensions : isValidExtensionName, loadExtension;
+
+    if (!isValidExtensionName(name))
+        return null;
+    import std.file : exists;
+
+    if (!exists(manifestPathOf(cfgDir, name)))
+        return null;
+    auto loaded = new Extension;
+    *loaded = loadExtension(cfgDir, name);
+    return loaded;
+}
+
+private string manifestPathOf(string cfgDir, string name)
+{
+    import d8ctl.extensions : manifestPath;
+
+    return manifestPath(cfgDir, name);
 }
 
 unittest
@@ -350,4 +490,152 @@ unittest
     auto jobsVerb = parse(["cluster", "activate", "jobs"]);
     assert(jobsVerb.kind == Kind.invoke);
     assert(jobsVerb.command.operationId == "activateJobs");
+}
+
+/// Runtime extensions (#9): a cached spec becomes a namespace; the operator
+/// gate hides and refuses operator-only operations without --operator.
+unittest
+{
+    import d8ctl.extensions : extensionCommand, FetchFn, FetchResult;
+    import d8ctl.profiles : Sources;
+    import std.file : exists, rmdirRecurse, tempDir;
+    import std.path : buildPath;
+    import std.process : thisProcessID;
+    import std.conv : to;
+
+    auto dir = buildPath(tempDir, "d8ctl-parse-ext-" ~ thisProcessID.to!string);
+    scope (exit)
+        if (exists(dir)) rmdirRecurse(dir);
+
+    // Install a tiny x-cli extension via a fake fetch (no network).
+    static string body_;
+    static FetchResult ff(string, string, string[string]) @safe
+    {
+        return FetchResult(body_, null, false);
+    }
+    body_ = `{"openapi":"3.0.3","info":{"title":"T","version":"1"},"servers":[{"url":"api"}],
+      "paths": {
+        "/status": {"get": {"operationId": "getStatus", "responses": {"200": {"description": "ok"}}}},
+        "/things/{id}": {"get": {"operationId": "getThing",
+            "x-cli": {"command": ["thing", "show"], "positional": ["id"]},
+            "parameters": [{"name": "id", "in": "path", "required": true}],
+            "responses": {"200": {"description": "ok"}}}},
+        "/doors": {"post": {"operationId": "openDoor",
+            "x-cli": {"command": ["door", "open"], "audience": "operator"},
+            "responses": {"200": {"description": "ok"}}}},
+        "/search": {"get": {"operationId": "searchThings",
+            "x-cli": {"command": ["things", "search"], "positional": ["q"]},
+            "parameters": [{"name": "q", "in": "query"}],
+            "responses": {"200": {"description": "ok"}}}},
+        "/notes/{id}": {"post": {"operationId": "addNote",
+            "x-cli": {"command": ["note", "add"], "positional": ["id", "text"]},
+            "parameters": [{"name": "id", "in": "path", "required": true}],
+            "requestBody": {"required": true, "content": {"application/json": {"schema":
+              {"type": "object", "required": ["text"], "properties": {"text": {"type": "string"}}}}}},
+            "responses": {"200": {"description": "ok"}}}},
+        "/runs/{id}/cancel": {"post": {"operationId": "cancelRun",
+            "x-cli": {"command": ["pr", "run", "cancel"], "positional": ["id"],
+              "aliases": [["cancel", "run"]]},
+            "parameters": [{"name": "id", "in": "path", "required": true}],
+            "responses": {"200": {"description": "ok"}}}}
+      }}`;
+    auto sources = Sources.init;
+    extensionCommand(dir, sources, ["add", "t"], ["spec": "http://h/openapi.json"], null, &ff);
+
+    // The namespace parses; both orders; x-cli naming and positional.
+    auto st = parse(["t", "status", "get"], dir);
+    assert(st.kind == Kind.invoke && st.extCatalog !is null);
+    assert(st.command.operationId == "getStatus");
+    auto th = parse(["t", "thing", "show", "42"], dir);
+    assert(th.kind == Kind.invoke && th.command.operationId == "getThing");
+    assert(th.positionals == ["42"]);
+    // x-cli paths are matched as authored, never reordered (ADR 0068).
+    assert(parse(["t", "show", "thing", "42"], dir).kind == Kind.error);
+    // A 3-word path: groups `pr run`, leaf `cancel`; plus an alias path.
+    auto cr = parse(["t", "pr", "run", "cancel", "9"], dir);
+    assert(cr.kind == Kind.invoke && cr.command.operationId == "cancelRun");
+    assert(cr.positionals == ["9"]);
+    auto ca = parse(["t", "cancel", "run", "9"], dir);
+    assert(ca.kind == Kind.invoke && ca.command.operationId == "cancelRun" && ca.positionals == ["9"]);
+    assert(parse(["t", "run", "cancel", "9"], dir).kind == Kind.error);
+    // Group prefixes show group help.
+    auto grp = parse(["t", "pr", "run"], dir);
+    assert(grp.kind == Kind.helpResource && grp.resource == "pr run");
+    assert(parse(["t", "pr"], dir).kind == Kind.helpResource);
+    {
+        import d8ctl.help : resourceHelp, nsHelp;
+
+        auto gh = resourceHelp("t", "pr run", grp.extCatalog, grp.extRows);
+        assert(gh.indexOf("pr run cancel | cancel run") >= 0, gh);
+        auto nh = nsHelp("t", Order.resource, grp.extCatalog, grp.extRows);
+        assert(nh.indexOf("pr run cancel") >= 0, nh);
+    }
+    auto ch = parse(["t", "pr", "run", "cancel", "--help"], dir);
+    assert(ch.kind == Kind.helpCommand && ch.command.operationId == "cancelRun");
+
+    // Positionals bind query parameters and body fields too (x-cli.positional).
+    {
+        import camunda.runtime : Transport;
+        import d8ctl.dispatch : invoke, UsageException;
+        import std.exception : assertThrown;
+
+        auto client = Transport.fromEnv(["CAMUNDA_AUTH_STRATEGY": "NONE",
+            "CAMUNDA_REST_ADDRESS": "http://h/api", "CAMUNDA_REST_ADDRESS_EXACT": "true"]);
+        auto sq = parse(["t", "things", "search", "foo", "--dry-run"], dir);
+        auto dq = invoke(client, sq, null, "http://h/api");
+        assert(dq.indexOf("GET http://h/api/search ?q=foo") >= 0, dq);
+        auto na = parse(["t", "note", "add", "7", "hello", "--dry-run"], dir);
+        auto dn = invoke(client, na, null, "http://h/api");
+        assert(dn.indexOf("POST http://h/api/notes/7") >= 0 && dn.indexOf(`"text": "hello"`) >= 0, dn);
+        auto both = parse(["t", "things", "search", "foo", "--q=bar", "--dry-run"], dir);
+        assertThrown!UsageException(invoke(client, both, null, "http://h/api"));
+        string dry(string[] argv)
+        {
+            auto pr = parse(argv, dir);
+            return invoke(client, pr, null, "http://h/api");
+        }
+        // Optional positional fields may be omitted or given as a flag / --body.
+        auto none_ = dry(["t", "things", "search", "--dry-run"]);
+        assert(none_.indexOf("GET http://h/api/search") >= 0 && none_.indexOf("?q=") < 0, none_);
+        auto asFlag = dry(["t", "things", "search", "--q=foo", "--dry-run"]);
+        assert(asFlag.indexOf("?q=foo") >= 0, asFlag);
+        auto viaBody = dry(["t", "note", "add", "7", `--body={"text":"hi"}`, "--dry-run"]);
+        assert(viaBody.indexOf(`"text": "hi"`) >= 0, viaBody);
+        // Required fields are still enforced; path params are always positional.
+        assertThrown!UsageException(dry(["t", "note", "add", "7", "--dry-run"]));
+        assertThrown!UsageException(dry(["t", "note", "add", "--dry-run"]));
+    }
+
+    // Operator-only: refused without --operator, allowed with it.
+    auto door = parse(["t", "door", "open"], dir);
+    assert(door.kind == Kind.error && door.message.indexOf("operator-only") >= 0);
+    auto doorOp = parse(["t", "door", "open", "--operator"], dir);
+    assert(doorOp.kind == Kind.invoke && doorOp.command.operationId == "openDoor");
+
+    // Namespace help lists it; operator rows hidden unless --operator.
+    assert(parse(["t"], dir).kind == Kind.helpNs);
+    assert(parse(["t", "--operator"], dir).flags.operator);
+
+    // Unknown namespace still errors; reserved name never parses as extension.
+    assert(parse(["nope"], dir).kind == Kind.error);
+    assert(parse(["cluster", "topology", "get"], dir).extCatalog is null);
+
+    // The manifest snapshot rides along with the parse (one generation).
+    assert(st.extManifest !is null);
+    assert(st.extManifest.name == "t" && st.extManifest.baseUrl == "http://h/api");
+
+    // Documented space-separated value flags: --spec <url> / --base-url <url>
+    // parse exactly like the = forms (PR #13 round 4).
+    auto sp = parse(["extension", "add", "n2", "--spec", "http://h/o.json"], dir);
+    assert(sp.kind == Kind.extension && sp.flags.named["spec"] == "http://h/o.json",
+        sp.kind.to!string ~ " " ~ sp.message);
+    assert(sp.positionals == ["add", "n2"], sp.positionals.to!string);
+    auto bu = parse(["extension", "add", "n2", "--spec=http://h/o.json",
+        "--base-url", "http://h/b"], dir);
+    assert(bu.flags.named["base-url"] == "http://h/b" && bu.positionals == ["add", "n2"]);
+    // A value that starts with '-' is not swallowed (it would be a flag):
+    // --spec becomes a bare flag and the extension subcommand reports it.
+    auto neg = parse(["extension", "add", "n2", "--spec", "--base-url=x"], dir);
+    assert(neg.kind == Kind.extension && "spec" !in neg.flags.named
+        && ("spec" in neg.flags.bare) !is null, neg.message);
 }

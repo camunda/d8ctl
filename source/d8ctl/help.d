@@ -6,6 +6,7 @@ module d8ctl.help;
 import d8ctl.profiles : profileHelp;
 import d8ctl.catalog;
 import d8ctl.parse : Kind, Order, Result;
+import d8ctl.specmodel : Catalog;
 import d8ctl.util : eqIgnoreCase;
 import d8ctl.version_ : cliVersion;
 import std.algorithm : sort;
@@ -21,10 +22,13 @@ string rootHelp()
     buf.put("Usage:\n");
     buf.put("  d8ctl [--help] [--version] [--dry-run] [--order=resource|verb]\n");
     buf.put("        [--profile=<name>] [--camunda-<key>=<value> …] cluster …\n");
-    buf.put("  d8ctl profile list|show|add|use|remove …\n\n");
+    buf.put("  d8ctl profile list|show|add|use|remove …\n");
+    buf.put("  d8ctl extension add|list|update|remove …\n\n");
     buf.put(format("The Orchestration Cluster surface is under `cluster` (%s operations).\n", catalogOperationCount));
     buf.put("Both `cluster <resource> <verb>` and `cluster <verb> <resource>` parse.\n");
     buf.put("`--order` only changes how help lists them (default: resource).\n");
+    buf.put("Runtime extensions add namespaces from a server's OpenAPI spec; see\n");
+    buf.put("`d8ctl extension --help` and `d8ctl help extensions`.\n");
     buf.put("See https://github.com/camunda/d8ctl/issues/1\n");
     buf.put("\nConnection: CAMUNDA_* env vars, a profile (--profile=<name> or the active\n");
     buf.put("one), or explicit switches such as --camunda-rest-address=<url>\n");
@@ -34,18 +38,20 @@ string rootHelp()
     return buf.data;
 }
 
-string nsHelp(string ns, Order order)
+string nsHelp(string ns, Order order, const(Catalog)* overlay = null,
+    const(Command)[] overlayRows_ = null, bool includeOperator = false)
 {
     auto buf = appender!string();
-    auto cmds = commandsIn(ns);
-    buf.put(format("d8ctl %s — %s operation(s)\n\n", ns, cmds.length));
+    auto cmds = commandsIn(ns, overlay, overlayRows_, includeOperator);
+    buf.put(format("d8ctl %s — %s operation(s)%s\n\n", ns, cmds.length,
+        overlay !is null && !includeOperator ? " (operator-only hidden; pass --operator to show)" : ""));
     if (order == Order.resource)
     {
         buf.put("Usage: d8ctl " ~ ns ~ " <resource> <verb> [flags]\n\n");
         buf.put("Resources:\n");
-        foreach (res; resourcesIn(ns))
+        foreach (res; resourcesIn(ns, overlay, overlayRows_, includeOperator))
         {
-            auto here = commandsFor(ns, res);
+            auto here = commandsFor(ns, res, overlay, overlayRows_, includeOperator);
             string verbs;
             foreach (c; here)
             {
@@ -61,18 +67,64 @@ string nsHelp(string ns, Order order)
         buf.put("Commands:\n");
         string[] lines;
         foreach (c; cmds)
-            lines ~= format("  %-12s %-32s %s", c.verb, c.resource, c.summary);
+        {
+            // Explicit x-cli paths parse only in their authored order, so a
+            // verb-first table would list an uninvokable spelling; they are
+            // listed verbatim in the x-cli-path section below instead.
+            if (c.paths.length)
+                continue;
+            lines ~= format("  %-12s %-32s %s%s", c.verb, c.resource, c.summary,
+                c.operatorOnly ? "  [operator]" : "");
+        }
         lines.sort();
         foreach (line; lines) { buf.put(line); buf.put("\n"); }
+    }
+    string[] pathLines;
+    foreach (c; cmds)
+        if (c.paths.length)
+            pathLines ~= format("  %-32s %s%s", pathsText(c), c.summary, c.operatorOnly ? "  [operator]" : "");
+    if (pathLines.length)
+    {
+        pathLines.sort();
+        buf.put("\nCommands (x-cli paths):\n");
+        foreach (line; pathLines) { buf.put(line); buf.put("\n"); }
     }
     buf.put("\nPass --help after a resource or command for flags.\n");
     return buf.data;
 }
 
-string resourceHelp(string ns, string resource)
+/// `a b | c d` — a row's explicit command path and aliases, as authored.
+private string pathsText(const ref Command c)
+{
+    import std.array : join;
+
+    string[] alts;
+    foreach (p; c.paths)
+        alts ~= p.join(" ");
+    return alts.join(" | ");
+}
+
+string resourceHelp(string ns, string resource, const(Catalog)* overlay = null,
+    const(Command)[] overlayRows_ = null, bool includeOperator = false)
 {
     auto buf = appender!string();
-    auto cmds = commandsFor(ns, resource);
+    auto cmds = commandsFor(ns, resource, overlay, overlayRows_, includeOperator);
+    if (!cmds.length && overlay !is null)
+    {
+        // An x-cli command group: list the leaves under it.
+        import d8ctl.catalog : commandsUnderPath;
+        import std.array : split;
+
+        auto under = commandsUnderPath(overlayRows_, resource.split(" "), includeOperator);
+        buf.put(format("d8ctl %s %s — %s command(s)\n\n", ns, resource, under.length));
+        foreach (c; under)
+        {
+            buf.put(format("  %-32s %s %s%s\n", pathsText(c), c.method, c.path,
+                c.operatorOnly ? "  [operator]" : ""));
+            buf.put(format("  %-32s %s\n", "", c.summary));
+        }
+        return buf.data;
+    }
     buf.put(format("d8ctl %s %s — %s verb(s)\n\n", ns, resource, cmds.length));
     buf.put("Usage: d8ctl " ~ ns ~ " " ~ resource ~ " <verb> [flags]\n");
     buf.put("   or: d8ctl " ~ ns ~ " <verb> " ~ resource ~ " [flags]\n\n");
@@ -80,8 +132,29 @@ string resourceHelp(string ns, string resource)
     foreach (c; cmds)
     {
         auto ver = c.addedInVersion.length ? "  (since " ~ c.addedInVersion ~ ")" : "";
-        buf.put(format("  %-12s %s %s%s\n", c.verb, c.method, c.path, ver));
+        auto op = c.operatorOnly ? "  [operator]" : "";
+        buf.put(format("  %-12s %s %s%s%s\n", c.verb, c.method, c.path, ver, op));
         buf.put(format("               %s\n", c.summary));
+    }
+    // A derived resource can share its word with an x-cli command group:
+    // list the group's explicit children too, never hide them.
+    if (overlay !is null)
+    {
+        import d8ctl.catalog : commandsUnderPath;
+        import std.array : split;
+
+        bool first = true;
+        foreach (c; commandsUnderPath(overlayRows_, resource.split(" "), includeOperator))
+        {
+            if (!c.paths.length)
+                continue;
+            if (first)
+                buf.put("\nCommands:\n");
+            first = false;
+            buf.put(format("  %-32s %s %s%s\n", pathsText(c), c.method, c.path,
+                c.operatorOnly ? "  [operator]" : ""));
+            buf.put(format("  %-32s %s\n", "", c.summary));
+        }
     }
     return buf.data;
 }
@@ -89,7 +162,10 @@ string resourceHelp(string ns, string resource)
 string commandHelp(const Command* c)
 {
     auto buf = appender!string();
-    buf.put(format("d8ctl %s %s %s\n\n", c.namespace, c.resource, c.verb));
+    if (c.paths.length)
+        buf.put(format("d8ctl %s %s\n\n", c.namespace, pathsText(*c)));
+    else
+        buf.put(format("d8ctl %s %s %s\n\n", c.namespace, c.resource, c.verb));
     buf.put(c.summary);
     buf.put("\n\n");
     buf.put(format("  HTTP        %s %s\n", c.method, c.path));
@@ -111,6 +187,14 @@ string commandHelp(const Command* c)
         foreach (p; c.pathParams)
             buf.put("  " ~ p ~ "\n");
     }
+    if (c.positional.length)
+    {
+        buf.put("\nPositional arguments (x-cli, in order):\n");
+        foreach (p; c.positional)
+            buf.put("  " ~ p ~ "\n");
+    }
+    if (c.operatorOnly)
+        buf.put("\nOperator-only: hidden and refused unless you pass --operator.\n");
     if (c.requiredQuery.length)
     {
         buf.put("\nRequired query flags:\n");
@@ -140,7 +224,7 @@ string commandHelp(const Command* c)
     else if (c.hasBody)
         buf.put("\nThis body has no documented top-level fields; use --body='{…}'.\n");
     buf.put("\nGlobal flags: --dry-run  --header='Name: value'  --help  "
-        ~ "--order=resource|verb  --profile=NAME\n");
+        ~ "--operator  --order=resource|verb  --profile=NAME\n");
     return buf.data;
 }
 
@@ -167,7 +251,11 @@ string render(const ref Result r)
         return commandHelp(r.command);
     case Kind.helpProfile:
         return profileHelp();
-    case Kind.invoke, Kind.profile, Kind.error:
+    case Kind.helpExtension:
+        import d8ctl.extensions : extensionHelp;
+
+        return extensionHelp();
+    case Kind.invoke, Kind.profile, Kind.extension, Kind.error:
         return r.message;
     }
 }
@@ -191,6 +279,37 @@ unittest
     auto createHelp = commandHelp(create);
     assert(createHelp.canFind("no documented top-level fields"));
     assert(createHelp.canFind("--body='{…}'"));
+}
+
+unittest
+{
+    // PR #13 round 4: with --order=verb the resource/verb table must not list
+    // explicit x-cli paths reversed (they parse only in their authored order);
+    // they stay in the dedicated x-cli-path section.
+    import d8ctl.parse : Order;
+    import d8ctl.specmodel : buildCatalog;
+
+    auto cat = new Catalog;
+    *cat = buildCatalog(`{"openapi":"3.0.3","info":{"title":"T","version":"1"},
+      "servers":[{"url":"http://h"}],
+      "paths": {
+        "/status": {"get": {"operationId": "getStatus",
+            "responses": {"200": {"description": "ok"}}}},
+        "/runs/{id}/cancel": {"post": {"operationId": "cancelRun",
+            "x-cli": {"command": ["pr", "run", "cancel"], "positional": ["id"]},
+            "parameters": [{"name": "id", "in": "path", "required": true}],
+            "responses": {"200": {"description": "ok"}}}}
+      }}`, null, "t");
+    import d8ctl.catalog : overlayRows;
+
+    auto rows = overlayRows(cat);
+    auto verb = nsHelp("t", Order.verb, cat, rows);
+    assert(!verb.canFind("cancel pr run") && !verb.canFind("cancel  pr"),
+        verb);
+    assert(verb.canFind("pr run cancel"), verb); // verbatim in the path section
+    assert(verb.canFind("get"), verb); // derived commands still listed
+    auto res = nsHelp("t", Order.resource, cat, rows);
+    assert(res.canFind("pr run cancel"), res);
 }
 
 private bool canFind(string hay, string needle)

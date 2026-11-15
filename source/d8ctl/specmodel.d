@@ -15,7 +15,7 @@ module d8ctl.specmodel;
 
 @safe:
 
-import std.array : appender, join;
+import std.array : appender, join, replace;
 import std.conv : to;
 import std.regex : ctRegex, matchFirst, replaceAll;
 import std.string : endsWith, indexOf, startsWith, strip, stripRight, toLower, toUpper;
@@ -61,6 +61,17 @@ struct ModelCommand
     string[] optionalQuery;
     ModelField[] bodyFields;
     bool rootServer;
+    /// Hidden unless `--operator` (`x-cli.audience: operator`, or `x-mcp`
+    /// exclusion with no `x-cli` — the nano-workforce operator default).
+    bool operatorOnly;
+    /// `x-cli.exclude: true` — the command does not exist at all.
+    bool excluded;
+    /// Positional argument names from `x-cli.positional`; empty = path order.
+    string[] positional;
+    /// Explicit command paths from `x-cli.command` + `x-cli.aliases`
+    /// (namespace-relative words, as authored). Non-empty = the command is
+    /// reached only by these exact word paths, never by resource/verb reordering.
+    string[][] paths;
 }
 
 /// The command model of a whole spec.
@@ -340,13 +351,22 @@ private string serverPath(J servers)
     if (!list.length)
         return null;
     string rest = list[0].get("url").orS("");
+    // Server variables take their declared defaults (as resolveBaseUrl does).
+    if (auto vars = list[0].get("variables"))
+        foreach (k; keysOf(vars))
+            rest = rest.replace("{" ~ k ~ "}", vars.get(k).get("default").orS(""));
     const sep = rest.indexOf("://");
+    string p;
     if (sep >= 0)
+    {
         rest = rest[sep + 3 .. $];
-    const i = rest.indexOf('/');
-    if (i < 0)
-        return "";
-    string p = rest[i .. $];
+        const i = rest.indexOf('/');
+        if (i < 0)
+            return "";
+        p = rest[i .. $];
+    }
+    else // relative server URL (`api`, `/api`, `/`): the whole value is the path
+        p = rest.startsWith("/") ? rest : "/" ~ rest;
     while (p.endsWith("/"))
         p = p[0 .. $ - 1];
     return p;
@@ -371,6 +391,110 @@ private bool isRootServer(Spec spec, ref OpInfo op)
         return true;
     throw new SpecModelException("unsupported server path '" ~ ownPath ~ "' for " ~ op.operationId
         ~ " (top-level '" ~ top ~ "')", "#/paths/" ~ pointerEscape(op.path));
+}
+
+/// The parsed `x-cli` operation extension (nano-ide#617): explicit command
+/// naming and visibility for runtime extensions. All fields optional.
+struct CliExt
+{
+    /// Explicit command path (non-empty array of kebab-case words, as
+    /// authored — nano-ide ADR 0068); overrides operationId splitting.
+    string[] command;
+    /// Extra command paths reaching the same operation.
+    string[][] aliases;
+    /// `audience: operator` hides the command unless `--operator`.
+    string audience;
+    /// `exclude: true` removes the command entirely.
+    bool exclude;
+    /// Positional argument names, overriding path-parameter order.
+    string[] positional;
+    /// True when the operation carried an `x-cli` key at all.
+    bool present;
+}
+
+/// Read and validate `x-cli`; `where` qualifies errors with a JSON pointer.
+/// Unknown keys, a non-kebab or empty `command`, and non-string `positional`
+/// entries are SpecModelException (untrusted input must fail closed).
+CliExt parseCliExt(J vendorExtensions, string where)
+{
+    CliExt c;
+    auto x = vendorExtensions.get("x-cli");
+    if (x is null)
+        return c;
+    if (!x.isObj)
+        throw new SpecModelException("x-cli must be an object", where ~ "/x-cli");
+    c.present = true;
+    foreach (k; keysOf(x))
+    {
+        switch (k)
+        {
+        case "command":
+            c.command = parseWordPath(x.fields[k], where ~ "/x-cli/command", "x-cli.command");
+            break;
+        case "aliases":
+            if (!x.fields[k].isArr)
+                throw new SpecModelException("x-cli.aliases must be an array of word arrays",
+                    where ~ "/x-cli/aliases");
+            foreach (i, a; itemsOf(x.fields[k]))
+                c.aliases ~= parseWordPath(a, where ~ "/x-cli/aliases/" ~ i.to!string, "x-cli.aliases entry");
+            break;
+        case "audience":
+            c.audience = x.fields[k].isStr ? x.fields[k].text : null;
+            if (c.audience is null)
+                throw new SpecModelException("x-cli.audience must be a string", where ~ "/x-cli/audience");
+            // Only `operator` is defined; anything else (a typo such as
+            // `operater`) would otherwise silently publish the operation.
+            if (c.audience != "operator")
+                throw new SpecModelException("unsupported x-cli.audience '" ~ c.audience
+                    ~ "' (only 'operator' is defined)", where ~ "/x-cli/audience");
+            break;
+        case "exclude":
+            if (x.fields[k].kind == Kind.bool_)
+                c.exclude = x.fields[k].boolean;
+            else
+                throw new SpecModelException("x-cli.exclude must be a boolean", where ~ "/x-cli/exclude");
+            break;
+        case "positional":
+            if (!x.fields[k].isArr)
+                throw new SpecModelException("x-cli.positional must be an array of names",
+                    where ~ "/x-cli/positional");
+            foreach (i, p; itemsOf(x.fields[k]))
+            {
+                if (!p.isStr || !p.text.length)
+                    throw new SpecModelException("x-cli.positional entries must be non-empty names",
+                        where ~ "/x-cli/positional/" ~ i.to!string);
+                c.positional ~= p.text;
+            }
+            break;
+        default:
+            throw new SpecModelException("unknown x-cli key '" ~ k ~ "'", where ~ "/x-cli/" ~ pointerEscape(k));
+        }
+    }
+    if (c.aliases.length && !c.command.length)
+        throw new SpecModelException("x-cli.aliases requires x-cli.command", where ~ "/x-cli/aliases");
+    return c;
+}
+
+/// A non-empty JSON array of kebab-case words. A string (the pre-ADR-0068
+/// `"resource verb"` shape) is rejected with a pointer to the array form.
+private string[] parseWordPath(J v, string where, string what)
+{
+    if (v.isStr)
+        throw new SpecModelException(what ~ " must be an array of kebab-case words (e.g. [\"start\", \"feature\"]), not the string '"
+            ~ v.text ~ "'", where);
+    if (!v.isArr)
+        throw new SpecModelException(what ~ " must be a non-empty array of kebab-case words", where);
+    string[] words;
+    foreach (i, w; itemsOf(v))
+    {
+        if (!w.isStr || !w.text.length || w.text != kebab(w.text) || w.text != w.text.toLower)
+            throw new SpecModelException(what ~ " words must be non-empty kebab-case strings",
+                where ~ "/" ~ i.to!string);
+        words ~= w.text;
+    }
+    if (!words.length)
+        throw new SpecModelException(what ~ " must be a non-empty array of kebab-case words", where);
+    return words;
 }
 
 private OpInfo fromMeta(J op, size_t i)
@@ -545,7 +669,9 @@ private OpInfo fromPaths(Spec spec, J op)
 /**
 Build the command model for `spec`. With metadata, operations come from
 `meta.operations`; otherwise from `paths` in document order. Every command
-gets namespace `ns`.
+gets namespace `ns`. `x-cli` extensions (nano-ide#617) override naming and
+visibility: `command` names the command, `audience: operator` and `x-mcp`
+exclusion (without `x-cli`) mark it operator-only, `exclude: true` drops it.
 */
 Catalog buildCatalog(Spec spec, string ns = "cluster")
 {
@@ -553,22 +679,60 @@ Catalog buildCatalog(Spec spec, string ns = "cluster")
     cat.specHash = spec.meta.get("specHash").orS("");
     const fromMetadata = spec.meta.has("operations");
     bool[string] seen;
+    string[][] explicitPaths;
     foreach (i, raw; spec.operations)
     {
         auto op = fromMetadata ? fromMeta(raw, i) : fromPaths(spec, raw);
-        auto vr = splitOp(op.operationId);
-        const verb = vr[0];
+        const where = "#/paths/" ~ pointerEscape(op.path) ~ "/" ~ op.method.toLower;
+        auto cli = parseCliExt(op.vendorExtensions, where);
+        if (cli.exclude)
+            continue; // x-cli.exclude: the command does not exist at all.
+        // The transport sends only these verbs (HEAD and bodiless
+        // OPTIONS/TRACE always fail), so never advertise anything else.
+        import std.algorithm : canFind;
+
+        if (!["GET", "POST", "PUT", "PATCH", "DELETE"].canFind(op.method.toUpper))
+            continue;
+        string resource;
+        string verb;
+        string[][] paths;
+        if (cli.command.length)
+        {
+            // A command path: w1..w(n-1) are groups, wn the leaf (ADR 0068).
+            paths = [cli.command] ~ cli.aliases;
+            foreach (pi, p; paths)
+                checkPathConflicts(explicitPaths, p, op.operationId,
+                    where ~ (pi == 0 ? "/x-cli/command" : "/x-cli/aliases/" ~ (pi - 1).to!string));
+            resource = cli.command[0 .. $ - 1].join(" ");
+            verb = cli.command[$ - 1];
+        }
+        else
+        {
+            auto vr = splitOp(op.operationId);
+            verb = vr[0];
+            resource = kebab(vr[1]);
+            if (!resource.length)
+                resource = kebab(verb);
+        }
         // Lookup matches verbs case-insensitively, so collision keys must too.
         const vkey = verb.toLower;
-        string resource = kebab(vr[1]);
-        if (!resource.length)
-            resource = kebab(verb);
+        if (paths.length)
+        {
+            // Explicit paths have their own (prefix-aware) collision check;
+            // also refuse to shadow an earlier operationId-derived command.
+            if ((ns ~ "\0" ~ resource ~ "\0" ~ vkey) in seen)
+                throw new SpecModelException("duplicate command '" ~ resource ~ " " ~ verb ~ "' for "
+                    ~ op.operationId, "#/paths/" ~ pointerEscape(op.path));
+            seen[ns ~ "\0" ~ resource ~ "\0" ~ vkey] = true;
+            goto build;
+        }
         if ((ns ~ "\0" ~ resource ~ "\0" ~ vkey) in seen)
             resource = kebab(op.operationId);
         if ((ns ~ "\0" ~ resource ~ "\0" ~ vkey) in seen)
             throw new SpecModelException("duplicate command '" ~ resource ~ " " ~ verb ~ "' for "
                 ~ op.operationId, "#/paths/" ~ pointerEscape(op.path));
         seen[ns ~ "\0" ~ resource ~ "\0" ~ vkey] = true;
+    build:
         ModelCommand c;
         c.operationId = op.operationId;
         c.namespace = ns;
@@ -580,14 +744,149 @@ Catalog buildCatalog(Spec spec, string ns = "cluster")
         c.addedInVersion = op.vendorExtensions.get("x-added-in-version").orS("");
         c.kind = kindOf(op);
         c.hasBody = op.hasRequestBody;
-        c.pathParams = op.pathParams;
+        c.pathParams = placeholderOrder(op.path, op.pathParams);
         c.requiredQuery = op.requiredQuery;
         c.optionalQuery = op.optionalQuery;
         c.bodyFields = bodyFieldsOf(spec, op);
         c.rootServer = isRootServer(spec, op);
+        // Operator gate: explicit x-cli.audience wins; without any x-cli, an
+        // x-mcp exclusion defaults to operator-only (nano-workforce#961).
+        c.operatorOnly = cli.audience == "operator"
+            || (!cli.present && isMcpExcluded(op.vendorExtensions));
+        c.positional = cli.positional;
+        c.paths = paths;
+        validatePositional(c, "#/paths/" ~ pointerEscape(op.path) ~ "/" ~ op.method.toLower);
         cat.commands ~= c;
     }
+    checkDerivedAgainstExplicit(cat, explicitPaths);
     return cat;
+}
+
+/// `params` ordered by where their `{name}` placeholder appears in `path`
+/// (default positional order must follow the URL, not the spec's parameter
+/// array). Names without a placeholder keep their relative order, last.
+string[] placeholderOrder(string path, const string[] params) pure
+{
+    import std.algorithm : sort, SwapStrategy;
+    import std.typecons : tuple;
+
+    auto keyed = new typeof(tuple(size_t.init, size_t.init, ""))[params.length];
+    foreach (i, p; params)
+    {
+        const at = path.indexOf("{" ~ p ~ "}");
+        keyed[i] = tuple(at < 0 ? size_t.max : cast(size_t) at, i, p);
+    }
+    sort!((a, b) => a[0] < b[0] || (a[0] == b[0] && a[1] < b[1]), SwapStrategy.stable)(keyed);
+    string[] o;
+    foreach (k; keyed)
+        o ~= k[2];
+    return o;
+}
+
+unittest
+{
+    assert(placeholderOrder("/parents/{parentId}/children/{childId}", ["childId", "parentId"])
+        == ["parentId", "childId"]);
+    assert(placeholderOrder("/a/{x}", ["y", "x"]) == ["x", "y"]);
+}
+
+/// Explicit paths are matched before operationId-derived commands, so an
+/// explicit path or alias equal to, or a prefix of, either accepted order of
+/// a derived command (`resource verb` / `verb resource`) would silently steal
+/// it — whatever the declaration order. Checked after every op is known.
+private void checkDerivedAgainstExplicit(const ref Catalog cat, const string[][] explicitPaths)
+{
+    import std.algorithm : map;
+    import std.array : array;
+
+    string[] low(const string[] w) { return w.map!(x => x.toLower).array; }
+
+    foreach (ref c; cat.commands)
+    {
+        if (c.paths.length)
+            continue;
+        foreach (d; [[c.resource, c.verb], [c.verb, c.resource]])
+        {
+            const dl = low(d);
+            foreach (k; explicitPaths)
+            {
+                const kl = low(k);
+                const n = kl.length < dl.length ? kl.length : dl.length;
+                if (kl[0 .. n] != dl[0 .. n])
+                    continue;
+                throw new SpecModelException("x-cli command path '" ~ k.join(" ")
+                    ~ "' conflicts with the command '" ~ d.join(" ") ~ "' derived from "
+                    ~ c.operationId ~ " (give it an x-cli.command, or pick another path)",
+                    "#/paths/" ~ pointerEscape(c.path));
+            }
+        }
+    }
+}
+
+/// Register `p`; a duplicate path, or one that is a strict prefix of another
+/// (a group that would also be a leaf), is ambiguous and fails clearly.
+private void checkPathConflicts(ref string[][] known, string[] p, string opId, string where)
+{
+    foreach (k; known)
+    {
+        const n = k.length < p.length ? k.length : p.length;
+        if (k[0 .. n] != p[0 .. n])
+            continue;
+        if (k.length == p.length)
+            throw new SpecModelException("duplicate x-cli command path '" ~ p.join(" ") ~ "' for " ~ opId, where);
+        throw new SpecModelException("x-cli command path '" ~ (k.length < p.length ? k : p).join(" ")
+            ~ "' is a prefix of '" ~ (k.length < p.length ? p : k).join(" ") ~ "' (" ~ opId ~ ")", where);
+    }
+    known ~= p;
+}
+
+/// `x-cli.positional` must name each path/query parameter or body field at
+/// most once, and (when given) bind every path parameter — an unbound
+/// placeholder would otherwise reach the request URL.
+private void validatePositional(const ref ModelCommand c, string where)
+{
+    import std.algorithm : canFind;
+
+    if (!c.positional.length)
+        return;
+    bool[string] seen;
+    foreach (i, p; c.positional)
+    {
+        const at = where ~ "/x-cli/positional/" ~ i.to!string;
+        if (p in seen)
+            throw new SpecModelException("duplicate x-cli.positional name '" ~ p ~ "'", at);
+        seen[p] = true;
+        bool known = c.pathParams.canFind(p) || c.requiredQuery.canFind(p)
+            || c.optionalQuery.canFind(p);
+        foreach (f; c.bodyFields)
+            if (f.name == p)
+                known = true;
+        if (!known)
+            throw new SpecModelException("x-cli.positional name '" ~ p
+                ~ "' is not a path/query parameter or body field of " ~ c.operationId, at);
+    }
+    foreach (p; c.pathParams)
+        if (p !in seen)
+            throw new SpecModelException("x-cli.positional omits path parameter '" ~ p ~ "' of "
+                ~ c.operationId, where ~ "/x-cli/positional");
+}
+
+/// True when `x-mcp` excludes the operation (`x-mcp: false` or
+/// `x-mcp: {exclude: true}` — nano-workforce's operator-only marker).
+bool isMcpExcluded(J vendorExtensions)
+{
+    auto x = vendorExtensions.get("x-mcp");
+    if (x is null)
+        return false;
+    if (x.kind == Kind.bool_)
+        return !x.boolean;
+    if (x.isObj)
+    {
+        auto e = x.get("exclude");
+        if (e !is null && e.kind == Kind.bool_)
+            return e.boolean;
+    }
+    return false;
 }
 
 /// Parse `specJson` (and optional `metaJson`) and build the command model.
@@ -687,6 +986,12 @@ struct Command
     BodyField[] bodyFields;
     /// Resolved against the bare root (` ~ "`{schema}://{host}:{port}`" ~ `), not ` ~ "`/v2`" ~ `.
     bool rootServer;
+    /// Hidden unless ` ~ "`--operator`" ~ ` (runtime extensions, d8ctl#9).
+    bool operatorOnly;
+    /// Positional argument names from ` ~ "`x-cli.positional`" ~ `; empty = path order.
+    string[] positional;
+    /// Explicit command paths from ` ~ "`x-cli.command`/`aliases`" ~ `; empty = resource/verb.
+    string[][] paths;
 }
 
 `;
@@ -805,6 +1110,141 @@ unittest
         "get": {"operationId": "getX", "responses": {}}}}}`));
 }
 
+/// x-cli: explicit naming, operator audience, exclude, positional.
+unittest
+{
+    import std.exception : assertThrown;
+
+    enum spec = `{
+      "paths": {
+        "/status": {"get": {"operationId": "listActivePrs",
+          "x-cli": {"command": ["status", "show"]},
+          "responses": {"200": {"description": "ok"}}}},
+        "/dispatch": {"post": {"operationId": "dispatchDeliveryGraph",
+          "x-mcp": {"exclude": true},
+          "responses": {"200": {"description": "ok"}}}},
+        "/cancel": {"post": {"operationId": "cancelPrRun",
+          "x-cli": {"command": ["pr", "cancel"], "audience": "operator"},
+          "x-mcp": {"exclude": true},
+          "responses": {"200": {"description": "ok"}}}},
+        "/internal": {"post": {"operationId": "agentCompleteEscalation",
+          "x-cli": {"exclude": true},
+          "responses": {"200": {"description": "ok"}}}},
+        "/library/{id}": {"get": {"operationId": "getLibraryEntry",
+          "x-cli": {"positional": ["id"]},
+          "parameters": [{"name": "id", "in": "path", "required": true}],
+          "responses": {"200": {"description": "ok"}}}}
+      }
+    }`;
+    auto cat = buildCatalog(spec, null, "nwf");
+    assert(cat.commands.length == 4); // agentCompleteEscalation excluded
+
+    auto status = cat.commands[0];
+    assert(status.resource == "status" && status.verb == "show");
+    assert(status.paths == [["status", "show"]]);
+    assert(!status.operatorOnly);
+
+    auto dispatch = cat.commands[1];
+    assert(dispatch.resource == "delivery-graph" && dispatch.verb == "dispatch");
+    assert(dispatch.operatorOnly); // x-mcp exclude, no x-cli
+
+    auto cancel = cat.commands[2];
+    assert(cancel.resource == "pr" && cancel.verb == "cancel");
+    assert(cancel.operatorOnly); // explicit audience wins (x-cli present)
+
+    auto entry = cat.commands[3];
+    assert(entry.positional == ["id"] && !entry.operatorOnly);
+
+    // Validation: unknown keys, non-kebab/empty command, bad positional.
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x": {"get":
+        {"operationId": "getX", "x-cli": {"nope": 1}, "responses": {}}}}}`));
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x": {"get":
+        {"operationId": "getX", "x-cli": {"command": ["Not Kebab"]}, "responses": {}}}}}`));
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x": {"get":
+        {"operationId": "getX", "x-cli": {"command": []}, "responses": {}}}}}`));
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x": {"get":
+        {"operationId": "getX", "x-cli": {"command": ""}, "responses": {}}}}}`));
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x": {"get":
+        {"operationId": "getX", "x-cli": {"positional": "id"}, "responses": {}}}}}`));
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x": {"get":
+        {"operationId": "getX", "x-cli": {"exclude": "yes"}, "responses": {}}}}}`));
+    // The pre-ADR-0068 string form is rejected with a clear message.
+    try
+    {
+        buildCatalog(`{"paths": {"/x": {"get": {"operationId": "getX",
+            "x-cli": {"command": "status show"}, "responses": {}}}}}`);
+        assert(0);
+    }
+    catch (SpecModelException e)
+        assert(e.msg.indexOf("array of kebab-case words") >= 0, e.msg);
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x": {"get":
+        {"operationId": "getX", "x-cli": {"command": ["ok", 1]}, "responses": {}}}}}`));
+    // Aliases: word arrays, need a command, and share the path namespace.
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x": {"get":
+        {"operationId": "getX", "x-cli": {"aliases": [["a", "b"]]}, "responses": {}}}}}`));
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x": {"get":
+        {"operationId": "getX", "x-cli": {"command": ["a", "b"], "aliases": ["a b"]}, "responses": {}}}}}`));
+    // Duplicate and strict-prefix paths are ambiguous.
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {
+        "/x": {"get": {"operationId": "getX", "x-cli": {"command": ["a", "b"]}, "responses": {}}},
+        "/y": {"get": {"operationId": "getY", "x-cli": {"command": ["a", "b"]}, "responses": {}}}}}`));
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {
+        "/x": {"get": {"operationId": "getX", "x-cli": {"command": ["a"]}, "responses": {}}},
+        "/y": {"get": {"operationId": "getY", "x-cli": {"command": ["a", "b"]}, "responses": {}}}}}`));
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {
+        "/x": {"get": {"operationId": "getX", "x-cli": {"command": ["a", "b", "c"]}, "responses": {}}},
+        "/y": {"get": {"operationId": "getY", "x-cli": {"command": ["z"], "aliases": [["a", "b"]]},
+          "responses": {}}}}}`));
+    // An explicit path may not shadow an earlier derived command.
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {
+        "/x": {"get": {"operationId": "getStatus", "responses": {}}},
+        "/y": {"get": {"operationId": "getY", "x-cli": {"command": ["status", "get"]}, "responses": {}}}}}`));
+    // 3+ word paths and aliases are kept as authored.
+    auto deep = buildCatalog(`{"paths": {"/x": {"get": {"operationId": "getX",
+        "x-cli": {"command": ["pr", "run", "cancel"], "aliases": [["cancel", "run"]]},
+        "responses": {}}}}}`, null, "nwf");
+    assert(deep.commands[0].paths == [["pr", "run", "cancel"], ["cancel", "run"]]);
+    assert(deep.commands[0].resource == "pr run" && deep.commands[0].verb == "cancel");
+    // Unsupported audience fails closed (a typo must not publish the op).
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x": {"get":
+        {"operationId": "getX", "x-cli": {"audience": "operater"}, "x-mcp": {"exclude": true},
+        "responses": {}}}}}`));
+    // Positional: unknown name, duplicate name, unbound path parameter.
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x": {"get":
+        {"operationId": "getX", "x-cli": {"positional": ["nope"]}, "responses": {}}}}}`));
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x/{a}": {"get":
+        {"operationId": "getX", "x-cli": {"positional": ["a", "a"]},
+        "parameters": [{"name": "a", "in": "path", "required": true}], "responses": {}}}}}`));
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x/{a}/{b}": {"get":
+        {"operationId": "getX", "x-cli": {"positional": ["a"]},
+        "parameters": [{"name": "a", "in": "path", "required": true},
+          {"name": "b", "in": "path", "required": true}], "responses": {}}}}}`));
+    // Positional may name a query parameter.
+    auto q = buildCatalog(`{"paths": {"/x": {"get": {"operationId": "getX",
+        "x-cli": {"positional": ["q"]},
+        "parameters": [{"name": "q", "in": "query"}], "responses": {}}}}}`, null, "nwf");
+    assert(q.commands[0].positional == ["q"]);
+
+    // An explicit path/alias may not equal or prefix a derived command
+    // (either order), whatever the declaration order.
+    foreach (alias_; [`["status", "get"]`, `["get", "status"]`, `["status"]`, `["get"]`])
+    {
+        const post = `"/s2": {"post": {"operationId": "poke", "x-cli": {"command": ["poke"],
+            "aliases": [` ~ alias_ ~ `]}, "responses": {}}}`;
+        const get_ = `"/s": {"get": {"operationId": "getStatus", "responses": {}}}`;
+        assertThrown!SpecModelException(buildCatalog(`{"paths": {` ~ get_ ~ `, ` ~ post ~ `}}`, null, "t"), alias_);
+        assertThrown!SpecModelException(buildCatalog(`{"paths": {` ~ post ~ `, ` ~ get_ ~ `}}`, null, "t"), alias_);
+    }
+    // A sibling path that shares only a first word is fine.
+    buildCatalog(`{"paths": {"/s": {"get": {"operationId": "getStatus", "responses": {}}},
+        "/s2": {"post": {"operationId": "poke", "x-cli": {"command": ["status", "poke"]}, "responses": {}}}}}`, null, "t");
+
+    // x-mcp: false also excludes (the MCP surface's off switch).
+    auto mcpOff = buildCatalog(`{"paths": {"/x": {"get":
+        {"operationId": "getX", "x-mcp": false, "responses": {}}}}}`, null, "nwf");
+    assert(mcpOff.commands[0].operatorOnly);
+}
+
 /// Review regressions: response order, type unions, required merge, nested allOf, ref limit, collisions.
 unittest
 {
@@ -883,4 +1323,22 @@ unittest
         "204": {"description": "none"},
         "2XX": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}}}}}`);
     assert(ranged.commands[0].kind != "void" && ranged.commands[0].kind != "text");
+}
+
+unittest
+{
+    // Relative server URLs: `api` top-level + `/` per-operation is a root server.
+    auto cat = buildCatalog(`{"servers": [{"url": "api"}], "paths": {
+      "/health": {"get": {"operationId": "getHealth", "servers": [{"url": "/"}],
+        "responses": {"200": {"description": "ok"}}}},
+      "/x": {"get": {"operationId": "getX", "responses": {"200": {"description": "ok"}}}}}}`,
+        null, "t");
+    foreach (c; cat.commands)
+        assert(c.rootServer == (c.operationId == "getHealth"), c.operationId);
+
+    // Server-variable defaults apply before comparing: `/{version}` (v1) == `/v1`.
+    auto vcat = buildCatalog(`{"servers": [{"url": "/{version}", "variables": {"version": {"default": "v1"}}}],
+      "paths": {"/x": {"get": {"operationId": "getX", "servers": [{"url": "/v1"}],
+        "responses": {"200": {"description": "ok"}}}}}}`, null, "t");
+    assert(!vcat.commands[0].rootServer);
 }
