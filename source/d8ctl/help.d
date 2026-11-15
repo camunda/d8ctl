@@ -72,8 +72,29 @@ string nsHelp(string ns, Order order, const(Catalog)* overlay = null,
         lines.sort();
         foreach (line; lines) { buf.put(line); buf.put("\n"); }
     }
+    string[] pathLines;
+    foreach (c; cmds)
+        if (c.paths.length)
+            pathLines ~= format("  %-32s %s%s", pathsText(c), c.summary, c.operatorOnly ? "  [operator]" : "");
+    if (pathLines.length)
+    {
+        pathLines.sort();
+        buf.put("\nCommands (x-cli paths):\n");
+        foreach (line; pathLines) { buf.put(line); buf.put("\n"); }
+    }
     buf.put("\nPass --help after a resource or command for flags.\n");
     return buf.data;
+}
+
+/// `a b | c d` — a row's explicit command path and aliases, as authored.
+private string pathsText(const ref Command c)
+{
+    import std.array : join;
+
+    string[] alts;
+    foreach (p; c.paths)
+        alts ~= p.join(" ");
+    return alts.join(" | ");
 }
 
 string resourceHelp(string ns, string resource, const(Catalog)* overlay = null,
@@ -81,6 +102,22 @@ string resourceHelp(string ns, string resource, const(Catalog)* overlay = null,
 {
     auto buf = appender!string();
     auto cmds = commandsFor(ns, resource, overlay, overlayRows_, includeOperator);
+    if (!cmds.length && overlay !is null)
+    {
+        // An x-cli command group: list the leaves under it.
+        import d8ctl.catalog : commandsUnderPath;
+        import std.array : split;
+
+        auto under = commandsUnderPath(overlayRows_, resource.split(" "), includeOperator);
+        buf.put(format("d8ctl %s %s — %s command(s)\n\n", ns, resource, under.length));
+        foreach (c; under)
+        {
+            buf.put(format("  %-32s %s %s%s\n", pathsText(c), c.method, c.path,
+                c.operatorOnly ? "  [operator]" : ""));
+            buf.put(format("  %-32s %s\n", "", c.summary));
+        }
+        return buf.data;
+    }
     buf.put(format("d8ctl %s %s — %s verb(s)\n\n", ns, resource, cmds.length));
     buf.put("Usage: d8ctl " ~ ns ~ " " ~ resource ~ " <verb> [flags]\n");
     buf.put("   or: d8ctl " ~ ns ~ " <verb> " ~ resource ~ " [flags]\n\n");
@@ -98,7 +135,10 @@ string resourceHelp(string ns, string resource, const(Catalog)* overlay = null,
 string commandHelp(const Command* c)
 {
     auto buf = appender!string();
-    buf.put(format("d8ctl %s %s %s\n\n", c.namespace, c.resource, c.verb));
+    if (c.paths.length)
+        buf.put(format("d8ctl %s %s\n\n", c.namespace, pathsText(*c)));
+    else
+        buf.put(format("d8ctl %s %s %s\n\n", c.namespace, c.resource, c.verb));
     buf.put(c.summary);
     buf.put("\n\n");
     buf.put(format("  HTTP        %s %s\n", c.method, c.path));

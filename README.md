@@ -78,7 +78,11 @@ against the spec URL, or `--base-url`); a profile supplies only auth and
 headers, never its cluster address.
 
 Command names come from the spec's `x-cli.command` when present, else from
-splitting the `operationId`. Operations with `x-cli.audience: operator` (or
+splitting the `operationId`. `x-cli.command` is a non-empty array of
+kebab-case words (nano-ide ADR 0068), used as an exact command path —
+`d8ctl <name> w1 … wn`, never reordered; `x-cli.aliases` (arrays of words)
+add more paths to the same operation. A string `command`, a duplicate path,
+or a path that is a prefix of another is rejected. Operations with `x-cli.audience: operator` (or
 excluded from the MCP surface with no `x-cli`) are hidden from help and
 refused unless you pass `--operator`; `x-cli.exclude` removes them
 completely. Extension names are reserved against the built-ins (`cluster`,

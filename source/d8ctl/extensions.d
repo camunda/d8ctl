@@ -699,8 +699,9 @@ string extensionHelp()
     buf.put("An extension <name> becomes a namespace next to `cluster`: `d8ctl <name>\n");
     buf.put("<resource> <verb>` (either order), with help, --dry-run and body flags from\n");
     buf.put("the cached spec. Commands read only the cache — never the network.\n\n");
-    buf.put("Naming comes from the spec's x-cli.command when present, else from the\n");
-    buf.put("operationId. Operations with x-cli.audience: operator (or excluded from the\n");
+    buf.put("Naming comes from the spec's x-cli.command (an array of words, used as an\n");
+    buf.put("exact command path: `d8ctl <name> w1 ... wn`; x-cli.aliases add more paths)\n");
+    buf.put("when present, else from the operationId. Operations with x-cli.audience: operator (or excluded from the\n");
     buf.put("MCP surface with no x-cli) are hidden unless you pass --operator; x-cli.exclude\n");
     buf.put("removes them completely. Reserved names: " ~ RESERVED_NAMES.join(", ") ~ ".\n\n");
     buf.put("The namespace has its own base URL (the spec's servers[0].url resolved\n");
@@ -738,11 +739,11 @@ version (unittest)
           "responses": {"200": {"description": "ok",
             "content": {"application/json": {"schema": {"type": "object"}}}}}}},
         "/things/{thingId}": {"get": {"operationId": "getThing",
-          "x-cli": {"command": "thing show", "positional": ["thingId"]},
+          "x-cli": {"command": ["thing", "show"], "positional": ["thingId"]},
           "parameters": [{"name": "thingId", "in": "path", "required": true}],
           "responses": {"200": {"description": "ok"}}}},
         "/doors": {"post": {"operationId": "openDoor",
-          "x-cli": {"command": "door open", "audience": "operator"},
+          "x-cli": {"command": ["door", "open"], "audience": "operator"},
           "responses": {"200": {"description": "ok"}}}},
         "/hooks/x": {"post": {"operationId": "hookX",
           "x-cli": {"exclude": true},

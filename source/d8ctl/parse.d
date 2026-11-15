@@ -279,6 +279,46 @@ extensionNs:
         return r;
     }
 
+    // Explicit x-cli command paths (nano-ide ADR 0068): matched word-for-word
+    // as authored, longest first; never reordered.
+    if (extCat !is null)
+    {
+        size_t used;
+        auto hit = findPath(extRows, pos[1 .. $], used, flags.operator);
+        if (hit is null && !flags.operator)
+        {
+            size_t hidden;
+            auto op = findPath(extRows, pos[1 .. $], hidden, true);
+            if (op !is null)
+            {
+                import std.array : join;
+
+                r.kind = Kind.error;
+                r.message = "operation " ~ pos[1 .. 1 + hidden].join(" ")
+                    ~ " is operator-only; re-run with --operator";
+                return r;
+            }
+        }
+        if (hit !is null)
+        {
+            r.command = hit;
+            r.resource = hit.resource;
+            r.verb = hit.verb;
+            r.positionals = pos[1 + used .. $];
+            r.kind = flags.help ? Kind.helpCommand : Kind.invoke;
+            return r;
+        }
+        // A strict prefix of a path is a command group: show its leaves.
+        if (commandsUnderPath(extRows, pos[1 .. $], flags.operator).length)
+        {
+            import std.array : join;
+
+            r.resource = pos[1 .. $].join(" ");
+            r.kind = Kind.helpResource;
+            return r;
+        }
+    }
+
     auto a = pos[1];
     string b = pos.length > 2 ? pos[2] : null;
 
@@ -468,21 +508,26 @@ unittest
       "paths": {
         "/status": {"get": {"operationId": "getStatus", "responses": {"200": {"description": "ok"}}}},
         "/things/{id}": {"get": {"operationId": "getThing",
-            "x-cli": {"command": "thing show", "positional": ["id"]},
+            "x-cli": {"command": ["thing", "show"], "positional": ["id"]},
             "parameters": [{"name": "id", "in": "path", "required": true}],
             "responses": {"200": {"description": "ok"}}}},
         "/doors": {"post": {"operationId": "openDoor",
-            "x-cli": {"command": "door open", "audience": "operator"},
+            "x-cli": {"command": ["door", "open"], "audience": "operator"},
             "responses": {"200": {"description": "ok"}}}},
         "/search": {"get": {"operationId": "searchThings",
-            "x-cli": {"command": "things search", "positional": ["q"]},
+            "x-cli": {"command": ["things", "search"], "positional": ["q"]},
             "parameters": [{"name": "q", "in": "query"}],
             "responses": {"200": {"description": "ok"}}}},
         "/notes/{id}": {"post": {"operationId": "addNote",
-            "x-cli": {"command": "note add", "positional": ["id", "text"]},
+            "x-cli": {"command": ["note", "add"], "positional": ["id", "text"]},
             "parameters": [{"name": "id", "in": "path", "required": true}],
             "requestBody": {"required": true, "content": {"application/json": {"schema":
               {"type": "object", "required": ["text"], "properties": {"text": {"type": "string"}}}}}},
+            "responses": {"200": {"description": "ok"}}}},
+        "/runs/{id}/cancel": {"post": {"operationId": "cancelRun",
+            "x-cli": {"command": ["pr", "run", "cancel"], "positional": ["id"],
+              "aliases": [["cancel", "run"]]},
+            "parameters": [{"name": "id", "in": "path", "required": true}],
             "responses": {"200": {"description": "ok"}}}}
       }}`;
     auto sources = Sources.init;
@@ -495,8 +540,29 @@ unittest
     auto th = parse(["t", "thing", "show", "42"], dir);
     assert(th.kind == Kind.invoke && th.command.operationId == "getThing");
     assert(th.positionals == ["42"]);
-    auto th2 = parse(["t", "show", "thing", "42"], dir);
-    assert(th2.kind == Kind.invoke && th2.command.operationId == "getThing");
+    // x-cli paths are matched as authored, never reordered (ADR 0068).
+    assert(parse(["t", "show", "thing", "42"], dir).kind == Kind.error);
+    // A 3-word path: groups `pr run`, leaf `cancel`; plus an alias path.
+    auto cr = parse(["t", "pr", "run", "cancel", "9"], dir);
+    assert(cr.kind == Kind.invoke && cr.command.operationId == "cancelRun");
+    assert(cr.positionals == ["9"]);
+    auto ca = parse(["t", "cancel", "run", "9"], dir);
+    assert(ca.kind == Kind.invoke && ca.command.operationId == "cancelRun" && ca.positionals == ["9"]);
+    assert(parse(["t", "run", "cancel", "9"], dir).kind == Kind.error);
+    // Group prefixes show group help.
+    auto grp = parse(["t", "pr", "run"], dir);
+    assert(grp.kind == Kind.helpResource && grp.resource == "pr run");
+    assert(parse(["t", "pr"], dir).kind == Kind.helpResource);
+    {
+        import d8ctl.help : resourceHelp, nsHelp;
+
+        auto gh = resourceHelp("t", "pr run", grp.extCatalog, grp.extRows);
+        assert(gh.indexOf("pr run cancel | cancel run") >= 0, gh);
+        auto nh = nsHelp("t", Order.resource, grp.extCatalog, grp.extRows);
+        assert(nh.indexOf("pr run cancel") >= 0, nh);
+    }
+    auto ch = parse(["t", "pr", "run", "cancel", "--help"], dir);
+    assert(ch.kind == Kind.helpCommand && ch.command.operationId == "cancelRun");
 
     // Positionals bind query parameters and body fields too (x-cli.positional).
     {

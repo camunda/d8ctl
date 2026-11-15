@@ -45,6 +45,8 @@ struct Command
     bool operatorOnly;
     /// Positional argument names from `x-cli.positional`; empty = path order.
     string[] positional;
+    /// Explicit command paths from `x-cli.command`/`aliases`; empty = resource/verb.
+    string[][] paths;
 }
 
 /// SHA-256 of the bundled spec this catalog was generated from.

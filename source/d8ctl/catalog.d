@@ -39,6 +39,8 @@ Command toCommand(const ref ModelCommand c)
     r.rootServer = c.rootServer;
     r.operatorOnly = c.operatorOnly;
     r.positional = c.positional.dup;
+    foreach (p; c.paths)
+        r.paths ~= p.dup;
     return r;
 }
 
@@ -67,7 +69,7 @@ const(Command)* findExact(string ns, string resource, string verb,
         // The overlay's own rows are the table (and stay alive via the Result).
         foreach (i, ref c; overlayRows_)
         {
-            if (eqIgnoreCase(c.namespace, ns)
+            if (!c.paths.length && eqIgnoreCase(c.namespace, ns)
                 && eqIgnoreCase(c.resource, resource)
                 && eqIgnoreCase(c.verb, verb))
             {
@@ -84,6 +86,62 @@ const(Command)* findExact(string ns, string resource, string verb,
             && eqIgnoreCase(c.verb, verb))
             return &catalog[i];
     return null;
+}
+
+/// Longest explicit `x-cli` command path that prefixes `words`, with the
+/// number of words it consumed. Words are matched exactly as authored —
+/// never reordered (nano-ide ADR 0068).
+const(Command)* findPath(const(Command)[] rows, const(string)[] words,
+    out size_t consumed, bool includeOperator = false)
+{
+    const(Command)* best;
+    foreach (i, ref c; rows)
+    {
+        if (!includeOperator && c.operatorOnly)
+            continue;
+        foreach (p; c.paths)
+        {
+            if (p.length > words.length || p.length <= consumed)
+                continue;
+            bool ok = true;
+            foreach (j, w; p)
+                if (!eqIgnoreCase(w, words[j]))
+                    ok = false;
+            if (ok)
+            {
+                best = &rows[i];
+                consumed = p.length;
+            }
+        }
+    }
+    return best;
+}
+
+/// Leaf commands whose explicit path starts with group `words` (strictly longer).
+const(Command)[] commandsUnderPath(const(Command)[] rows, const(string)[] words,
+    bool includeOperator = false)
+{
+    const(Command)[] out_;
+    foreach (ref c; rows)
+    {
+        if (!includeOperator && c.operatorOnly)
+            continue;
+        foreach (p; c.paths)
+        {
+            if (p.length <= words.length)
+                continue;
+            bool ok = true;
+            foreach (j, w; words)
+                if (!eqIgnoreCase(w, p[j]))
+                    ok = false;
+            if (ok)
+            {
+                out_ ~= c;
+                break;
+            }
+        }
+    }
+    return out_;
 }
 
 const(Command)* findByOperationId(string operationId)
@@ -107,7 +165,8 @@ string[] resourcesIn(string ns, const(Catalog)* overlay = null,
 {
     string[] names;
     foreach (ref c; rowsOf(overlay, overlayRows_))
-        if (eqIgnoreCase(c.namespace, ns) && (overlay is null || includeOperator || !c.operatorOnly))
+        if (!c.paths.length && eqIgnoreCase(c.namespace, ns)
+            && (overlay is null || includeOperator || !c.operatorOnly))
             names ~= c.resource.dup;
     names.sort();
     return names.uniq.array;
@@ -128,7 +187,7 @@ const(Command)[] commandsFor(string ns, string resource, const(Catalog)* overlay
 {
     const(Command)[] out_;
     foreach (ref c; rowsOf(overlay, overlayRows_))
-        if (eqIgnoreCase(c.namespace, ns) && eqIgnoreCase(c.resource, resource)
+        if (!c.paths.length && eqIgnoreCase(c.namespace, ns) && eqIgnoreCase(c.resource, resource)
             && (overlay is null || includeOperator || !c.operatorOnly))
             out_ ~= c;
     return out_;
@@ -144,7 +203,7 @@ bool isNamespace(string s)
 bool isVerb(string s, const(Catalog)* overlay = null, const(Command)[] overlayRows_ = null)
 {
     foreach (ref c; rowsOf(overlay, overlayRows_))
-        if (eqIgnoreCase(c.verb, s)) return true;
+        if (!c.paths.length && eqIgnoreCase(c.verb, s)) return true;
     return false;
 }
 
@@ -181,7 +240,7 @@ unittest
     auto cat = buildCatalog(`{"paths": {
         "/status": {"get": {"operationId": "getStatus", "responses": {"200": {"description": "ok"}}}},
         "/doors": {"post": {"operationId": "openDoor",
-            "x-cli": {"command": "door open", "audience": "operator"},
+            "x-cli": {"command": ["door", "open"], "audience": "operator"},
             "responses": {"200": {"description": "ok"}}}}}}`, null, "t");
     auto overlay = new Catalog;
     *overlay = cat;
@@ -195,12 +254,17 @@ unittest
     assert(sg.operationId == "getStatus");
     // The reverse order is a different (nonexistent) command.
     assert(findExact("t", "get", "status", overlay, rows) is null);
-    assert(findExact("t", "door", "open", overlay, rows) is null); // operator-only hidden
-    assert(findExact("t", "door", "open", overlay, rows, true) !is null);
+    // x-cli rows are reached only by their exact path, never resource/verb.
+    assert(rows[1].paths == [["door", "open"]]);
+    assert(findExact("t", "door", "open", overlay, rows, true) is null);
+    size_t used;
+    assert(findPath(rows, ["door", "open"], used) is null); // operator-only hidden
+    assert(findPath(rows, ["door", "open", "x"], used, true) !is null && used == 2);
+    assert(findPath(rows, ["open", "door"], used, true) is null); // never reordered
     assert(commandsIn("t", overlay, rows).length == 1);
     assert(commandsIn("t", overlay, rows, true).length == 2);
-    assert(!resourcesIn("t", overlay, rows).canFind("door"));
-    assert(resourcesIn("t", overlay, rows, true).canFind("door"));
-    assert(isVerb("open", overlay, rows));
-    assert(!isVerb("open"));
+    assert(commandsUnderPath(rows, ["door"], true).length == 1);
+    assert(commandsUnderPath(rows, ["door"]).length == 0);
+    assert(isVerb("get", overlay, rows));
+    assert(!isVerb("open", overlay, rows));
 }
