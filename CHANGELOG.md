@@ -1,3 +1,10 @@
+# [0.5.0](https://github.com/camunda/d8ctl/compare/v0.4.0...v0.5.0) (2026-11-15)
+
+
+### Features
+
+* port the catalog generator to D as a reusable spec model ([#12](https://github.com/camunda/d8ctl/issues/12)) ([bd7b195](https://github.com/camunda/d8ctl/commit/bd7b1950ebb0687c84be243efde0ba7fae041d6c)), closes [#8](https://github.com/camunda/d8ctl/issues/8)
+
 # [0.4.0](https://github.com/camunda/d8ctl/compare/v0.3.0...v0.4.0) (2026-11-14)
 
 
