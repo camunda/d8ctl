@@ -77,6 +77,17 @@ immutable string[] VERBS = sortedVerbs();
 /// Body properties that would collide with built-in switches.
 immutable string[] RESERVED_FLAGS = ["help", "version", "dry-run", "order", "body", "h"];
 
+/// True when `--<name>` is consumed by the CLI itself (help, profile, header, `--camunda-*`).
+bool isReservedFlag(string name)
+{
+    import std.algorithm.searching : canFind;
+
+    foreach (n; [name, kebab(name)])
+        if (RESERVED_FLAGS.canFind(n) || n == "profile" || n == "header" || n.startsWith("camunda-"))
+            return true;
+    return false;
+}
+
 private string[] sortedVerbs() pure
 {
     import std.algorithm.mutation : SwapStrategy;
@@ -230,7 +241,7 @@ private Flat flattenSchema(Spec spec, string name, J schema, ref bool[string] se
                 out_.put(pn, nested.props[pn]);
             foreach (rn; nested.required.byKey)
                 out_.required[rn] = true;
-            continue;
+            // OpenAPI 3.1: sibling keywords next to `$ref` still apply.
         }
         if (truthy(part.get("oneOf")) || truthy(part.get("anyOf")))
         {
@@ -313,7 +324,7 @@ private ModelField[] bodyFieldsOf(Spec spec, ref OpInfo op)
     ModelField[] fields;
     foreach (n; flat.names)
     {
-        if (RESERVED_FLAGS.canFind(n))
+        if (isReservedFlag(n))
             continue;
         auto p = flat.props[n];
         fields ~= ModelField(n, classifyProp(spec, p), (n in flat.required) !is null,
@@ -476,6 +487,7 @@ private OpInfo fromPaths(Spec spec, J op)
     // Consider every 2xx: the first sets the status, but a later one with a
     // JSON body wins so member order never turns a payload into `void`.
     bool found;
+    int bestRank;
     foreach (code; keysOf(responses))
     {
         if (!(code.length == 3 && code[0] == '2'))
@@ -490,10 +502,13 @@ private OpInfo fromPaths(Spec spec, J op)
         auto resp = resolveComponent(spec, responses.fields[code], "responses", where ~ "/responses/" ~ code);
         auto media = jsonContent(resp.get("content"));
         const hasSchema = media !is null && truthy(media.get("schema"));
-        if (!found || (hasSchema && !o.hasResponseSchema))
+        // Rank: JSON schema > any body > no content.
+        const rank = hasSchema ? 2 : (keysOf(resp.get("content")).length ? 1 : 0);
+        if (!found || rank > bestRank)
         {
             o.successStatus = status;
             o.hasResponseSchema = hasSchema;
+            bestRank = rank;
         }
         found = true;
         if (hasSchema)
@@ -510,7 +525,9 @@ private OpInfo fromPaths(Spec spec, J op)
         if (auto media = jsonContent(content))
         {
             auto schema = media.get("schema");
-            o.bodyRef = spec.refName(schema);
+            // A `$ref` with siblings (OpenAPI 3.1) keeps the whole schema.
+            if (schema !is null && schema.isObj && keysOf(schema).length == 1)
+                o.bodyRef = spec.refName(schema);
             if (!o.bodyRef.length)
                 o.bodySchema = schema;
         }
@@ -535,15 +552,17 @@ Catalog buildCatalog(Spec spec, string ns = "cluster")
         auto op = fromMetadata ? fromMeta(raw, i) : fromPaths(spec, raw);
         auto vr = splitOp(op.operationId);
         const verb = vr[0];
+        // Lookup matches verbs case-insensitively, so collision keys must too.
+        const vkey = verb.toLower;
         string resource = kebab(vr[1]);
         if (!resource.length)
             resource = kebab(verb);
-        if ((ns ~ "\0" ~ resource ~ "\0" ~ verb) in seen)
+        if ((ns ~ "\0" ~ resource ~ "\0" ~ vkey) in seen)
             resource = kebab(op.operationId);
-        if ((ns ~ "\0" ~ resource ~ "\0" ~ verb) in seen)
+        if ((ns ~ "\0" ~ resource ~ "\0" ~ vkey) in seen)
             throw new SpecModelException("duplicate command '" ~ resource ~ " " ~ verb ~ "' for "
                 ~ op.operationId, "#/paths/" ~ pointerEscape(op.path));
-        seen[ns ~ "\0" ~ resource ~ "\0" ~ verb] = true;
+        seen[ns ~ "\0" ~ resource ~ "\0" ~ vkey] = true;
         ModelCommand c;
         c.operationId = op.operationId;
         c.namespace = ns;
@@ -821,4 +840,35 @@ unittest
         "/foo-bar": {"get": {"responses": {}}},
         "/foo_bar": {"get": {"responses": {}}},
         "/foo/bar": {"get": {"responses": {}}}}}`));
+}
+
+unittest
+{
+    import std.exception : assertThrown;
+
+    enum spec = `{
+      "paths": {
+        "/t": {"get": {"operationId": "getT", "responses": {
+          "204": {"description": "none"},
+          "200": {"description": "ok", "content": {"text/plain": {"schema": {"type": "string"}}}}}}},
+        "/r": {"post": {"operationId": "createR",
+          "requestBody": {"content": {"application/json": {"schema": {
+            "$ref": "#/components/schemas/R", "required": ["a"],
+            "properties": {"extra": {"type": "boolean"}}}}}},
+          "responses": {"204": {"description": "none"}}}}
+      },
+      "components": {"schemas": {"R": {"properties": {
+        "a": {"type": "string"}, "profile": {"type": "string"}, "header": {"type": "string"},
+        "camundaRestAddress": {"type": "string"}}}}}
+    }`;
+    auto cat = buildCatalog(spec);
+    assert(cat.commands[0].kind == "text");
+    assert(cat.commands[1].bodyFields == [
+        ModelField("a", "string", true, ""),
+        ModelField("extra", "boolean", false, ""),
+    ]);
+
+    assertThrown!SpecModelException(buildCatalog(`{"paths": {
+        "/p": {"get": {"operationId": "ping", "responses": {}}},
+        "/q": {"get": {"operationId": "PING", "responses": {}}}}}`));
 }
