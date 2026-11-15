@@ -352,12 +352,17 @@ private string serverPath(J servers)
         return null;
     string rest = list[0].get("url").orS("");
     const sep = rest.indexOf("://");
+    string p;
     if (sep >= 0)
+    {
         rest = rest[sep + 3 .. $];
-    const i = rest.indexOf('/');
-    if (i < 0)
-        return "";
-    string p = rest[i .. $];
+        const i = rest.indexOf('/');
+        if (i < 0)
+            return "";
+        p = rest[i .. $];
+    }
+    else // relative server URL (`api`, `/api`, `/`): the whole value is the path
+        p = rest.startsWith("/") ? rest : "/" ~ rest;
     while (p.endsWith("/"))
         p = p[0 .. $ - 1];
     return p;
@@ -1314,4 +1319,16 @@ unittest
         "204": {"description": "none"},
         "2XX": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}}}}}`);
     assert(ranged.commands[0].kind != "void" && ranged.commands[0].kind != "text");
+}
+
+unittest
+{
+    // Relative server URLs: `api` top-level + `/` per-operation is a root server.
+    auto cat = buildCatalog(`{"servers": [{"url": "api"}], "paths": {
+      "/health": {"get": {"operationId": "getHealth", "servers": [{"url": "/"}],
+        "responses": {"200": {"description": "ok"}}}},
+      "/x": {"get": {"operationId": "getX", "responses": {"200": {"description": "ok"}}}}}}`,
+        null, "t");
+    foreach (c; cat.commands)
+        assert(c.rootServer == (c.operationId == "getHealth"), c.operationId);
 }

@@ -634,6 +634,7 @@ Extension loadExtension(string cfgDir, string name)
 /// interleaving their cache commits.
 private T withExtensionLock(T)(string cfgDir, string name, scope T delegate() @safe fn)
 {
+    requireExtensionName(name); // a lock path is only ever built from a canonical name
     import std.file : FileException, mkdir, rmdirRecurse;
     import std.path : buildPath;
 
@@ -865,7 +866,10 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
         if ("all" in bare)
             names = listExtensionNames(cfgDir);
         else if (rest.length == 1)
+        {
+            requireExtensionName(rest[0]); // before any lock path is built
             names = [rest[0]];
+        }
         else
             throw new ExtensionException("usage: d8ctl extension update [<name>|--all]");
         auto buf = appender!string();
@@ -915,7 +919,16 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
                     throw new ExtensionException("the server returned no spec for " ~ m.specUrl);
                 const hash = sha256Hex(got.body_);
                 if (hash == m.sha256 && cachedOk)
+                {
+                    // Persist a new/changed validator so later updates can revalidate.
+                    if (got.etag != m.etag)
+                    {
+                        m.etag = got.etag;
+                        m.fetchedAt = nowIso();
+                        install(cfgDir, m, got.body_);
+                    }
                     return n ~ ": up to date (sha256 " ~ hash[0 .. 12] ~ "…)\n";
+                }
                 Catalog cat;
                 try
                     cat = buildCatalog(got.body_, null, n);
@@ -946,6 +959,7 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
         if (rest.length != 1)
             throw new ExtensionException("usage: d8ctl extension remove <name>");
         auto name = rest[0];
+        requireExtensionName(name);
         if (!listExtensionNames(cfgDir).canFind(name))
             throw new ExtensionException("extension '" ~ name
                 ~ "' is not installed. See `d8ctl extension list`.");
@@ -1062,6 +1076,11 @@ version (unittest)
         fakeBody = body_;
         fakeNotModified = false;
         return &fakeFetchImpl;
+    }
+
+    private FetchResult etagFetchImpl(string url, string etag, string[string] conn) @safe
+    {
+        return FetchResult(fakeBody, "\"v2\"", false);
     }
 
     private FetchFn fakeFetch304()
@@ -1564,4 +1583,29 @@ unittest
     auto rows = overlayRows(cat);
     auto h = resourceHelp("t", "pr", cat, rows);
     assert(h.indexOf("get") >= 0 && h.indexOf("pr run cancel") >= 0, h);
+}
+
+unittest
+{
+    // update/remove validate the name before building a lock path, and an
+    // unchanged spec with a new ETag persists the validator.
+    import std.exception : assertThrown;
+
+    auto dir = testDir("round6");
+    scope (exit)
+        cleanupDir(dir);
+    auto sources = Sources.init;
+    extensionCommand(dir, sources, ["add", "t"], ["spec": "http://h/openapi.json"],
+        null, fakeFetch(xcliSpec));
+    foreach (bad; ["./t", "../t", "T", "t/"])
+    {
+        assertThrown!ExtensionException(extensionCommand(dir, sources, ["update", bad], null,
+            null, fakeFetch(xcliSpec)));
+        assertThrown!ExtensionException(extensionCommand(dir, sources, ["remove", bad], null,
+            null, fakeFetch(xcliSpec)));
+    }
+    assert(readManifest(dir, "t").etag == "");
+    auto out_ = extensionCommand(dir, sources, ["update", "t"], null, null, &etagFetchImpl);
+    assert(out_.indexOf("up to date") >= 0, out_);
+    assert(readManifest(dir, "t").etag == "\"v2\"");
 }
