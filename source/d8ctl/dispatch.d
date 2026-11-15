@@ -42,9 +42,16 @@ string invoke(Transport client, const ref Result r, string headersJson = null, s
     // x-cli.positional declares (runtime extensions, #9).
     auto posNames = c.positional.length ? c.positional : c.pathParams;
 
-    if (r.positionals.length < posNames.length)
+    // Path parameters are always required positionally. An x-cli.positional
+    // query/body field may be omitted (or given as a flag / via --body); the
+    // query and body validation below still enforces the required ones.
+    size_t needed;
+    foreach (i, p; posNames)
+        if (isPathParam(c, p))
+            needed = i + 1;
+    if (r.positionals.length < needed)
         throw new UsageException(
-            "missing positional argument(s). Need: " ~ joinComma(posNames)
+            "missing positional argument(s). Need: " ~ joinComma(posNames[0 .. needed])
             ~ ". See `d8ctl " ~ c.namespace ~ " " ~ c.resource ~ " " ~ c.verb ~ " --help`.");
 
     if (r.positionals.length > posNames.length)
@@ -57,7 +64,7 @@ string invoke(Transport client, const ref Result r, string headersJson = null, s
     foreach (k, v; r.flags.named)
         named[k] = v;
     string[] pathNames, pathValues;
-    foreach (i, p; posNames)
+    foreach (i, p; posNames[0 .. r.positionals.length])
     {
         if (isPathParam(c, p))
         {

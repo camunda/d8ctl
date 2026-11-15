@@ -743,7 +743,41 @@ Catalog buildCatalog(Spec spec, string ns = "cluster")
         validatePositional(c, "#/paths/" ~ pointerEscape(op.path) ~ "/" ~ op.method.toLower);
         cat.commands ~= c;
     }
+    checkDerivedAgainstExplicit(cat, explicitPaths);
     return cat;
+}
+
+/// Explicit paths are matched before operationId-derived commands, so an
+/// explicit path or alias equal to, or a prefix of, either accepted order of
+/// a derived command (`resource verb` / `verb resource`) would silently steal
+/// it — whatever the declaration order. Checked after every op is known.
+private void checkDerivedAgainstExplicit(const ref Catalog cat, const string[][] explicitPaths)
+{
+    import std.algorithm : map;
+    import std.array : array;
+
+    string[] low(const string[] w) { return w.map!(x => x.toLower).array; }
+
+    foreach (ref c; cat.commands)
+    {
+        if (c.paths.length)
+            continue;
+        foreach (d; [[c.resource, c.verb], [c.verb, c.resource]])
+        {
+            const dl = low(d);
+            foreach (k; explicitPaths)
+            {
+                const kl = low(k);
+                const n = kl.length < dl.length ? kl.length : dl.length;
+                if (kl[0 .. n] != dl[0 .. n])
+                    continue;
+                throw new SpecModelException("x-cli command path '" ~ k.join(" ")
+                    ~ "' conflicts with the command '" ~ d.join(" ") ~ "' derived from "
+                    ~ c.operationId ~ " (give it an x-cli.command, or pick another path)",
+                    "#/paths/" ~ pointerEscape(c.path));
+            }
+        }
+    }
 }
 
 /// Register `p`; a duplicate path, or one that is a strict prefix of another
@@ -1147,6 +1181,20 @@ unittest
         "x-cli": {"positional": ["q"]},
         "parameters": [{"name": "q", "in": "query"}], "responses": {}}}}}`, null, "nwf");
     assert(q.commands[0].positional == ["q"]);
+
+    // An explicit path/alias may not equal or prefix a derived command
+    // (either order), whatever the declaration order.
+    foreach (alias_; [`["status", "get"]`, `["get", "status"]`, `["status"]`, `["get"]`])
+    {
+        const post = `"/s2": {"post": {"operationId": "poke", "x-cli": {"command": ["poke"],
+            "aliases": [` ~ alias_ ~ `]}, "responses": {}}}`;
+        const get_ = `"/s": {"get": {"operationId": "getStatus", "responses": {}}}`;
+        assertThrown!SpecModelException(buildCatalog(`{"paths": {` ~ get_ ~ `, ` ~ post ~ `}}`, null, "t"), alias_);
+        assertThrown!SpecModelException(buildCatalog(`{"paths": {` ~ post ~ `, ` ~ get_ ~ `}}`, null, "t"), alias_);
+    }
+    // A sibling path that shares only a first word is fine.
+    buildCatalog(`{"paths": {"/s": {"get": {"operationId": "getStatus", "responses": {}}},
+        "/s2": {"post": {"operationId": "poke", "x-cli": {"command": ["status", "poke"]}, "responses": {}}}}}`, null, "t");
 
     // x-mcp: false also excludes (the MCP surface's off switch).
     auto mcpOff = buildCatalog(`{"paths": {"/x": {"get":

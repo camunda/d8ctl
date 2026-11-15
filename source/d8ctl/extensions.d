@@ -46,6 +46,9 @@ struct Manifest
     string name;
     string specUrl;
     string baseUrl;
+    /// `baseUrl` came from the spec's `servers` (refreshed by `update`),
+    /// not from `--base-url` (kept as given).
+    bool baseUrlFromSpec;
     string profile;
     string sha256;
     string etag;
@@ -105,18 +108,42 @@ string extensionDir(string cfgDir, string name)
     return buildPath(extensionsRoot(cfgDir), name);
 }
 
+/// The directory holding the current cache generation of `name`, read once
+/// from its atomically replaced `current` pointer. Readers that need both
+/// files take this once and read both from it, so they never mix an old
+/// manifest with a new spec. (A pointer-less directory is read in place.)
+string generationDir(string cfgDir, string name)
+{
+    import std.file : exists, readText;
+    import std.path : baseName, buildPath;
+    import std.string : strip;
+
+    auto dir = extensionDir(cfgDir, name);
+    auto ptr = buildPath(dir, "current");
+    if (!exists(ptr))
+        return dir;
+    string gen;
+    try
+        gen = readText(ptr).strip;
+    catch (Exception e)
+        throw new ExtensionException(ptr ~ " is unreadable: " ~ e.msg);
+    if (!gen.length || gen != baseName(gen) || gen[0] == '.')
+        throw new ExtensionException(ptr ~ " does not name a cache generation");
+    return buildPath(dir, gen);
+}
+
 string specPath(string cfgDir, string name)
 {
     import std.path : buildPath;
 
-    return buildPath(extensionDir(cfgDir, name), "spec.json");
+    return buildPath(generationDir(cfgDir, name), "spec.json");
 }
 
 string manifestPath(string cfgDir, string name)
 {
     import std.path : buildPath;
 
-    return buildPath(extensionDir(cfgDir, name), "extension.json");
+    return buildPath(generationDir(cfgDir, name), "extension.json");
 }
 
 /// Installed extension names, sorted.
@@ -328,10 +355,7 @@ string[string] extensionConnection(const ref Sources s, string profileName,
         o[headersKey] = headersToJson(mergeHeaders(headersFromJson(o.get(headersKey, null)), headers));
     // Fail closed against the ambient environment (overrides win over env;
     // a non-empty value is needed for the override to take effect).
-    // A profile's own auth (incl. a strategy the SDK infers from its
-    // credentials) is kept; only the profile-less case is forced to NONE.
-    if (!profileName.length && !o.get("CAMUNDA_AUTH_STRATEGY", null).length)
-        o["CAMUNDA_AUTH_STRATEGY"] = "NONE";
+    pinExtensionAuth(o);
     if (!o.get(headersKey, null).length)
         o[headersKey] = "{}";
     if (baseUrl.length)
@@ -340,6 +364,62 @@ string[string] extensionConnection(const ref Sources s, string profileName,
         o["CAMUNDA_REST_ADDRESS_EXACT"] = "true";
     }
     return o;
+}
+
+/// Resolve the auth strategy from `o` (profile + switches) alone and pin it,
+/// so `Transport.fromEnv` can never pick up ambient credentials: an explicit
+/// strategy wins; otherwise client credentials mean OAUTH, basic credentials
+/// mean BASIC, and nothing means NONE. The chosen strategy's required fields
+/// must all come from `o` — a missing one would fall back to the environment,
+/// so it is an error instead.
+private void pinExtensionAuth(ref string[string] o)
+{
+    import std.string : toUpper;
+
+    string pick(string a, string b)
+    {
+        auto v = o.get(a, null);
+        return v.length ? v : o.get(b, null);
+    }
+
+    const id = pick("CAMUNDA_CLIENT_ID", "CAMUNDA_CLIENT_AUTH_CLIENTID");
+    const secret = pick("CAMUNDA_CLIENT_SECRET", "CAMUNDA_CLIENT_AUTH_CLIENTSECRET");
+    string strategy = o.get("CAMUNDA_AUTH_STRATEGY", null).toUpper;
+    if (!strategy.length)
+    {
+        if (id.length || secret.length)
+            strategy = "OAUTH";
+        else if (o.get("CAMUNDA_BASIC_AUTH_USERNAME", null).length
+                || o.get("CAMUNDA_BASIC_AUTH_PASSWORD", null).length)
+            strategy = "BASIC";
+        else
+            strategy = "NONE";
+    }
+    o["CAMUNDA_AUTH_STRATEGY"] = strategy;
+
+    void need(string what, string v)
+    {
+        if (!v.length)
+            throw new ExtensionException("auth strategy " ~ strategy ~ " for an extension needs " ~ what
+                ~ " from the profile or a --camunda-* switch (the environment is never used)");
+    }
+
+    if (strategy == "OAUTH")
+    {
+        need("a client id", id);
+        need("a client secret", secret);
+        need("an OAuth URL", o.get("CAMUNDA_OAUTH_URL", null));
+        // Set both spellings so neither can be filled from the environment.
+        o["CAMUNDA_CLIENT_ID"] = o["CAMUNDA_CLIENT_AUTH_CLIENTID"] = id;
+        o["CAMUNDA_CLIENT_SECRET"] = o["CAMUNDA_CLIENT_AUTH_CLIENTSECRET"] = secret;
+    }
+    else if (strategy == "BASIC")
+    {
+        need("a basic-auth username", o.get("CAMUNDA_BASIC_AUTH_USERNAME", null));
+        need("a basic-auth password", o.get("CAMUNDA_BASIC_AUTH_PASSWORD", null));
+    }
+    else if (strategy != "NONE")
+        throw new ExtensionException("unsupported auth strategy '" ~ strategy ~ "' for an extension");
 }
 
 /// `scheme://authority` of `url` — the base for operations whose spec
@@ -403,6 +483,7 @@ private string manifestJson(const ref Manifest m)
     o["name"] = m.name;
     o["specUrl"] = m.specUrl;
     o["baseUrl"] = m.baseUrl;
+    o["baseUrlSource"] = m.baseUrlFromSpec ? "spec" : "flag";
     if (m.profile.length)
         o["profile"] = m.profile;
     o["sha256"] = m.sha256;
@@ -415,9 +496,20 @@ private string manifestJson(const ref Manifest m)
 
 Manifest readManifest(string cfgDir, string name)
 {
-    import std.file : exists, readText;
+    import std.file : exists;
 
-    auto path = manifestPath(cfgDir, name);
+    if (!exists(extensionDir(cfgDir, name)))
+        throw new ExtensionException("extension '" ~ name
+            ~ "' is not installed. See `d8ctl extension list`.");
+    return readManifestAt(generationDir(cfgDir, name), name);
+}
+
+private Manifest readManifestAt(string gen, string name)
+{
+    import std.file : exists, readText;
+    import std.path : buildPath;
+
+    auto path = buildPath(gen, "extension.json");
     if (!exists(path))
         throw new ExtensionException("extension '" ~ name
             ~ "' is not installed. See `d8ctl extension list`.");
@@ -432,6 +524,9 @@ Manifest readManifest(string cfgDir, string name)
     m.name = name;
     m.specUrl = j["specUrl"].str;
     m.baseUrl = j["baseUrl"].str;
+    // Absent (older manifests): treat as explicit, never silently retarget.
+    if (auto v = "baseUrlSource" in j.objectNoRef)
+        m.baseUrlFromSpec = v.type == JSONType.string && v.str == "spec";
     m.sha256 = j["sha256"].str;
     if (auto v = "profile" in j.objectNoRef)
         m.profile = v.str;
@@ -450,9 +545,15 @@ Extension loadExtension(string cfgDir, string name)
     import std.file : exists, readText;
 
     requireExtensionName(name);
+    import std.path : buildPath;
+
     Extension e;
-    e.manifest = readManifest(cfgDir, name);
-    auto sp = specPath(cfgDir, name);
+    if (!exists(extensionDir(cfgDir, name)))
+        throw new ExtensionException("extension '" ~ name
+            ~ "' is not installed. See `d8ctl extension list`.");
+    const gen = generationDir(cfgDir, name); // one generation for both files
+    e.manifest = readManifestAt(gen, name);
+    auto sp = buildPath(gen, "spec.json");
     if (!exists(sp))
         throw new ExtensionException(sp ~ " is missing; reinstall with `d8ctl extension remove "
             ~ name ~ "` and `extension add`.");
@@ -485,38 +586,68 @@ private T withExtensionLock(T)(string cfgDir, string name, scope T delegate() @s
 }
 
 /// Commit spec + manifest as one cache generation: both are written into a
-/// fresh staging directory, which then replaces `<extensions>/<name>` by
-/// rename. A failure at any step leaves the previous generation in place.
-/// Staging names start with '.', so `listExtensionNames` never sees them.
+/// fresh `g-<unique>` directory, then the `current` pointer is replaced by an
+/// atomic rename. The namespace never disappears, a crash at any step leaves
+/// the previous generation current, and readers resolve the pointer once
+/// (`generationDir`). The previous generation is kept for readers still on
+/// it; older ones are pruned. A first install stages the whole directory
+/// (pointer included) and renames it into place. Callers hold the lock.
 private void install(string cfgDir, Manifest m, string specText)
 {
-    import std.file : exists, rename, rmdirRecurse;
-    import std.path : buildPath;
+    import std.file : DirEntry, dirEntries, exists, isDir, remove, rename, rmdirRecurse, SpanMode;
+    import std.path : baseName, buildPath;
 
     makePrivateDir(extensionsRoot(cfgDir));
     const sfx = uniqueSuffix();
-    auto stage = buildPath(extensionsRoot(cfgDir), "." ~ m.name ~ ".stage-" ~ sfx);
-    auto old = buildPath(extensionsRoot(cfgDir), "." ~ m.name ~ ".old-" ~ sfx);
+    const gen = "g-" ~ sfx;
     auto dest = extensionDir(cfgDir, m.name);
-    makePrivateDir(stage);
-    scope (failure)
-        if (exists(stage))
-            rmdirRecurse(stage);
-    writeNewPrivate(buildPath(stage, "spec.json"), specText);
-    writeNewPrivate(buildPath(stage, "extension.json"), manifestJson(m));
-    const hadOld = exists(dest);
-    if (hadOld)
-        rename(dest, old);
-    try
-        rename(stage, dest);
-    catch (Exception e)
+
+    void writeGeneration(string dir)
     {
-        if (hadOld)
-            rename(old, dest); // restore the previous generation
-        throw e;
+        makePrivateDir(dir);
+        writeNewPrivate(buildPath(dir, "spec.json"), specText);
+        writeNewPrivate(buildPath(dir, "extension.json"), manifestJson(m));
     }
-    if (hadOld)
-        rmdirRecurse(old);
+
+    if (!exists(dest))
+    {
+        auto stage = buildPath(extensionsRoot(cfgDir), "." ~ m.name ~ ".stage-" ~ sfx);
+        makePrivateDir(stage);
+        scope (failure)
+            if (exists(stage))
+                rmdirRecurse(stage);
+        writeGeneration(buildPath(stage, gen));
+        writeNewPrivate(buildPath(stage, "current"), gen ~ "\n");
+        rename(stage, dest);
+        return;
+    }
+
+    string previous;
+    try
+        previous = baseName(generationDir(cfgDir, m.name));
+    catch (ExtensionException)
+        previous = null; // an unreadable pointer is simply replaced
+    auto genDir = buildPath(dest, gen);
+    {
+        scope (failure)
+            if (exists(genDir))
+                rmdirRecurse(genDir);
+        writeGeneration(genDir);
+        auto tmp = buildPath(dest, ".current-" ~ sfx);
+        scope (failure)
+            if (exists(tmp))
+                remove(tmp);
+        writeNewPrivate(tmp, gen ~ "\n");
+        rename(tmp, buildPath(dest, "current")); // the commit point
+    }
+    // Prune: keep the new and the previous generation; drop everything else
+    // (older generations, a pre-pointer layout's loose files are left alone).
+    foreach (DirEntry e; dirEntries(dest, SpanMode.shallow))
+    {
+        const b = baseName(e.name);
+        if (e.isDir && b.length > 2 && b[0 .. 2] == "g-" && b != gen && b != previous)
+            rmdirRecurse(e.name);
+    }
 }
 
 /// `d8ctl extension <sub> …`. Returns text for stdout. `fetch` downloads
@@ -570,6 +701,7 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
         m.specUrl = specUrl;
         m.baseUrl = baseOverride.length ? stripRightSlash(baseOverride)
             : resolveBaseUrl(got.body_, specUrl);
+        m.baseUrlFromSpec = !baseOverride.length;
         m.profile = profile;
         m.sha256 = sha256Hex(got.body_);
         m.etag = got.etag;
@@ -653,8 +785,13 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
             m.etag = got.etag;
             m.fetchedAt = nowIso();
             m.d8ctlVersion = cliVersion;
-            if (!m.baseUrl.length)
+            // A spec-derived base follows the new spec's servers; an explicit
+            // --base-url is kept.
+            if (m.baseUrlFromSpec || !m.baseUrl.length)
+            {
                 m.baseUrl = resolveBaseUrl(got.body_, m.specUrl);
+                m.baseUrlFromSpec = true;
+            }
             withExtensionLock!int(cfgDir, n, () @safe {
                 install(cfgDir, m, got.body_);
                 return 0;
@@ -727,7 +864,7 @@ private string joinNames(const string[] names)
 version (unittest)
 {
     import std.file : mkdirRecurse, write;
-    import std.path : buildPath;
+    import std.path : baseName, buildPath;
 
     /// A tiny x-cli-bearing spec (the nwf fixture has none yet).
     enum xcliSpec = `{
@@ -867,6 +1004,43 @@ unittest
         fakeFetch(xcliSpec.replace(`"T"`, `"T2"`)));
     assert(changed.indexOf("updated to sha256") >= 0, changed);
     assert(readManifest(dir, "t").sha256 == sha256Hex(xcliSpec.replace(`"T"`, `"T2"`)));
+    // Generations: the pointer moved; only the new and the previous one remain.
+    {
+        import std.file : DirEntry, dirEntries, SpanMode;
+
+        size_t countGens()
+        {
+            size_t k;
+            foreach (DirEntry e; dirEntries(extensionDir(dir, "t"), SpanMode.shallow))
+                if (e.isDir && baseName(e.name).startsWith("g-"))
+                    k++;
+            return k;
+        }
+
+        assert(exists(buildPath(extensionDir(dir, "t"), "current")));
+        auto gens = countGens();
+        assert(gens == 2, gens.to!string);
+        extensionCommand(dir, sources, ["update", "t"], null, null,
+            fakeFetch(xcliSpec.replace(`"T"`, `"T3"`)));
+        gens = countGens();
+        assert(gens == 2, gens.to!string);
+        auto loaded = loadExtension(dir, "t"); // manifest + spec from one generation
+        assert(loaded.manifest.sha256 == sha256Hex(xcliSpec.replace(`"T"`, `"T3"`)));
+    }
+    // A spec-derived base URL follows the new spec's servers on update.
+    assert(readManifest(dir, "t").baseUrlFromSpec);
+    extensionCommand(dir, sources, ["update", "t"], null, null,
+        fakeFetch(xcliSpec.replace(`"url": "api"`, `"url": "/v2"`)));
+    assert(readManifest(dir, "t").baseUrl == "http://h/v2", readManifest(dir, "t").baseUrl);
+    // An explicit --base-url is kept across updates.
+    extensionCommand(dir, sources, ["add", "e"], ["spec": "http://h/openapi.json",
+        "base-url": "http://fixed/x/"], null, fakeFetch(xcliSpec));
+    assert(!readManifest(dir, "e").baseUrlFromSpec);
+    extensionCommand(dir, sources, ["update", "e"], null, null,
+        fakeFetch(xcliSpec.replace(`"url": "api"`, `"url": "/v2"`)));
+    assert(readManifest(dir, "e").baseUrl == "http://fixed/x", readManifest(dir, "e").baseUrl);
+    fakeFetch(xcliSpec);
+
     // A 304 keeps everything.
     auto notMod = extensionCommand(dir, sources, ["update", "t"], null, null, fakeFetch304());
     assert(notMod.indexOf("ETag matched") >= 0, notMod);
@@ -944,6 +1118,7 @@ unittest
     assert("CAMUNDA_REST_ADDRESS" !in bare);
 
     auto sw = extensionConnection(none, null, ["CAMUNDA_AUTH_STRATEGY": "BASIC",
+        "CAMUNDA_BASIC_AUTH_USERNAME": "u", "CAMUNDA_BASIC_AUTH_PASSWORD": "p",
         headersKey: `{"X-A":"1"}`], [Header("x-a", "2"), Header("X-B", "3")], "http://h/api");
     assert(sw["CAMUNDA_AUTH_STRATEGY"] == "BASIC");
     assert(sw[headersKey].indexOf(`"x-a":"2"`) >= 0 && sw[headersKey].indexOf("X-B") >= 0, sw[headersKey]);
@@ -951,6 +1126,23 @@ unittest
     assertThrown!ExtensionException(extensionConnection(none, null,
         ["CAMUNDA_REST_ADDRESS": "http://elsewhere"]));
     assertThrown!ExtensionException(extensionConnection(none, "missing"));
+
+    // Auth is pinned from profile + switches only; ambient secrets never fill gaps.
+    Sources withProfiles;
+    withProfiles.store.profiles["hdr"] = [headersKey: `{"X-T":"1"}`];
+    withProfiles.store.profiles["oauth"] = ["CAMUNDA_CLIENT_ID": "id", "CAMUNDA_CLIENT_SECRET": "s",
+        "CAMUNDA_OAUTH_URL": "https://idp/token"];
+    withProfiles.store.profiles["half"] = ["CAMUNDA_AUTH_STRATEGY": "OAUTH", "CAMUNDA_CLIENT_ID": "id"];
+    withProfiles.store.profiles["basicNoPw"] = ["CAMUNDA_BASIC_AUTH_USERNAME": "u"];
+    assert(extensionConnection(withProfiles, "hdr")["CAMUNDA_AUTH_STRATEGY"] == "NONE");
+    auto oa = extensionConnection(withProfiles, "oauth");
+    assert(oa["CAMUNDA_AUTH_STRATEGY"] == "OAUTH");
+    assert(oa["CAMUNDA_CLIENT_AUTH_CLIENTID"] == "id" && oa["CAMUNDA_CLIENT_AUTH_CLIENTSECRET"] == "s");
+    assertThrown!ExtensionException(extensionConnection(withProfiles, "half"));
+    assertThrown!ExtensionException(extensionConnection(withProfiles, "basicNoPw"));
+    assertThrown!ExtensionException(extensionConnection(none, null, ["CAMUNDA_AUTH_STRATEGY": "BASIC"]));
+    assert(extensionConnection(none, null, ["CAMUNDA_AUTH_STRATEGY": "basic",
+        "CAMUNDA_BASIC_AUTH_USERNAME": "u", "CAMUNDA_BASIC_AUTH_PASSWORD": "p"])["CAMUNDA_AUTH_STRATEGY"] == "BASIC");
 
     assert(originOf("https://h:8/api/v1") == "https://h:8");
     assert(originOf("https://h") == "https://h");

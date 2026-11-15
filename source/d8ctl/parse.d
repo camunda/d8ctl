@@ -580,6 +580,21 @@ unittest
         assert(dn.indexOf("POST http://h/api/notes/7") >= 0 && dn.indexOf(`"text": "hello"`) >= 0, dn);
         auto both = parse(["t", "things", "search", "foo", "--q=bar", "--dry-run"], dir);
         assertThrown!UsageException(invoke(client, both, null, "http://h/api"));
+        string dry(string[] argv)
+        {
+            auto pr = parse(argv, dir);
+            return invoke(client, pr, null, "http://h/api");
+        }
+        // Optional positional fields may be omitted or given as a flag / --body.
+        auto none_ = dry(["t", "things", "search", "--dry-run"]);
+        assert(none_.indexOf("GET http://h/api/search") >= 0 && none_.indexOf("?q=") < 0, none_);
+        auto asFlag = dry(["t", "things", "search", "--q=foo", "--dry-run"]);
+        assert(asFlag.indexOf("?q=foo") >= 0, asFlag);
+        auto viaBody = dry(["t", "note", "add", "7", `--body={"text":"hi"}`, "--dry-run"]);
+        assert(viaBody.indexOf(`"text": "hi"`) >= 0, viaBody);
+        // Required fields are still enforced; path params are always positional.
+        assertThrown!UsageException(dry(["t", "note", "add", "7", "--dry-run"]));
+        assertThrown!UsageException(dry(["t", "note", "add", "--dry-run"]));
     }
 
     // Operator-only: refused without --operator, allowed with it.
