@@ -136,6 +136,26 @@ string resourceHelp(string ns, string resource, const(Catalog)* overlay = null,
         buf.put(format("  %-12s %s %s%s%s\n", c.verb, c.method, c.path, ver, op));
         buf.put(format("               %s\n", c.summary));
     }
+    // A derived resource can share its word with an x-cli command group:
+    // list the group's explicit children too, never hide them.
+    if (overlay !is null)
+    {
+        import d8ctl.catalog : commandsUnderPath;
+        import std.array : split;
+
+        bool first = true;
+        foreach (c; commandsUnderPath(overlayRows_, resource.split(" "), includeOperator))
+        {
+            if (!c.paths.length)
+                continue;
+            if (first)
+                buf.put("\nCommands:\n");
+            first = false;
+            buf.put(format("  %-32s %s %s%s\n", pathsText(c), c.method, c.path,
+                c.operatorOnly ? "  [operator]" : ""));
+            buf.put(format("  %-32s %s\n", "", c.summary));
+        }
+    }
     return buf.data;
 }
 

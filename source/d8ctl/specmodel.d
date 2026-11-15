@@ -678,6 +678,12 @@ Catalog buildCatalog(Spec spec, string ns = "cluster")
         auto cli = parseCliExt(op.vendorExtensions, where);
         if (cli.exclude)
             continue; // x-cli.exclude: the command does not exist at all.
+        // The transport sends only these verbs (HEAD and bodiless
+        // OPTIONS/TRACE always fail), so never advertise anything else.
+        import std.algorithm : canFind;
+
+        if (!["GET", "POST", "PUT", "PATCH", "DELETE"].canFind(op.method.toUpper))
+            continue;
         string resource;
         string verb;
         string[][] paths;
@@ -729,7 +735,7 @@ Catalog buildCatalog(Spec spec, string ns = "cluster")
         c.addedInVersion = op.vendorExtensions.get("x-added-in-version").orS("");
         c.kind = kindOf(op);
         c.hasBody = op.hasRequestBody;
-        c.pathParams = op.pathParams;
+        c.pathParams = placeholderOrder(op.path, op.pathParams);
         c.requiredQuery = op.requiredQuery;
         c.optionalQuery = op.optionalQuery;
         c.bodyFields = bodyFieldsOf(spec, op);
@@ -745,6 +751,34 @@ Catalog buildCatalog(Spec spec, string ns = "cluster")
     }
     checkDerivedAgainstExplicit(cat, explicitPaths);
     return cat;
+}
+
+/// `params` ordered by where their `{name}` placeholder appears in `path`
+/// (default positional order must follow the URL, not the spec's parameter
+/// array). Names without a placeholder keep their relative order, last.
+string[] placeholderOrder(string path, const string[] params) pure
+{
+    import std.algorithm : sort, SwapStrategy;
+    import std.typecons : tuple;
+
+    auto keyed = new typeof(tuple(size_t.init, size_t.init, ""))[params.length];
+    foreach (i, p; params)
+    {
+        const at = path.indexOf("{" ~ p ~ "}");
+        keyed[i] = tuple(at < 0 ? size_t.max : cast(size_t) at, i, p);
+    }
+    sort!((a, b) => a[0] < b[0] || (a[0] == b[0] && a[1] < b[1]), SwapStrategy.stable)(keyed);
+    string[] o;
+    foreach (k; keyed)
+        o ~= k[2];
+    return o;
+}
+
+unittest
+{
+    assert(placeholderOrder("/parents/{parentId}/children/{childId}", ["childId", "parentId"])
+        == ["parentId", "childId"]);
+    assert(placeholderOrder("/a/{x}", ["y", "x"]) == ["x", "y"]);
 }
 
 /// Explicit paths are matched before operationId-derived commands, so an

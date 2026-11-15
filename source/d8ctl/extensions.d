@@ -265,16 +265,14 @@ alias FetchFn = FetchResult function(string url, string etag, string[string] con
 FetchResult fetchSpecHttp(string url, string etag, string[string] conn) @safe
 {
     import camunda.errors : CamundaException;
-    import camunda.http : HttpRequest, perform;
+    import d8ctl.safeio : boundedGet;
     import camunda.runtime : Transport;
     import camunda.transport : mergeHeadersCaseInsensitive;
     import d8ctl.version_ : cliVersion;
 
-    HttpRequest req;
-    req.method = "GET";
-    req.url = url;
     int status;
     string bodyText;
+    string gotEtag;
     try
     {
         auto client = extensionTransport(conn);
@@ -283,27 +281,27 @@ FetchResult fetchSpecHttp(string url, string etag, string[string] conn) @safe
         base["User-Agent"] = "d8ctl/" ~ cliVersion;
         if (etag.length)
             base["If-None-Match"] = etag;
-        req.headers = mergeHeadersCaseInsensitive(base, client.headers);
-        req.certPath = client.config.tls.certPath;
-        req.keyPath = client.config.tls.keyPath;
-        req.caPath = client.config.tls.caPath;
-        req.keyPassphrase = client.config.tls.keyPassphrase;
-        auto r = perform(req);
+        auto hdrs = mergeHeadersCaseInsensitive(base, client.headers);
+        // Bounded while receiving: the hardened reader's own size limit runs
+        // only after the download, too late to stop a memory blow-up.
+        auto r = boundedGet(url, hdrs, MAX_SPEC_BYTES, client.config.tls.certPath,
+            client.config.tls.keyPath, client.config.tls.caPath, client.config.tls.keyPassphrase);
         status = r.status;
+        gotEtag = r.etag;
         bodyText = r.body_;
     }
     catch (CamundaException e)
         throw new ExtensionException("cannot download the spec from " ~ url ~ ": " ~ e.msg);
-    // The pinned SDK's HttpResponse exposes no response headers, so no ETag
-    // is captured; freshness is decided by the spec's sha256 instead. A
-    // manifest that carries an ETag still revalidates with If-None-Match.
     if (status == 304)
         return FetchResult(null, etag, true);
     if (status < 200 || status >= 300)
         throw new ExtensionException("cannot download the spec from " ~ url
             ~ ": HTTP " ~ status.to!string);
-    return FetchResult(bodyText, null, false);
+    return FetchResult(bodyText, gotEtag, false);
 }
+
+/// Upper bound on a downloaded spec, matching the hardened reader's default.
+enum size_t MAX_SPEC_BYTES = 64 * 1024 * 1024;
 
 /// Fail unless `profileName` (when set) names an existing profile.
 void requireExtensionProfile(const ref Sources s, string profileName)
@@ -326,43 +324,18 @@ void requireExtensionProfile(const ref Sources s, string profileName)
 Transport extensionTransport(string[string] overrides) @safe
 {
     import camunda.runtime : CamundaOptions;
-    import d8ctl.safeio : getEnv, setEnv;
+    import d8ctl.safeio : envNames, getEnv, setEnv;
 
-    static immutable keys = [
-        "CAMUNDA_AUTH_STRATEGY",
-        "CAMUNDA_BASIC_AUTH_PASSWORD",
-        "CAMUNDA_BASIC_AUTH_USERNAME",
-        "CAMUNDA_CLIENT_AUTH_CLIENTID",
-        "CAMUNDA_CLIENT_AUTH_CLIENTSECRET",
-        "CAMUNDA_CLIENT_ID",
-        "CAMUNDA_CLIENT_SECRET",
-        "CAMUNDA_DEFAULT_HEADERS",
-        "CAMUNDA_DEFAULT_TENANT_ID",
-        "CAMUNDA_MTLS_CA",
-        "CAMUNDA_MTLS_CA_PATH",
-        "CAMUNDA_MTLS_CERT",
-        "CAMUNDA_MTLS_CERT_PATH",
-        "CAMUNDA_MTLS_KEY",
-        "CAMUNDA_MTLS_KEY_PASSPHRASE",
-        "CAMUNDA_MTLS_KEY_PATH",
-        "CAMUNDA_OAUTH_SCOPE",
-        "CAMUNDA_OAUTH_URL",
-        "CAMUNDA_REST_ADDRESS",
-        "CAMUNDA_REST_ADDRESS_EXACT",
-        "CAMUNDA_SDK_BACKPRESSURE_PROFILE",
-        "CAMUNDA_SDK_EVENTUAL_POLL_DEFAULT_MS",
-        "CAMUNDA_SDK_HTTP_RETRY_BASE_DELAY_MS",
-        "CAMUNDA_SDK_HTTP_RETRY_MAX_ATTEMPTS",
-        "CAMUNDA_SDK_HTTP_RETRY_MAX_DELAY_MS",
-        "CAMUNDA_SDK_LOG_LEVEL",
-        "CAMUNDA_TENANT_ID",
-        "CAMUNDA_TENANT_IDS",
-        "CAMUNDA_TOKEN_AUDIENCE",
-        "ZEEBE_REST_ADDRESS",
-    ];
+    // Every CAMUNDA_* / ZEEBE_* variable, not a fixed list: the SDK also
+    // reads e.g. CAMUNDA_OAUTH_CACHE_DIR (a shared token cache keyed without
+    // scope/secret) and CAMUNDA_WORKER_*, and future keys must not leak.
     string[string] saved;
-    foreach (k; keys)
+    foreach (k; envNames())
     {
+        import std.algorithm : startsWith;
+
+        if (!k.startsWith("CAMUNDA_") && !k.startsWith("ZEEBE_"))
+            continue;
         saved[k] = getEnv(k);
         setEnv(k, null);
     }
@@ -560,6 +533,17 @@ private string manifestJson(const ref Manifest m)
     return o.toPrettyString ~ "\n";
 }
 
+/// True for a lowercase-hex SHA-256 fingerprint.
+bool isSha256Hex(string s) pure nothrow
+{
+    if (s.length != 64)
+        return false;
+    foreach (char c; s)
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
+            return false;
+    return true;
+}
+
 Manifest readManifest(string cfgDir, string name)
 {
     import std.file : exists;
@@ -586,22 +570,36 @@ private Manifest readManifestAt(string gen, string name)
         throw new ExtensionException(path ~ " is not valid JSON: " ~ e.msg);
     if (j.type != JSONType.object)
         throw new ExtensionException(path ~ ": expected a JSON object");
+    // Corrupt-but-valid JSON (e.g. `{}`, a non-string field, a truncated
+    // fingerprint) is a path-qualified usage error, never a JSONException or
+    // a bounds error further down.
+    string field(string key, bool required)
+    {
+        auto v = key in j.objectNoRef;
+        if (v is null)
+        {
+            if (required)
+                throw new ExtensionException(path ~ ": missing \"" ~ key
+                    ~ "\" (run `d8ctl extension remove " ~ name ~ "` and `extension add`)");
+            return null;
+        }
+        if (v.type != JSONType.string)
+            throw new ExtensionException(path ~ ": \"" ~ key ~ "\" must be a string");
+        return v.str;
+    }
     Manifest m;
     m.name = name;
-    m.specUrl = j["specUrl"].str;
-    m.baseUrl = j["baseUrl"].str;
+    m.specUrl = field("specUrl", true);
+    m.baseUrl = field("baseUrl", true);
     // Absent (older manifests): treat as explicit, never silently retarget.
-    if (auto v = "baseUrlSource" in j.objectNoRef)
-        m.baseUrlFromSpec = v.type == JSONType.string && v.str == "spec";
-    m.sha256 = j["sha256"].str;
-    if (auto v = "profile" in j.objectNoRef)
-        m.profile = v.str;
-    if (auto v = "etag" in j.objectNoRef)
-        m.etag = v.str;
-    if (auto v = "fetchedAt" in j.objectNoRef)
-        m.fetchedAt = v.str;
-    if (auto v = "d8ctlVersion" in j.objectNoRef)
-        m.d8ctlVersion = v.str;
+    m.baseUrlFromSpec = field("baseUrlSource", false) == "spec";
+    m.sha256 = field("sha256", true);
+    if (!isSha256Hex(m.sha256))
+        throw new ExtensionException(path ~ ": \"sha256\" must be 64 lowercase hex digits");
+    m.profile = field("profile", false);
+    m.etag = field("etag", false);
+    m.fetchedAt = field("fetchedAt", false);
+    m.d8ctlVersion = field("d8ctlVersion", false);
     return m;
 }
 
@@ -755,9 +753,34 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
         return v;
     }
 
+    // Fail closed on flags a subcommand does not understand: a typo or a
+    // valueless `--base-url` must not silently install with defaults.
+    void allowFlags(const string[] valued, const string[] switches_)
+    {
+        foreach (k, _; named)
+            if (!valued.canFind(k))
+                throw new ExtensionException("extension " ~ sub ~ ": unknown flag --" ~ k);
+        foreach (k, _; bare)
+        {
+            if (valued.canFind(k))
+                throw new ExtensionException("flag --" ~ k ~ " needs a value (--" ~ k ~ "=…)");
+            if (!switches_.canFind(k))
+                throw new ExtensionException("extension " ~ sub ~ ": unknown flag --" ~ k);
+        }
+    }
+
+    switch (sub)
+    {
+    case "add", "list", "ls", "update", "remove", "rm", "delete":
+        break;
+    default:
+        throw new ExtensionException("unknown extension command '" ~ sub
+            ~ "'. See `d8ctl extension --help`.");
+    }
     switch (sub)
     {
     case "add":
+        allowFlags(["spec", "base-url", "profile"], null);
         if (rest.length != 1)
             throw new ExtensionException(
                 "usage: d8ctl extension add <name> --spec=<url> [--base-url=<url>] [--profile=<name>]");
@@ -805,6 +828,9 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
             ~ "\n  sha256:   " ~ m.sha256[0 .. 12] ~ "…\nTry: d8ctl " ~ name ~ " --help\n";
 
     case "list", "ls":
+        allowFlags(null, ["check"]);
+        if (rest.length)
+            throw new ExtensionException("usage: d8ctl extension list [--check]");
         auto names = listExtensionNames(cfgDir);
         if (!names.length)
             return "No extensions. Add one: d8ctl extension add <name> --spec=<url> [--profile=<name>]\n";
@@ -832,7 +858,10 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
         return buf.data;
 
     case "update":
+        allowFlags(null, ["all"]);
         string[] names;
+        if ("all" in bare && rest.length)
+            throw new ExtensionException("extension update: give either <name> or --all, not both");
         if ("all" in bare)
             names = listExtensionNames(cfgDir);
         else if (rest.length == 1)
@@ -856,20 +885,36 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
                 // after the stored profile was removed); a rewritten cache keeps it.
                 if (profileFlag.length)
                     m.profile = profileFlag;
-                auto got = fetch(m.specUrl, m.etag, extensionConnection(sources, m.profile,
-                    switches, headers));
+                // A corrupt cached spec must be repaired, not reported as up
+                // to date: verify the cached bytes first, and only revalidate
+                // (ETag / sha256 skip) when they still match the manifest.
+                bool cachedOk;
+                {
+                    import std.file : readText;
+                    import std.path : buildPath;
+
+                    auto sp = buildPath(generationDir(cfgDir, n), "spec.json");
+                    try
+                        cachedOk = exists(sp) && sha256Hex(readText(sp)) == m.sha256;
+                    catch (Exception)
+                        cachedOk = false;
+                }
+                auto got = fetch(m.specUrl, cachedOk ? m.etag : null,
+                    extensionConnection(sources, m.profile, switches, headers));
                 // A concurrent `remove` could not have run (we hold the lock),
                 // but a stale reader of this code path could: re-verify the
                 // install still names the generation we read before committing.
                 if (!exists(extensionDir(cfgDir, n)))
                     throw new ExtensionException("extension '" ~ n
                         ~ "' was removed while updating; nothing was installed.");
-                if (got.notModified)
+                if (got.notModified && cachedOk)
                     return n ~ ": up to date (ETag matched)\n";
+                if (got.notModified)
+                    throw new ExtensionException("the server returned no spec for " ~ m.specUrl);
                 if (!got.body_.length)
                     throw new ExtensionException("the server returned no spec for " ~ m.specUrl);
                 const hash = sha256Hex(got.body_);
-                if (hash == m.sha256)
+                if (hash == m.sha256 && cachedOk)
                     return n ~ ": up to date (sha256 " ~ hash[0 .. 12] ~ "…)\n";
                 Catalog cat;
                 try
@@ -897,6 +942,7 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
         return buf.data;
 
     case "remove", "rm", "delete":
+        allowFlags(null, null);
         if (rest.length != 1)
             throw new ExtensionException("usage: d8ctl extension remove <name>");
         auto name = rest[0];
@@ -1326,7 +1372,7 @@ unittest
     // The extension transport never consults the environment: ambient mTLS
     // (and any other CAMUNDA_*) must not reach the resolved config, and the
     // process environment is restored afterwards.
-    import d8ctl.safeio : getEnv, setEnv;
+    import d8ctl.safeio : envNames, getEnv, setEnv;
 
     void withEnv(string k, string v, scope void delegate() @safe fn)
     {
@@ -1419,4 +1465,103 @@ unittest
         fakeFetch(xcliSpec.replace(`"T"`, `"T4"`)));
     assert(!exists(genA), "stale generation never reclaimed");
     assert(exists(buildPath(genB, "spec.json")));
+}
+
+// Review round 5: fail-closed subcommand flags, corrupt manifests, corrupt
+// cached spec repaired by update, environment masking by prefix.
+unittest
+{
+    import std.exception : assertThrown, collectExceptionMsg;
+    import std.file : write;
+    import std.path : buildPath;
+    import std.string : indexOf, replace;
+
+    auto dir = testDir("round5");
+    scope (exit)
+        cleanupDir(dir);
+    auto sources = Sources.init;
+
+    // Unknown / valueless flags and conflicting update targets are refused.
+    auto msg = collectExceptionMsg!ExtensionException(extensionCommand(dir, sources, ["add", "t"],
+        ["spec": "http://h/o.json"], ["base-url": true], fakeFetch(xcliSpec)));
+    assert(msg.indexOf("needs a value") >= 0, msg);
+    assertThrown!ExtensionException(extensionCommand(dir, sources, ["add", "t"],
+        ["spec": "http://h/o.json", "bse-url": "x"], null, fakeFetch(xcliSpec)));
+    extensionCommand(dir, sources, ["add", "t"], ["spec": "http://h/o.json"], null, fakeFetch(xcliSpec));
+    assertThrown!ExtensionException(extensionCommand(dir, sources, ["update", "t"], null,
+        ["all": true], fakeFetch(xcliSpec)));
+    assertThrown!ExtensionException(extensionCommand(dir, sources, ["list"], null,
+        ["chek": true], fakeFetch(xcliSpec)));
+    assertThrown!ExtensionException(extensionCommand(dir, sources, ["remove", "t"],
+        ["force": "1"], null, fakeFetch(xcliSpec)));
+
+    // A corrupt cached spec with an unchanged server is repaired, not "up to date".
+    write(specPath(dir, "t"), "garbage");
+    auto fixed = extensionCommand(dir, sources, ["update", "t"], null, null, fakeFetch(xcliSpec));
+    assert(fixed.indexOf("updated to sha256") >= 0, fixed);
+    assert(loadExtension(dir, "t").catalog.commands.length);
+
+    // Corrupt-but-valid manifests are usage errors, never JSON/bounds errors.
+    foreach (bad; [`{}`, `{"specUrl": 1, "baseUrl": "b", "sha256": "x"}`,
+            `{"specUrl": "s", "baseUrl": "b", "sha256": "abc"}`,
+            `{"specUrl": "s", "baseUrl": "b", "sha256": "` ~ sha256Hex("") ~ `", "profile": 3}`])
+    {
+        write(manifestPath(dir, "t"), bad);
+        assertThrown!ExtensionException(readManifest(dir, "t"), bad);
+        assertThrown!ExtensionException(extensionCommand(dir, sources, ["list"], null, null,
+            fakeFetch(xcliSpec)), bad);
+    }
+}
+
+unittest
+{
+    import d8ctl.safeio : getEnv, setEnv;
+
+    // Any CAMUNDA_* key (not just a fixed list) is hidden from the SDK while
+    // an extension transport is built, and restored afterwards.
+    setEnv("CAMUNDA_OAUTH_CACHE_DIR", "/cluster/cache");
+    setEnv("CAMUNDA_SOME_FUTURE_KEY", "x");
+    scope (exit)
+    {
+        setEnv("CAMUNDA_OAUTH_CACHE_DIR", null);
+        setEnv("CAMUNDA_SOME_FUTURE_KEY", null);
+    }
+    auto t = extensionTransport(["CAMUNDA_AUTH_STRATEGY": "NONE"]);
+    assert(t.config.oauthCacheDir != "/cluster/cache");
+    assert(getEnv("CAMUNDA_OAUTH_CACHE_DIR") == "/cluster/cache");
+    assert(getEnv("CAMUNDA_SOME_FUTURE_KEY") == "x");
+}
+
+unittest
+{
+    import d8ctl.help : resourceHelp;
+    import std.string : indexOf;
+
+    // HEAD/OPTIONS/TRACE are never advertised (the transport cannot send
+    // them); default positionals follow URL placeholder order; an explicit
+    // x-cli group sharing a derived resource word stays visible in help.
+    enum spec = `{"openapi": "3.0.0", "info": {"title": "t", "version": "1"}, "paths": {
+      "/p/{parentId}/c/{childId}": {
+        "get": {"operationId": "getPr", "parameters": [
+          {"name": "childId", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "parentId", "in": "path", "required": true, "schema": {"type": "string"}}],
+          "responses": {"200": {"description": "ok"}}},
+        "head": {"operationId": "headPr", "responses": {"200": {"description": "ok"}}},
+        "options": {"operationId": "optionsPr", "responses": {"200": {"description": "ok"}}}},
+      "/cancel": {"post": {"operationId": "cancelRun", "x-cli": {"command": ["pr", "run", "cancel"]},
+        "responses": {"200": {"description": "ok"}}}}}}`;
+    auto cat = new Catalog;
+    *cat = buildCatalog(spec, null, "t");
+    assert(cat.commands.length == 2, cat.commands.length.to!string);
+    foreach (c; cat.commands)
+    {
+        assert(c.method == "GET" || c.method == "POST", c.method);
+        if (c.operationId == "getPr")
+            assert(c.pathParams == ["parentId", "childId"], c.pathParams.to!string);
+    }
+    import d8ctl.catalog : overlayRows;
+
+    auto rows = overlayRows(cat);
+    auto h = resourceHelp("t", "pr", cat, rows);
+    assert(h.indexOf("get") >= 0 && h.indexOf("pr run cancel") >= 0, h);
 }
