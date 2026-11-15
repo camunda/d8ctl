@@ -495,10 +495,16 @@ private OpInfo fromPaths(Spec spec, J op)
         import std.conv : ConvException;
 
         long status;
-        try
-            status = code.to!long;
-        catch (ConvException)
-            continue;
+        // OpenAPI range key `2XX`: rank it as a generic body-bearing 200.
+        if (code[1 .. $] == "XX" || code[1 .. $] == "xx")
+            status = 200;
+        else
+        {
+            try
+                status = code.to!long;
+            catch (ConvException)
+                continue;
+        }
         auto resp = resolveComponent(spec, responses.fields[code], "responses", where ~ "/responses/" ~ code);
         auto media = jsonContent(resp.get("content"));
         const hasSchema = media !is null && truthy(media.get("schema"));
@@ -871,4 +877,10 @@ unittest
     assertThrown!SpecModelException(buildCatalog(`{"paths": {
         "/p": {"get": {"operationId": "ping", "responses": {}}},
         "/q": {"get": {"operationId": "PING", "responses": {}}}}}`));
+
+    // `2XX` range keys are successes; a JSON `2XX` beats an empty 204.
+    auto ranged = buildCatalog(`{"paths": {"/x": {"get": {"operationId": "getX", "responses": {
+        "204": {"description": "none"},
+        "2XX": {"description": "ok", "content": {"application/json": {"schema": {"type": "object"}}}}}}}}}`);
+    assert(ranged.commands[0].kind != "void" && ranged.commands[0].kind != "text");
 }
