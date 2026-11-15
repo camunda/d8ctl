@@ -1,3 +1,10 @@
+# [0.6.0](https://github.com/camunda/d8ctl/compare/v0.5.0...v0.6.0) (2026-11-15)
+
+
+### Features
+
+* runtime extensions — namespaces generated from a server's OpenAPI spec ([#13](https://github.com/camunda/d8ctl/issues/13)) ([ee39b0c](https://github.com/camunda/d8ctl/commit/ee39b0cc870d9012c4b197af4a4586d687204605)), closes [nano-ide#617](https://github.com/nano-ide/issues/617) [#9](https://github.com/camunda/d8ctl/issues/9)
+
 # [0.5.0](https://github.com/camunda/d8ctl/compare/v0.4.0...v0.5.0) (2026-11-15)
 
 
