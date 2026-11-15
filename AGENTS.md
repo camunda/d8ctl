@@ -17,7 +17,7 @@ There is no hand-written per-operation handler.
 
 Transport: `camunda-orchestration-sdk:runtime` from
 [orchestration-cluster-api-dlang](https://github.com/camunda/orchestration-cluster-api-dlang)
-(code.dlang.org `camunda-orchestration-sdk:runtime` `~>11.0.0-alpha.2`, the `main`/11.x alpha line; bump it in `dub.json` and refresh `dub.selections.json` with `dub upgrade`). The SDK is not a spec source.
+(code.dlang.org `camunda-orchestration-sdk:runtime` and `:openapi` `~>11.0.0-alpha.4`, the `main`/11.x alpha line; bump it in `dub.json` and refresh `dub.selections.json` with `dub upgrade`). The SDK is not a spec source; `:openapi` is only its hardened OpenAPI reader.
 
 ## Path map
 
@@ -32,7 +32,8 @@ Transport: `camunda-orchestration-sdk:runtime` from
 | `source/d8ctl/catalog.d` | Lookups over the generated table. |
 | `source/d8ctl/generated/catalog.d` | **Generated.** `make generate`. Never hand-edit. |
 | `source/d8ctl/version_.d` | SemVer stamp (`scripts/prepare-release.sh`). |
-| `scripts/generate.py` | Catalog generator. Reads `external-spec/bundled/`. |
+| `source/d8ctl/specmodel.d` | OpenAPI (+ optional Camunda spec-metadata) → command model: verb/resource split, kebab flags, body flags, root server. Throws, never exits. Shared by the generator and runtime extensions. |
+| `scripts/generate.d` | Thin catalog generator (`dub run --single`). Reads `external-spec/bundled/`, calls `specmodel`. |
 | `external-spec/bundled/` | Bundled spec + `spec-metadata.json` (`npm run bundle:spec`). Committed. |
 | `scripts/check-safe.sh` | `@safe` ratchet (same contract as the SDK). |
 | `scripts/prepare-release.sh` | Stamps `dub.json` + `version_.d` for semantic-release. |
@@ -41,7 +42,7 @@ Transport: `camunda-orchestration-sdk:runtime` from
 ## Strictness
 
 LDC ≥ 1.43 only. Every module `@safe:`. `-preview=dip1000 -preview=nosharedaccess`.
-Release keeps `-boundscheck=on`. No extra dub packages. No raw threads,
+Release keeps `-boundscheck=on`. No extra dub packages beyond the SDK's `:runtime` and `:openapi`. No raw threads,
 `__gshared`, or `union` outside a future `safeio.d`.
 
 ## Releases
