@@ -181,6 +181,39 @@ Profile fromModelerConnection(const JSONValue conn)
 
 enum modelerPrefix = "modeler:";
 
+/// The user's home: `%USERPROFILE%` on Windows (which has no `HOME`
+/// unless a POSIX shell set one), else `$HOME`; `.` if neither is set.
+string homeDir()
+{
+    import std.process : environment;
+
+    version (Windows)
+    {
+        auto profile = environment.get("USERPROFILE");
+        if (profile.length) return profile;
+    }
+    return environment.get("HOME", ".");
+}
+
+/// `%APPDATA%\<app>`, else `<home>\AppData\Roaming\<app>`: where Windows
+/// keeps per-user settings (c8ctl and Node use the same rule).
+string windowsAppDir(string appData, string home, string app) pure
+{
+    import std.path : buildPath;
+
+    return buildPath(appData.length ? appData : buildPath(home, "AppData", "Roaming"), app);
+}
+
+unittest
+{
+    import std.path : buildPath;
+
+    assert(windowsAppDir(buildPath("C:", "Users", "ada", "AppData", "Roaming"), "", "d8ctl")
+        == buildPath("C:", "Users", "ada", "AppData", "Roaming", "d8ctl"));
+    assert(windowsAppDir("", buildPath("C:", "Users", "ada"), "d8ctl")
+        == buildPath("C:", "Users", "ada", "AppData", "Roaming", "d8ctl"));
+}
+
 private string platformDir(string envOverride, string app)
 {
     import std.path : buildPath;
@@ -188,13 +221,12 @@ private string platformDir(string envOverride, string app)
 
     auto o = environment.get(envOverride);
     if (o.length) return o;
-    auto home = environment.get("HOME", ".");
+    auto home = homeDir();
     version (OSX)
         return buildPath(home, "Library", "Application Support", app);
     else version (Windows)
     {
-        auto appData = environment.get("APPDATA");
-        return buildPath(appData.length ? appData : buildPath(home, "AppData", "Roaming"), app);
+        return windowsAppDir(environment.get("APPDATA"), home, app);
     }
     else
     {

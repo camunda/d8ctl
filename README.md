@@ -118,8 +118,9 @@ d8ctl profile use --none                 # back to environment variables only
 ```
 
 The first profile you add becomes active. Profiles live in
-`~/.config/d8ctl/profiles.json` (`$XDG_CONFIG_HOME/d8ctl`, or `$D8CTL_CONFIG_DIR`),
-written with mode 0600 because they can hold secrets.
+`~/.config/d8ctl/profiles.json` (`%APPDATA%\d8ctl` on Windows; `$XDG_CONFIG_HOME/d8ctl`
+or `$D8CTL_CONFIG_DIR` override either), written with mode 0600 because they can
+hold secrets. On Windows the file inherits the per-user permissions of `%APPDATA%`.
 
 **Existing c8ctl profiles and Camunda Modeler connections** work as they are.
 d8ctl reads them (never writes them) from the same places c8ctl does
