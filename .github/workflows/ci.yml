@@ -47,6 +47,13 @@ jobs:
       - uses: dlang-community/setup-dlang@v2
         with:
           compiler: ldc-1.43.0
+      # Until the SDK fix is released: build against its branch, registered
+      # under the version d8ctl locks, so dub.selections.json stays as is.
+      - name: SDK from fix/windows-link
+        run: |
+          git clone -q --depth 1 -b fix/windows-link https://github.com/camunda/orchestration-cluster-api-dlang.git ../sdk
+          ver=$(sed -n 's/.*"camunda-orchestration-sdk": "\(.*\)".*/\1/p' dub.selections.json)
+          dub add-local ../sdk "$ver"
       - name: dub test
         continue-on-error: true
         run: dub test
