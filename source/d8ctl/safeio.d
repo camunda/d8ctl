@@ -45,13 +45,14 @@ unittest
 /// race is possible.
 void setEnv(string name, string value) @trusted
 {
-    import core.sys.posix.stdlib : setenv, unsetenv;
-    import std.string : toStringz;
+    import std.process : environment;
 
+    // std.process maps to setenv/unsetenv on POSIX and
+    // SetEnvironmentVariableW on Windows (which has no setenv).
     if (value is null)
-        unsetenv(name.toStringz);
+        environment.remove(name);
     else
-        setenv(name.toStringz, value.toStringz, 1);
+        environment[name] = value;
 }
 
 /// The process value of `name`, or null when unset.
