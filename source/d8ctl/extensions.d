@@ -629,20 +629,47 @@ Extension loadExtension(string cfgDir, string name)
     return e;
 }
 
+/// Create `dir`; false when it already exists (or can't be made). The
+/// mkdir is the atomic test-and-set behind `withExtensionLock`. Phobos
+/// reports failure as FileException on POSIX but WindowsException (not a
+/// FileException) on Windows.
+private bool tryMkdir(string dir)
+{
+    import std.file : FileException, mkdir;
+
+    version (Windows)
+    {
+        import std.windows.syserror : WindowsException;
+
+        try
+            mkdir(dir);
+        catch (FileException)
+            return false;
+        catch (WindowsException)
+            return false;
+    }
+    else
+    {
+        try
+            mkdir(dir);
+        catch (FileException)
+            return false;
+    }
+    return true;
+}
+
 /// Hold `<extensions>/.<name>.lock` (an exclusive mkdir) while `fn` runs,
 /// so concurrent add/update/remove of one extension serialize instead of
 /// interleaving their cache commits.
 private T withExtensionLock(T)(string cfgDir, string name, scope T delegate() @safe fn)
 {
     requireExtensionName(name); // a lock path is only ever built from a canonical name
-    import std.file : FileException, mkdir, rmdirRecurse;
+    import std.file : rmdirRecurse;
     import std.path : buildPath;
 
     makePrivateDir(extensionsRoot(cfgDir));
     auto lock = buildPath(extensionsRoot(cfgDir), "." ~ name ~ ".lock");
-    try
-        mkdir(lock);
-    catch (FileException)
+    if (!tryMkdir(lock))
         throw new ExtensionException("extension '" ~ name ~ "' is being changed by another d8ctl"
             ~ " (if none is running, remove " ~ lock ~ ")");
     scope (exit)
