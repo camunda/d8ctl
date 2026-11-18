@@ -33,6 +33,41 @@ jobs:
       - run: ./d8ctl --help
       - run: ./d8ctl cluster topology get --help
 
+  # Windows probe (#14): allowed to fail until Windows is supported. Every
+  # step runs even after one fails, so one run shows everything that breaks.
+  windows:
+    name: dub test (windows-latest, probe)
+    runs-on: windows-latest
+    continue-on-error: true
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ldc-1.43.0
+      - name: dub test
+        continue-on-error: true
+        run: dub test
+      - name: dub build -b release
+        continue-on-error: true
+        run: dub build -b release
+      - name: d8ctl --help
+        continue-on-error: true
+        run: ./d8ctl.exe --help
+      - name: HTTP through the runtime (connection refused is a pass; a crash is not)
+        continue-on-error: true
+        run: |
+          set +e
+          CAMUNDA_REST_ADDRESS=http://127.0.0.1:9 ./d8ctl.exe cluster topology get
+          echo "exit=$?"
+      - name: Where is libcurl?
+        continue-on-error: true
+        run: |
+          ls "$(dirname "$(which ldc2)")" | grep -i curl || echo "no curl next to ldc2"
+          where curl.exe libcurl.dll libcurl-x64.dll 2>/dev/null || true
+
   lint:
     name: D-Scanner
     runs-on: ubuntu-24.04
