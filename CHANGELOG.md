@@ -1,3 +1,10 @@
+## [0.6.1](https://github.com/camunda/d8ctl/compare/v0.6.0...v0.6.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* build and run on Windows ([#14](https://github.com/camunda/d8ctl/issues/14)) ([#15](https://github.com/camunda/d8ctl/issues/15)) ([ef114ce](https://github.com/camunda/d8ctl/commit/ef114cebd8f17471a029dd5cfd4bb8bdab075a66)), closes [camunda/orchestration-cluster-api-dlang#27](https://github.com/camunda/orchestration-cluster-api-dlang/issues/27)
+
 # [0.6.0](https://github.com/camunda/d8ctl/compare/v0.5.0...v0.6.0) (2026-11-15)
 
 
