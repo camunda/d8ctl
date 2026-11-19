@@ -258,7 +258,7 @@ Dirs defaultDirs()
 }
 
 /// Config directory: `$D8CTL_CONFIG_DIR`, else `$XDG_CONFIG_HOME/d8ctl`,
-/// else `~/.config/d8ctl`.
+/// else `%APPDATA%\d8ctl` on Windows and `~/.config/d8ctl` elsewhere.
 string configDir()
 {
     import std.path : buildPath;
@@ -268,7 +268,10 @@ string configDir()
     if (explicit.length) return explicit;
     auto xdg = environment.get("XDG_CONFIG_HOME");
     if (xdg.length) return buildPath(xdg, "d8ctl");
-    return buildPath(environment.get("HOME", "."), ".config", "d8ctl");
+    version (Windows)
+        return windowsAppDir(environment.get("APPDATA"), homeDir(), "d8ctl");
+    else
+        return buildPath(homeDir(), ".config", "d8ctl");
 }
 
 string profilesPath(string dir)
