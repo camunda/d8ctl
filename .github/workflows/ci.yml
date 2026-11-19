@@ -48,12 +48,15 @@ jobs:
         with:
           compiler: ldc-1.43.0
       # Until a release carries the Windows link fix
-      # (camunda/orchestration-cluster-api-dlang#27): build against SDK main,
-      # registered under the version d8ctl locks, so dub.selections.json
-      # stays as is. Remove this step when d8ctl bumps to that release.
-      - name: SDK from main (Windows link fix)
+      # (camunda/orchestration-cluster-api-dlang#27): build against the fix
+      # branch, registered under the version d8ctl locks, so
+      # dub.selections.json stays as is. SDK main does NOT carry the fix yet
+      # (the PR is still open), so cloning the default branch keeps the
+      # Windows curl.lib link failure. Remove this step when d8ctl bumps to
+      # an SDK release that includes the fix.
+      - name: SDK from fix/windows-link (Windows link fix)
         run: |
-          git clone -q --depth 1 https://github.com/camunda/orchestration-cluster-api-dlang.git ../sdk
+          git clone -q --depth 1 -b fix/windows-link https://github.com/camunda/orchestration-cluster-api-dlang.git ../sdk
           ver=$(sed -n 's/.*"camunda-orchestration-sdk": "\(.*\)".*/\1/p' dub.selections.json)
           dub add-local ../sdk "$ver"
       - name: dub test
@@ -68,9 +71,21 @@ jobs:
       - name: HTTP through the runtime (connection refused is a pass; a crash is not)
         continue-on-error: true
         run: |
-          set +e
-          CAMUNDA_REST_ADDRESS=http://127.0.0.1:9 ./d8ctl.exe cluster topology get
-          echo "exit=$?"
+          test -x ./d8ctl.exe || { echo "d8ctl.exe missing; build must have failed"; exit 1; }
+          # Isolate HOME so a developer/CI c8ctl profile can't override
+          # CAMUNDA_REST_ADDRESS and turn the probe into a real call.
+          out=$(HOME="$PWD/.probe-home" CAMUNDA_REST_ADDRESS=http://127.0.0.1:9 ./d8ctl.exe cluster topology get 2>&1)
+          status=$?
+          rm -rf .probe-home
+          echo "$out"
+          echo "exit=$status"
+          if [ $status -eq 0 ]; then
+            echo "expected a connection-refused failure against 127.0.0.1:9, got success"
+            exit 1
+          fi
+          echo "$out" | grep -qiE 'refused|connect|unreachable|timed? ?out|network' \
+            || { echo "unexpected failure mode (crash?) — exit=$status"; exit 1; }
+          echo "probe passed: connection refused, no crash"
       - name: Where is libcurl?
         continue-on-error: true
         run: |
