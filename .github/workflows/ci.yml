@@ -72,11 +72,23 @@ jobs:
         continue-on-error: true
         run: |
           test -x ./d8ctl.exe || { echo "d8ctl.exe missing; build must have failed"; exit 1; }
-          # Isolate HOME so a developer/CI c8ctl profile can't override
-          # CAMUNDA_REST_ADDRESS and turn the probe into a real call.
-          out=$(HOME="$PWD/.probe-home" CAMUNDA_REST_ADDRESS=http://127.0.0.1:9 ./d8ctl.exe cluster topology get 2>&1)
-          status=$?
-          rm -rf .probe-home
+          # Isolate every profile-directory override so a developer/CI c8ctl
+          # profile can't override CAMUNDA_REST_ADDRESS and turn the probe
+          # into a real call: configDir()/platformDir() read APPDATA and fall
+          # back to USERPROFILE (Windows home), never HOME. Blank the c8ctl
+          # env path too: CAMUNDA_BASE_URL feeds resolveConnection when no
+          # profile exists, and the SDK reads CAMUNDA_* (e.g. the OAuth token
+          # cache) beyond the address.
+          iso="$PWD/.probe-home"
+          mkdir -p "$iso"
+          out=
+          out=$(env -u CAMUNDA_BASE_URL -u CAMUNDA_CLIENT_ID -u CAMUNDA_CLIENT_SECRET \
+            -u CAMUNDA_USERNAME -u CAMUNDA_PASSWORD -u CAMUNDA_OAUTH_URL \
+            -u CAMUNDA_TOKEN_AUDIENCE -u CAMUNDA_OAUTH_SCOPE \
+            HOME="$iso" APPDATA="$iso" USERPROFILE="$iso" \
+            CAMUNDA_REST_ADDRESS=http://127.0.0.1:9 ./d8ctl.exe cluster topology get 2>&1) || status=$?
+          status=${status:-0}
+          rm -rf "$iso"
           echo "$out"
           echo "exit=$status"
           if [ $status -eq 0 ]; then
