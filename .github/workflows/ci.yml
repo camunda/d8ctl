@@ -33,12 +33,11 @@ jobs:
       - run: ./d8ctl --help
       - run: ./d8ctl cluster topology get --help
 
-  # Windows probe (#14): allowed to fail until Windows is supported. Every
-  # step runs even after one fails, so one run shows everything that breaks.
+  # Windows (#14): native WinHTTP transport from the SDK (11.0.0-alpha.8+),
+  # no libcurl. A required job like the others.
   windows:
-    name: dub test (windows-latest, probe)
+    name: dub test (windows-latest)
     runs-on: windows-latest
-    continue-on-error: true
     defaults:
       run:
         shell: bash
@@ -47,29 +46,13 @@ jobs:
       - uses: dlang-community/setup-dlang@v2
         with:
           compiler: ldc-1.43.0
-      # Until a release carries the Windows link fix
-      # (camunda/orchestration-cluster-api-dlang#27): build against the fix
-      # branch, registered under the version d8ctl locks, so
-      # dub.selections.json stays as is. SDK main does NOT carry the fix yet
-      # (the PR is still open), so cloning the default branch keeps the
-      # Windows curl.lib link failure. Remove this step when d8ctl bumps to
-      # an SDK release that includes the fix.
-      - name: SDK from fix/windows-link (Windows link fix)
-        run: |
-          git clone -q --depth 1 -b fix/windows-link https://github.com/camunda/orchestration-cluster-api-dlang.git ../sdk
-          ver=$(sed -n 's/.*"camunda-orchestration-sdk": "\(.*\)".*/\1/p' dub.selections.json)
-          dub add-local ../sdk "$ver"
       - name: dub test
-        continue-on-error: true
         run: dub test
       - name: dub build -b release
-        continue-on-error: true
         run: dub build -b release
       - name: d8ctl --help
-        continue-on-error: true
         run: ./d8ctl.exe --help
-      - name: HTTP through the runtime (connection refused is a pass; a crash is not)
-        continue-on-error: true
+      - name: HTTP through WinHTTP (connection refused is a pass; a crash is not)
         run: |
           test -x ./d8ctl.exe || { echo "d8ctl.exe missing; build must have failed"; exit 1; }
           # Isolate every profile-directory override so a developer/CI c8ctl
@@ -98,11 +81,6 @@ jobs:
           echo "$out" | grep -qiE 'refused|connect|unreachable|timed? ?out|network' \
             || { echo "unexpected failure mode (crash?) — exit=$status"; exit 1; }
           echo "probe passed: connection refused, no crash"
-      - name: Where is libcurl?
-        continue-on-error: true
-        run: |
-          ls "$(dirname "$(which ldc2)")" | grep -i curl || echo "no curl next to ldc2"
-          where curl.exe libcurl.dll libcurl-x64.dll 2>/dev/null || true
 
   lint:
     name: D-Scanner
