@@ -1,3 +1,10 @@
+## [0.7.2](https://github.com/camunda/d8ctl/compare/v0.7.1...v0.7.2) (2026-11-20)
+
+
+### Bug Fixes
+
+* no escaped slashes in dry-run previews, profiles.json or extension manifests ([#20](https://github.com/camunda/d8ctl/issues/20)) ([00df068](https://github.com/camunda/d8ctl/commit/00df068cafeaa647b4d587e22e491ee3ccb7b3cb)), closes [#16](https://github.com/camunda/d8ctl/issues/16) [#16](https://github.com/camunda/d8ctl/issues/16)
+
 ## [0.7.1](https://github.com/camunda/d8ctl/compare/v0.7.0...v0.7.1) (2026-11-20)
 
 
