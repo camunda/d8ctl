@@ -167,78 +167,153 @@ private bool nameIn(const string[] xs, string x)
     return xs.canFind(x);
 }
 
+private const(ResponseField)* findChild(const(ResponseField)[] fields, string name)
+{
+    foreach (i, ref f; fields)
+        if (f.name == name)
+            return &fields[i];
+    return null;
+}
+
+private void collectPaths(const(ResponseField)[] fields, string prefix, ref string[] out_)
+{
+    foreach (f; fields)
+    {
+        out_ ~= prefix ~ f.name;
+        collectPaths(f.children, prefix ~ f.name ~ ".", out_);
+    }
+}
+
 /// Usage error (exit 2) with the valid field names, as the issue asks.
 private noreturn throwFieldsError(const(Command)* c, string what)
 {
     import std.array : join;
 
     string[] valid;
-    foreach (f; c.responseFields)
-    {
-        valid ~= f.name;
-        foreach (ch; f.children)
-            valid ~= f.name ~ "." ~ ch;
-    }
+    collectPaths(c.responseFields, null, valid);
     throw new FieldsException(what ~ ". Valid --fields for " ~ c.operationId
         ~ ": " ~ valid.join(", "));
 }
 
-/// Project `obj` to the selected top-level `fields` (dotted `a.b` paths keep
-/// the nesting). Unknown names are a usage error listing the valid ones; a
-/// dotted path needs an object child declared in the schema. Fields absent
-/// from this particular response are simply not printed.
-JSONValue projectObject(const JSONValue obj, const string[] fields, const(Command)* c)
+/// Split `path` at the first dot: (`head`, `rest`), rest empty without one.
+private string[2] splitPath(string path)
 {
     import std.string : indexOf;
 
-    JSONValue out_ = parseJSON("{}");
-    foreach (f; fields)
+    const dot = path.indexOf('.');
+    if (dot < 0)
+        return [path, null];
+    return [path[0 .. dot], path[dot + 1 .. $]];
+}
+
+/// Validate one selection against the schema fields: every dotted step must
+/// be a declared object/array-of-objects property.
+private void validatePath(const(Command)* c, const(ResponseField)[] fields, string sel)
+{
+    auto hr = splitPath(sel);
+    auto f = findChild(fields, hr[0]);
+    if (f is null)
+        throwFieldsError(c, "unknown field '" ~ hr[0] ~ "'");
+    if (!hr[1].length)
+        return;
+    if (!f.children.length)
+        throwFieldsError(c, "'" ~ hr[0] ~ "' has no nested fields ('" ~ sel ~ "')");
+    validatePath(c, f.children, hr[1]);
+}
+
+/// Validate the complete `--fields` selection against the command's response
+/// schema — before any request is sent, so a mistyped selection on a mutating
+/// command fails as a usage error instead of creating the resource and then
+/// hiding its key. Independent of the (possibly empty) response contents.
+void validateFields(const(Command)* c, const string[] fields)
+{
+    import std.array : join;
+
+    if (!fields.length)
+        return;
+    switch (c.responseTarget)
     {
-        string head = f;
-        string rest;
-        const dot = f.indexOf('.');
-        if (dot >= 0)
+    case "array":
+    case "object":
+        foreach (f; fields)
+            validatePath(c, c.responseFields, f);
+        return;
+    case "items":
+        // A bare item-field name selects inside the array's items; every
+        // other envelope field (including the array property itself) is
+        // addressed by name or dotted path.
+        auto arr = findResponseField(c, c.selection);
+        foreach (f; fields)
         {
-            head = f[0 .. dot];
-            rest = f[dot + 1 .. $];
-        }
-        auto rf = findResponseField(c, head);
-        if (rf is null)
-            throwFieldsError(c, "unknown field '" ~ head ~ "'");
-        auto v = head in obj.objectNoRef;
-        if (v is null)
-            continue; // absent from this response: nothing to keep
-        if (rest.length)
-        {
-            if (!rf.children.length)
-                throwFieldsError(c, "'" ~ head ~ "' has no nested fields ('" ~ f ~ "')");
-            if (!nameIn(rf.children, rest))
-                throwFieldsError(c, "unknown field '" ~ f ~ "' — '" ~ head
-                    ~ "' has no '" ~ rest ~ "'");
-            if (v.type == JSONType.object)
+            auto hr = splitPath(f);
+            if (hr[0] == c.selection)
             {
-                if (auto cv = rest in v.objectNoRef)
-                {
-                    auto slot = head in out_.objectNoRef;
-                    if (slot is null)
-                    {
-                        JSONValue child = parseJSON("{}");
-                        child[rest] = *cv;
-                        out_[head] = child;
-                    }
-                    else
-                    {
-                        auto merged = *slot;
-                        merged[rest] = *cv;
-                        out_[head] = merged;
-                    }
-                }
-                continue;
+                if (!hr[1].length)
+                    continue; // `items` alone keeps the whole array
+                validatePath(c, arr.children, hr[1]);
             }
-            // The server sent a non-object where the schema declares one:
-            // keep the value as-is rather than drop it.
+            else if (findResponseField(c, hr[0]) !is null)
+                validatePath(c, c.responseFields, f);
+            else if (findChild(arr.children, hr[0]) !is null)
+                validatePath(c, arr.children, f);
+            else
+                throwFieldsError(c, "unknown field '" ~ hr[0] ~ "'");
         }
-        out_[head] = *v;
+        return;
+    case "multi":
+        // Every selection must be prefixed with one of the array names; a
+        // bare name is a usage error that lists the arrays.
+        string[] arrays;
+        foreach (f; c.responseFields)
+            arrays ~= f.name;
+        foreach (f; fields)
+        {
+            auto hr = splitPath(f);
+            auto rf = findResponseField(c, hr[0]);
+            if (!hr[1].length || rf is null)
+                throw new FieldsException("--fields on " ~ c.operationId
+                    ~ " needs an array prefix (" ~ arrays.join(", ") ~ "), e.g. "
+                    ~ arrays[0] ~ "." ~ c.responseFields[0].children[0].name ~ " — got '" ~ f ~ "'");
+            validatePath(c, rf.children, hr[1]);
+        }
+        return;
+    default:
+        throw new FieldsException(c.operationId
+            ~ " has no selectable JSON response fields; --fields does not apply.");
+    }
+}
+
+/// Project `obj` to the selected `paths` (dotted `a.b` paths keep the
+/// nesting). Callers validate first (`validateFields`), so every path is
+/// schema-declared; fields absent from this particular response are simply
+/// not printed.
+private JSONValue projectObject(const JSONValue obj, const string[] paths, const(ResponseField)[] fields)
+{
+    JSONValue out_ = parseJSON("{}");
+    foreach (p; paths)
+    {
+        auto hr = splitPath(p);
+        auto rf = findChild(fields, hr[0]);
+        auto v = hr[0] in obj.objectNoRef;
+        if (v is null || rf is null)
+            continue; // absent from this response: nothing to keep
+        if (hr[1].length && v.type == JSONType.object)
+        {
+            auto sub = projectObject(*v, [hr[1]], rf.children);
+            if (auto slot = hr[0] in out_.objectNoRef)
+            {
+                auto merged = *slot;
+                foreach (k, sv; sub.objectNoRef)
+                    merged[k] = sv;
+                out_[hr[0]] = merged;
+            }
+            else
+                out_[hr[0]] = sub;
+            continue;
+        }
+        // No dotted rest, or the server sent a non-object where the schema
+        // declares one: keep the value as-is rather than drop it.
+        out_[hr[0]] = *v;
     }
     return out_;
 }
@@ -250,9 +325,7 @@ JSONValue projectObject(const JSONValue obj, const string[] fields, const(Comman
 /// else is a usage error.
 JSONValue selectFields(const JSONValue payload, const string[] fields, const(Command)* c)
 {
-    import std.array : join;
-    import std.string : indexOf;
-
+    validateFields(c, fields);
     switch (c.responseTarget)
     {
     case "array":
@@ -260,95 +333,65 @@ JSONValue selectFields(const JSONValue payload, const string[] fields, const(Com
             return payload; // the server broke the contract; print it as-is
         JSONValue[] items;
         foreach (it; payload.arrayNoRef)
-            items ~= it.type == JSONType.object ? projectObject(it, fields, c) : it;
+            items ~= it.type == JSONType.object ? projectObject(it, fields, c.responseFields) : it;
         return JSONValue(items);
     case "items":
         if (payload.type != JSONType.object)
             return payload;
-        // The schema guarantees exactly one array-of-objects property; the
-        // response's single matching array is the one to trim.
-        foreach (k, v; payload.objectNoRef)
-            if (v.type == JSONType.array)
+        auto arr = findResponseField(c, c.selection);
+        // Split the selection: item fields trim the array's items; other
+        // envelope fields stay as-is. `items.a` is the same as `a`.
+        string[] itemSel;
+        foreach (f; fields)
+        {
+            auto hr = splitPath(f);
+            if (hr[0] == c.selection)
             {
-                // `items.x` is the same as `x`; a non-item top-level name
-                // (`page.totalItems`) is accepted — those fields stay as-is.
-                string[] sel;
-                foreach (f; fields)
-                {
-                    const dot = f.indexOf('.');
-                    const head = dot >= 0 ? f[0 .. dot] : f;
-                    if (head == k && dot >= 0)
-                        sel ~= f[dot + 1 .. $];
-                    else if (head != k && findResponseField(c, head) is null
-                        && (head in payload.objectNoRef) !is null)
-                        continue;
-                    else
-                        sel ~= f;
-                }
-                JSONValue[] items;
-                foreach (it; v.arrayNoRef)
-                    items ~= it.type == JSONType.object ? projectObject(it, sel, c) : it;
-                JSONValue out_ = payload;
-                out_[k] = JSONValue(items);
-                return out_;
+                if (hr[1].length)
+                    itemSel ~= hr[1];
             }
-        return payload;
+            else if (findChild(arr.children, hr[0]) !is null)
+                itemSel ~= f;
+        }
+        if (!itemSel.length)
+            return payload; // only envelope fields selected: nothing to trim
+        auto slot = c.selection in payload.objectNoRef;
+        if (slot is null || slot.type != JSONType.array)
+            return payload; // the array is absent from this response
+        JSONValue[] items;
+        foreach (it; slot.arrayNoRef)
+            items ~= it.type == JSONType.object ? projectObject(it, itemSel, arr.children) : it;
+        JSONValue out_ = payload;
+        out_[c.selection] = JSONValue(items);
+        return out_;
     case "object":
         if (payload.type != JSONType.object)
             return payload;
-        return projectObject(payload, fields, c);
+        return projectObject(payload, fields, c.responseFields);
     case "multi":
-        // Every selection must be prefixed with one of the array names; a
-        // bare name is a usage error that lists the arrays.
-        string[] arrays;
-        foreach (f; c.responseFields)
-            arrays ~= f.name;
+        if (payload.type != JSONType.object)
+            return payload;
         string[][string] byArray;
         foreach (f; fields)
         {
-            const dot = f.indexOf('.');
-            const head = dot >= 0 ? f[0 .. dot] : f;
-            if (dot < 0 || !nameIn(arrays, head))
-                throw new FieldsException("--fields on " ~ c.operationId
-                    ~ " needs an array prefix (" ~ arrays.join(", ") ~ "), e.g. "
-                    ~ arrays[0] ~ "." ~ c.responseFields[0].children[0] ~ " — got '" ~ f ~ "'");
-            byArray[head] ~= f[dot + 1 .. $];
+            auto hr = splitPath(f);
+            byArray[hr[0]] ~= hr[1];
         }
-        if (payload.type != JSONType.object)
-            return payload;
         JSONValue out_ = payload;
         foreach (arr, sel; byArray)
         {
             auto rf = findResponseField(c, arr);
-            foreach (s; sel)
-            {
-                const head = s.indexOf('.') >= 0 ? s[0 .. s.indexOf('.')] : s;
-                if (!nameIn(rf.children, head))
-                    throwFieldsError(c, "unknown field '" ~ arr ~ "." ~ head ~ "'");
-            }
             auto slot = arr in out_.objectNoRef;
             if (slot is null || slot.type != JSONType.array)
                 continue;
             JSONValue[] items;
             foreach (it; slot.arrayNoRef)
-            {
-                if (it.type != JSONType.object)
-                {
-                    items ~= it;
-                    continue;
-                }
-                JSONValue trimmed = parseJSON("{}");
-                foreach (s; sel)
-                    if (auto v = s in it.objectNoRef)
-                        trimmed[s] = *v;
-                items ~= trimmed;
-            }
+                items ~= it.type == JSONType.object ? projectObject(it, sel, rf.children) : it;
             out_[arr] = JSONValue(items);
         }
         return out_;
     default:
-        throw new FieldsException(c.operationId
-            ~ " has no selectable JSON response fields; --fields does not apply.");
+        assert(0, "validateFields rejects an empty responseTarget");
     }
 }
 
@@ -407,9 +450,45 @@ unittest
     auto c = new Command;
     *c = toCommand(cat.commands[0]);
     assert(c.responseTarget == "items");
+    assert(c.selection == "items");
     auto r = selectFields(parseJSON(`{"page":{"totalItems":1},"items":[{"a":"1","b":"2"}]}`),
         ["page.totalItems", "items.a"], c);
     assert(r.toString == `{"items":[{"a":"1"}],"page":{"totalItems":1}}`, r.toString);
+}
+
+/// `--fields` validation is content-independent (#21 review): a typo fails
+/// before any request, even when the response would be an empty array.
+unittest
+{
+    import d8ctl.specmodel : buildCatalog;
+    import d8ctl.catalog : toCommand;
+    import std.exception : assertThrown;
+
+    auto cat = buildCatalog(`{"paths": {"/s": {"post": {"operationId": "s",
+        "responses": {"200": {"description": "ok", "content": {"application/json":
+          {"schema": {"type": "object", "properties": {
+            "page": {"type": "object", "properties": {"totalItems": {"type": "integer"}}},
+            "items": {"type": "array", "items": {"type": "object", "properties": {
+              "a": {"type": "string"}, "b": {"type": "string"}}}}}}}}}}}}}}`, null, "x");
+    auto c = new Command;
+    *c = toCommand(cat.commands[0]);
+
+    // A mistyped item field is a usage error on an empty response too.
+    assertThrown!FieldsException(selectFields(parseJSON(`{"items":[]}`), ["procesInstnaceKey"], c));
+    // An undeclared envelope path never silently succeeds.
+    assertThrown!FieldsException(selectFields(parseJSON(`{"items":[],"page":{"totalItems":0}}`),
+        ["page.notAField"], c));
+    assertThrown!FieldsException(selectFields(parseJSON(`{"items":[]}`), ["notAField"], c));
+    // A dotted path into a scalar envelope field is a usage error.
+    assertThrown!FieldsException(selectFields(parseJSON(`{"items":[]}`), ["page.totalItems.x"], c));
+    // Valid selections pass validation regardless of content.
+    validateFields(c, ["a", "items.b", "page.totalItems", "items", "page"]);
+    auto r = selectFields(parseJSON(`{"page":{"totalItems":0},"items":[]}`), ["a"], c);
+    assert(r.toString == `{"items":[],"page":{"totalItems":0}}`, r.toString);
+    // Selecting only envelope fields leaves the array untouched.
+    auto env = selectFields(parseJSON(`{"page":{"totalItems":1},"items":[{"a":"1","b":"2"}]}`),
+        ["page.totalItems"], c);
+    assert(env.toString == `{"items":[{"a":"1","b":"2"}],"page":{"totalItems":1}}`, env.toString);
 }
 
 /// `--fields` projection (#21): each selection target, dotted paths, unknown
@@ -506,4 +585,37 @@ unittest
     auto pc = new Command;
     *pc = toCommand(plain.commands[0]);
     assertThrown!FieldsException(selectFields(parseJSON(`{}`), ["a"], pc));
+}
+
+/// Multi-array responses project dotted paths inside the items (#21 review):
+/// the suffix is a nested path, not a literal property name.
+unittest
+{
+    import d8ctl.specmodel : buildCatalog;
+    import d8ctl.catalog : toCommand;
+    import std.exception : assertThrown;
+
+    auto cat = buildCatalog(`{"paths": {"/m": {"get": {"operationId": "getM",
+        "responses": {"200": {"description": "ok", "content": {"application/json":
+          {"schema": {"type": "object", "properties": {
+            "prs": {"type": "array", "items": {"type": "object", "properties": {
+              "prKey": {"type": "string"},
+              "spec": {"type": "object", "properties": {"name": {"type": "string"},
+                "extra": {"type": "string"}}}}}},
+            "runs": {"type": "array", "items": {"type": "object", "properties": {
+              "id": {"type": "string"}}}}}}}}}}}}}}`, null, "t");
+    auto c = new Command;
+    *c = toCommand(cat.commands[0]);
+    assert(c.responseTarget == "multi");
+
+    auto payload = parseJSON(`{"prs":[{"prKey":"1","spec":{"name":"n","extra":"e"}}],
+        "runs":[{"id":"r1","z":0}]}`);
+    auto got = selectFields(payload, ["prs.spec.name", "runs.id"], c);
+    assert(formatJson(got, false)
+        == `{"prs":[{"spec":{"name":"n"}}],"runs":[{"id":"r1"}]}`, formatJson(got, false));
+    // An invalid nested suffix never silently passes.
+    assertThrown!FieldsException(selectFields(payload, ["prs.spec.nope"], c));
+    assertThrown!FieldsException(selectFields(payload, ["prs.nope.name"], c));
+    // Deeper than the schema declares: `spec.name.x` has no object to enter.
+    assertThrown!FieldsException(selectFields(payload, ["prs.spec.name.x"], c));
 }

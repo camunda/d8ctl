@@ -9,10 +9,10 @@ module d8ctl.catalog;
 @safe:
 
 import d8ctl.generated.catalog;
-import d8ctl.specmodel : Catalog, ModelCommand;
+import d8ctl.specmodel : Catalog, ModelCommand, ModelResponseField;
 import d8ctl.util : eqIgnoreCase;
 
-import std.algorithm : canFind, sort, uniq;
+import std.algorithm : canFind, map, sort, uniq;
 import std.array : array;
 
 public import d8ctl.generated.catalog : BodyField, Command, ResponseField, catalog, catalogOperationCount, catalogSpecHash;
@@ -42,8 +42,19 @@ Command toCommand(const ref ModelCommand c)
     foreach (p; c.paths)
         r.paths ~= p.dup;
     r.responseTarget = c.responseTarget;
+    r.selection = c.selection;
     foreach (f; c.responseFields)
-        r.responseFields ~= ResponseField(f.name, f.kind, f.children.dup);
+        r.responseFields ~= toResponseField(f);
+    return r;
+}
+
+private ResponseField toResponseField(const ref ModelResponseField f)
+{
+    ResponseField r;
+    r.name = f.name;
+    r.kind = f.kind;
+    foreach (ref ch; f.children)
+        r.children ~= toResponseField(ch);
     return r;
 }
 
@@ -279,18 +290,41 @@ unittest
     auto search = findByOperationId("searchProcessInstances");
     assert(search !is null);
     assert(search.responseTarget == "items");
+    assert(search.selection == "items");
+    // The envelope's fields are selectable; the array's children are the item
+    // fields.
     string[] names;
     foreach (f; search.responseFields)
         names ~= f.name;
     import std.conv : to;
 
-    assert(names.canFind("processInstanceKey"), names.to!string);
-    assert(names.canFind("processDefinitionId"));
-    assert(names.canFind("startDate"));
+    assert(names.canFind("items") && names.canFind("page"), names.to!string);
+    // The array's children are the item fields.
+    string[] itemNames;
+    foreach (f; search.responseFields)
+        if (f.name == "items")
+            foreach (ch; f.children)
+                itemNames ~= ch.name;
+    assert(itemNames.canFind("processInstanceKey"), itemNames.to!string);
+    assert(itemNames.canFind("processDefinitionId"));
+    assert(itemNames.canFind("startDate"));
+    // The envelope's `page` object validates its own dotted children.
+    string[] pageNames;
+    foreach (f; search.responseFields)
+        if (f.name == "page")
+            foreach (ch; f.children)
+                pageNames ~= ch.name;
+    assert(pageNames.canFind("totalItems"), pageNames.to!string);
 
-    // A plain-object response: getTopology's target is `items` (brokers)…
+    // getTopology's envelope has one array of objects (brokers) plus scalars:
+    // the items target trims the brokers.
     auto topo = findByOperationId("getTopology");
     assert(topo.responseTarget == "items");
+    assert(topo.selection == "brokers");
+    // …and the whole-cluster topology has two arrays of objects: multi.
+    auto clusterTopo = findByOperationId("getClusterTopology");
+    assert(clusterTopo.responseTarget == "multi");
+    assert(clusterTopo.responseFields.map!(f => f.name).array.canFind("brokers"));
 
     // An nwf-like spec: `prs` + `deliveries` arrays → multi, prefix required.
     import d8ctl.specmodel : buildCatalog;
@@ -308,5 +342,5 @@ unittest
     auto rows = overlayRows(overlay);
     assert(rows[0].responseTarget == "multi", "extensions carry the model");
     assert(rows[0].responseFields.length == 2
-        && rows[0].responseFields[0].children == ["prKey", "status"]);
+        && rows[0].responseFields[0].children.map!(f => f.name).array == ["prKey", "status"]);
 }

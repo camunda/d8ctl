@@ -92,11 +92,13 @@ d8ctl is built for agents and scripts, so its output is a contract (#16):
   array → each item; an object with one array of objects (`items`) → each item,
   other top-level fields (`page`) kept; otherwise the object itself. With
   several arrays, prefix the array name (`--fields=prs.prKey,prs.status`).
-  Dotted paths keep nesting. Unknown fields are a usage error (exit 2) listing
-  the valid names; undeclared fields the server sends are dropped. Not for
-  non-JSON responses (usage error) and never applied to errors. `--dry-run`
-  shows the selection; `--help` lists "Response fields" (`responseFields` in
-  `--help --json`).
+  Dotted paths keep nesting. The whole selection is validated against the
+  schema before the request is sent: unknown fields are a usage error
+  (exit 2) listing the valid names — a typo never reaches the server, so a
+  mutating command cannot create the resource and then hide its key.
+  Undeclared fields the server sends are dropped. Not for non-JSON responses
+  (usage error) and never applied to errors. `--dry-run` shows the selection;
+  `--help` lists "Response fields" (`responseFields` in `--help --json`).
 
   ```sh
   d8ctl cluster process-instances search --filter='{"state":"ACTIVE"}' --fields=processInstanceKey,startDate

@@ -274,26 +274,27 @@ string commandHelp(const Command* c)
             break;
         case "multi":
             buf.put("  Several arrays: prefix every field with the array name (e.g. "
-                ~ c.responseFields[0].name ~ "." ~ c.responseFields[0].children[0] ~ ").\n");
+                ~ c.responseFields[0].name ~ "." ~ c.responseFields[0].children[0].name ~ ").\n");
             break;
         default:
             buf.put("  Selection trims the response object.\n");
             break;
         }
         foreach (f; c.responseFields)
-        {
-            buf.put(format("  %-28s %s\n", f.name, f.kind));
-            if (f.children.length)
-            {
-                import std.array : join;
-                buf.put(format("  %-28s .%s\n", "", f.children.join(", .")));
-            }
-        }
+            putResponseField(buf, f, "  ");
     }
     buf.put("\nGlobal flags: --dry-run  --fields=a,b.c  --header='Name: value'  --help [--json]\n"
         ~ "              --operator  --order=resource|verb  --profile=NAME\n"
         ~ "              --pretty|--compact  --output=json|text (errors)\n");
     return buf.data;
+}
+
+/// One response field line in text help; children list their dotted paths.
+private void putResponseField(ref typeof(appender!string()) buf, const ref ResponseField f, string indent)
+{
+    buf.put(format("%s%-28s %s\n", indent, f.name, f.kind));
+    foreach (ref ch; f.children)
+        putResponseField(buf, ch, indent ~ "  .");
 }
 
 string bodyKindHint(string kind)
@@ -443,17 +444,27 @@ JSONValue commandJson(const ref Command c, bool detail)
     if (c.responseTarget.length)
     {
         j["responseTarget"] = c.responseTarget;
+        if (c.selection.length)
+            j["selection"] = c.selection;
         JSONValue[] rfs;
         foreach (f; c.responseFields)
-        {
-            JSONValue fj = ["name": JSONValue(f.name), "type": JSONValue(f.kind)];
-            if (f.children.length)
-                fj["children"] = f.children.dup;
-            rfs ~= fj;
-        }
+            rfs ~= responseFieldJson(f);
         j["responseFields"] = rfs;
     }
     return j;
+}
+
+private JSONValue responseFieldJson(const ref ResponseField f)
+{
+    JSONValue fj = ["name": JSONValue(f.name), "type": JSONValue(f.kind)];
+    if (f.children.length)
+    {
+        JSONValue[] chs;
+        foreach (ref ch; f.children)
+            chs ~= responseFieldJson(ch);
+        fj["children"] = chs;
+    }
+    return fj;
 }
 
 /// `--help --json` for one command. `subcommands`: the commands under it

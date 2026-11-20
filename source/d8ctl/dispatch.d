@@ -107,10 +107,20 @@ string invoke(Transport client, const ref Result r, string headersJson = null, s
 
     auto path = substitutePath(c.path, pathNames, pathValues);
 
-    // --fields (#21): only JSON responses are selectable.
-    if (r.flags.fields.length && c.kind != "json")
-        throw new UsageException("--fields does not apply to " ~ c.operationId
-            ~ " (its response is " ~ c.kind ~ ", not JSON).");
+    // --fields (#21): only JSON responses are selectable, and the whole
+    // selection is validated against the response schema up front — a typo
+    // must fail as a usage error before a mutating request creates anything,
+    // never after (the returned key would be hidden and a retry would
+    // duplicate the creation).
+    if (r.flags.fields.length)
+    {
+        if (c.kind != "json")
+            throw new UsageException("--fields does not apply to " ~ c.operationId
+                ~ " (its response is " ~ c.kind ~ ", not JSON).");
+        import d8ctl.output : validateFields;
+
+        validateFields(c, r.flags.fields);
+    }
 
     if (r.flags.dryRun)
         return formatDryRun(c, path, query, body_, headersJson, baseUrl, r.flags.fields);
