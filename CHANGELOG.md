@@ -1,3 +1,10 @@
+# [0.8.0](https://github.com/camunda/d8ctl/compare/v0.7.2...v0.8.0) (2026-11-20)
+
+
+### Features
+
+* --fields response field selection on every command ([#22](https://github.com/camunda/d8ctl/issues/22)) ([273441b](https://github.com/camunda/d8ctl/commit/273441b2f35490bc709bfe6fe2741115d3324029)), closes [#21](https://github.com/camunda/d8ctl/issues/21)
+
 ## [0.7.2](https://github.com/camunda/d8ctl/compare/v0.7.1...v0.7.2) (2026-11-20)
 
 
