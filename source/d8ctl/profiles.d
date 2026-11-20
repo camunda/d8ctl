@@ -344,7 +344,7 @@ void saveStore(string dir, Store s)
     auto tmp = path ~ ".tmp";
     write(tmp, "");
     version (Posix) setAttributes(tmp, octal600);
-    append(tmp, root.toPrettyString ~ "\n");
+    append(tmp, root.toPrettyString(JSONOptions.doNotEscapeSlashes) ~ "\n");
     rename(tmp, path);
 }
 

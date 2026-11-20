@@ -277,7 +277,7 @@ string formatDryRun(const Command* c, string path, string[string] query, JSONVal
     foreach (h; headersFromJson(headersJson))
         s ~= "\n" ~ h.name ~ ": ********";
     if (body_.type != JSONType.null_)
-        s ~= "\n" ~ body_.toPrettyString;
+        s ~= "\n" ~ body_.toPrettyString(JSONOptions.doNotEscapeSlashes);
     else if (c.hasBody)
         s ~= "\n{}";
     return s ~ "\n";
@@ -371,4 +371,17 @@ unittest
     auto blank = formatDryRun(topo, "/topology", null, JSONValue(null), "   ");
     assert(blank.indexOf("********") < 0);
     assert(topo !is null && !topo.rootServer);
+}
+
+/// Dry-run previews show the body as sent: `/` is not escaped (#16).
+unittest
+{
+    import d8ctl.catalog : findByOperationId;
+    import std.string : indexOf;
+
+    auto c = findByOperationId("searchProcessInstances");
+    auto preview = formatDryRun(c, "/process-instances/search", null,
+        parseJSON(`{"filter":{"processDefinitionId":"a/b"}}`));
+    assert(preview.indexOf(`"a/b"`) >= 0, preview);
+    assert(preview.indexOf(`\/`) < 0, preview);
 }
