@@ -1,3 +1,10 @@
+## [0.6.2](https://github.com/camunda/d8ctl/compare/v0.6.1...v0.6.2) (2026-11-20)
+
+
+### Bug Fixes
+
+* **deps:** D SDK 11.0.0-alpha.12 (native WinHTTP on Windows) ([#18](https://github.com/camunda/d8ctl/issues/18)) ([a1b0b9e](https://github.com/camunda/d8ctl/commit/a1b0b9e06638faf6bfee333ba0a633f6fb6e4e6a)), closes [PKCS#12](https://github.com/PKCS/issues/12) [#14](https://github.com/camunda/d8ctl/issues/14)
+
 ## [0.6.1](https://github.com/camunda/d8ctl/compare/v0.6.0...v0.6.1) (2026-11-19)
 
 
