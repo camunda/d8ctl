@@ -9,13 +9,13 @@ module d8ctl.catalog;
 @safe:
 
 import d8ctl.generated.catalog;
-import d8ctl.specmodel : Catalog, ModelCommand;
+import d8ctl.specmodel : Catalog, ModelCommand, ModelResponseField;
 import d8ctl.util : eqIgnoreCase;
 
-import std.algorithm : canFind, sort, uniq;
+import std.algorithm : canFind, map, sort, uniq;
 import std.array : array;
 
-public import d8ctl.generated.catalog : BodyField, Command, catalog, catalogOperationCount, catalogSpecHash;
+public import d8ctl.generated.catalog : BodyField, Command, ResponseField, catalog, catalogOperationCount, catalogSpecHash;
 
 /// Copy a model row into a `Command` (the generated table's row type).
 Command toCommand(const ref ModelCommand c)
@@ -41,6 +41,20 @@ Command toCommand(const ref ModelCommand c)
     r.positional = c.positional.dup;
     foreach (p; c.paths)
         r.paths ~= p.dup;
+    r.responseTarget = c.responseTarget;
+    r.selection = c.selection;
+    foreach (f; c.responseFields)
+        r.responseFields ~= toResponseField(f);
+    return r;
+}
+
+private ResponseField toResponseField(const ref ModelResponseField f)
+{
+    ResponseField r;
+    r.name = f.name;
+    r.kind = f.kind;
+    foreach (ref ch; f.children)
+        r.children ~= toResponseField(ch);
     return r;
 }
 
@@ -267,4 +281,66 @@ unittest
     assert(commandsUnderPath(rows, ["door"]).length == 0);
     assert(isVerb("get", overlay, rows));
     assert(!isVerb("open", overlay, rows));
+}
+
+/// `--fields` model in the generated catalog (#21): searchProcessInstances
+/// targets `items`; an nwf-like spec with two arrays requires a prefix.
+unittest
+{
+    auto search = findByOperationId("searchProcessInstances");
+    assert(search !is null);
+    assert(search.responseTarget == "items");
+    assert(search.selection == "items");
+    // The envelope's fields are selectable; the array's children are the item
+    // fields.
+    string[] names;
+    foreach (f; search.responseFields)
+        names ~= f.name;
+    import std.conv : to;
+
+    assert(names.canFind("items") && names.canFind("page"), names.to!string);
+    // The array's children are the item fields.
+    string[] itemNames;
+    foreach (f; search.responseFields)
+        if (f.name == "items")
+            foreach (ch; f.children)
+                itemNames ~= ch.name;
+    assert(itemNames.canFind("processInstanceKey"), itemNames.to!string);
+    assert(itemNames.canFind("processDefinitionId"));
+    assert(itemNames.canFind("startDate"));
+    // The envelope's `page` object validates its own dotted children.
+    string[] pageNames;
+    foreach (f; search.responseFields)
+        if (f.name == "page")
+            foreach (ch; f.children)
+                pageNames ~= ch.name;
+    assert(pageNames.canFind("totalItems"), pageNames.to!string);
+
+    // getTopology's envelope has one array of objects (brokers) plus scalars:
+    // the items target trims the brokers.
+    auto topo = findByOperationId("getTopology");
+    assert(topo.responseTarget == "items");
+    assert(topo.selection == "brokers");
+    // …and the whole-cluster topology has two arrays of objects: multi.
+    auto clusterTopo = findByOperationId("getClusterTopology");
+    assert(clusterTopo.responseTarget == "multi");
+    assert(clusterTopo.responseFields.map!(f => f.name).array.canFind("brokers"));
+
+    // An nwf-like spec: `prs` + `deliveries` arrays → multi, prefix required.
+    import d8ctl.specmodel : buildCatalog;
+
+    auto cat = buildCatalog(`{"paths": {"/status": {"get": {"operationId": "getStatus",
+        "responses": {"200": {"description": "ok", "content": {"application/json":
+          {"schema": {"type": "object", "properties": {
+            "prs": {"type": "array", "items": {"type": "object", "properties": {
+              "prKey": {"type": "string"}, "status": {"type": "string"}}}},
+            "deliveries": {"type": "array", "items": {"type": "object", "properties": {
+              "id": {"type": "string"}}}}}}}}}}}}}}`, null, "nwf");
+    assert(cat.commands[0].responseTarget == "multi");
+    auto overlay = new Catalog;
+    *overlay = cat;
+    auto rows = overlayRows(overlay);
+    assert(rows[0].responseTarget == "multi", "extensions carry the model");
+    assert(rows[0].responseFields.length == 2
+        && rows[0].responseFields[0].children.map!(f => f.name).array == ["prKey", "status"]);
 }

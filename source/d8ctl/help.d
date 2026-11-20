@@ -21,7 +21,7 @@ string rootHelp()
     buf.put("d8ctl — Camunda 8 Orchestration Cluster CLI (spike)\n\n");
     buf.put("Usage:\n");
     buf.put("  d8ctl [--help [--json]] [--version] [--dry-run] [--order=resource|verb]\n");
-    buf.put("        [--pretty|--compact] [--output=json|text]\n");
+    buf.put("        [--pretty|--compact] [--output=json|text] [--fields=a,b.c]\n");
     buf.put("        [--profile=<name>] [--camunda-<key>=<value> …] cluster …\n");
     buf.put("  d8ctl profile list|show|add|use|remove …\n");
     buf.put("  d8ctl extension add|list|update|remove …\n\n");
@@ -261,10 +261,40 @@ string commandHelp(const Command* c)
     }
     else if (c.hasBody)
         buf.put("\nThis body has no documented top-level fields; use --body='{…}'.\n");
-    buf.put("\nGlobal flags: --dry-run  --header='Name: value'  --help [--json]  "
-        ~ "--operator  --order=resource|verb  --profile=NAME\n"
+    if (c.responseTarget.length)
+    {
+        buf.put("\nResponse fields (--fields=a,b.c selects; dotted paths keep nesting):\n");
+        switch (c.responseTarget)
+        {
+        case "array":
+            buf.put("  The response is an array; selection trims each item.\n");
+            break;
+        case "items":
+            buf.put("  Selection trims each item of the response's array; other top-level fields stay.\n");
+            break;
+        case "multi":
+            buf.put("  Several arrays: prefix every field with the array name (e.g. "
+                ~ c.responseFields[0].name ~ "." ~ c.responseFields[0].children[0].name ~ ").\n");
+            break;
+        default:
+            buf.put("  Selection trims the response object.\n");
+            break;
+        }
+        foreach (f; c.responseFields)
+            putResponseField(buf, f, "  ");
+    }
+    buf.put("\nGlobal flags: --dry-run  --fields=a,b.c  --header='Name: value'  --help [--json]\n"
+        ~ "              --operator  --order=resource|verb  --profile=NAME\n"
         ~ "              --pretty|--compact  --output=json|text (errors)\n");
     return buf.data;
+}
+
+/// One response field line in text help; children list their dotted paths.
+private void putResponseField(ref typeof(appender!string()) buf, const ref ResponseField f, string indent)
+{
+    buf.put(format("%s%-28s %s\n", indent, f.name, f.kind));
+    foreach (ref ch; f.children)
+        putResponseField(buf, ch, indent ~ "  .");
 }
 
 string bodyKindHint(string kind)
@@ -411,7 +441,30 @@ JSONValue commandJson(const ref Command c, bool detail)
     j["body"] = c.hasBody; // --body='{…}' accepted (wins over body flags)
     // `json`: stdout is the response JSON; `text`: raw text; `void`: nothing.
     j["output"] = c.kind == "multipart" ? "json" : c.kind;
+    if (c.responseTarget.length)
+    {
+        j["responseTarget"] = c.responseTarget;
+        if (c.selection.length)
+            j["selection"] = c.selection;
+        JSONValue[] rfs;
+        foreach (f; c.responseFields)
+            rfs ~= responseFieldJson(f);
+        j["responseFields"] = rfs;
+    }
     return j;
+}
+
+private JSONValue responseFieldJson(const ref ResponseField f)
+{
+    JSONValue fj = ["name": JSONValue(f.name), "type": JSONValue(f.kind)];
+    if (f.children.length)
+    {
+        JSONValue[] chs;
+        foreach (ref ch; f.children)
+            chs ~= responseFieldJson(ch);
+        fj["children"] = chs;
+    }
+    return fj;
 }
 
 /// `--help --json` for one command. `subcommands`: the commands under it

@@ -188,7 +188,7 @@ Failure classify(Exception e, string operation)
         f.status = api.status;
         f.body_ = api.body_;
     }
-    else if (cast(UsageException) e || cast(ValidationException) e)
+    else if (cast(UsageException) e || cast(ValidationException) e || cast(FieldsException) e)
         f.kind = ErrorKind.usage;
     else if (cast(ProfileException) e || cast(ExtensionException) e || cast(ConfigException) e)
         f.kind = ErrorKind.config;
