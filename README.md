@@ -48,8 +48,11 @@ Path parameters are positional, in spec order. Query parameters are
 `--name=value`. JSON bodies accept top-level fields as `--name=value`
 (see `--help` on the command) and/or a full document via `--body='{…}'`.
 `--body` wins on conflict. Nested objects and arrays are JSON strings
-(`--filter='{"state":"ACTIVE"}'`). Union bodies (create process instance,
-evaluate decision, …) stay `--body` only.
+(`--filter='{"state":"ACTIVE"}'`). A `oneOf`/`anyOf` body of object
+variants (create process instance: by key or by BPMN process id) offers
+every variant's fields; a field is required only when every variant
+requires it, and the server checks the combination. Other unions stay
+`--body` only.
 
 `--order=resource|verb` only changes how help lists commands. Both orders
 always parse.
@@ -119,8 +122,10 @@ Command names come from the spec's `x-cli.command` when present, else from
 splitting the `operationId`. `x-cli.command` is a non-empty array of
 kebab-case words (nano-ide ADR 0068), used as an exact command path —
 `d8ctl <name> w1 … wn`, never reordered; `x-cli.aliases` (arrays of words)
-add more paths to the same operation. A string `command`, a duplicate path,
-or a path that is a prefix of another is rejected. Operations with `x-cli.audience: operator` (or
+add more paths to the same operation. A string `command` or a duplicate path
+is rejected. A path may prefix another (`guide` and `guide skill`): the
+command is then also a group, the longest matching path wins, and its
+`--help` lists the subcommands. Operations with `x-cli.audience: operator` (or
 excluded from the MCP surface with no `x-cli`) are hidden from help and
 refused unless you pass `--operator`; `x-cli.exclude` removes them
 completely. Extension names are reserved against the built-ins (`cluster`,

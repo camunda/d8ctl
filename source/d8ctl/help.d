@@ -42,6 +42,36 @@ string rootHelp()
     return buf.data;
 }
 
+/// A summary for a one-line listing: its first sentence, at most `max` chars.
+/// Command help still shows the whole summary.
+string brief(string summary, size_t max = 90)
+{
+    import std.string : indexOf, strip;
+    import std.utf : toUTF32, toUTF8;
+
+    auto s = summary.strip;
+    foreach (i; 0 .. s.length)
+        if (s[i] == '.' && (i + 1 == s.length || s[i + 1] == ' ' || s[i + 1] == '\n'))
+        {
+            s = s[0 .. i + 1];
+            break;
+        }
+    const nl = s.indexOf('\n');
+    if (nl >= 0) s = s[0 .. nl].strip;
+    auto d = s.toUTF32;
+    if (d.length > max)
+        return (d[0 .. max - 1]).toUTF8.strip ~ "…";
+    return s;
+}
+
+unittest
+{
+    assert(brief("Cancel a run. Then more.") == "Cancel a run.");
+    assert(brief("v1.2 is out") == "v1.2 is out");
+    assert(brief("a b c d e", 6) == "a b c…");
+    assert(brief("") == "");
+}
+
 string nsHelp(string ns, Order order, const(Catalog)* overlay = null,
     const(Command)[] overlayRows_ = null, bool includeOperator = false)
 {
@@ -51,9 +81,13 @@ string nsHelp(string ns, Order order, const(Catalog)* overlay = null,
         overlay !is null && !includeOperator ? " (operator-only hidden; pass --operator to show)" : ""));
     if (order == Order.resource)
     {
-        buf.put("Usage: d8ctl " ~ ns ~ " <resource> <verb> [flags]\n\n");
-        buf.put("Resources:\n");
-        foreach (res; resourcesIn(ns, overlay, overlayRows_, includeOperator))
+        auto resources = resourcesIn(ns, overlay, overlayRows_, includeOperator);
+        buf.put(resources.length
+            ? "Usage: d8ctl " ~ ns ~ " <resource> <verb> [flags]\n\n"
+            : "Usage: d8ctl " ~ ns ~ " <command> [flags]\n");
+        if (resources.length)
+            buf.put("Resources:\n");
+        foreach (res; resources)
         {
             auto here = commandsFor(ns, res, overlay, overlayRows_, includeOperator);
             string verbs;
@@ -77,7 +111,7 @@ string nsHelp(string ns, Order order, const(Catalog)* overlay = null,
             // listed verbatim in the x-cli-path section below instead.
             if (c.paths.length)
                 continue;
-            lines ~= format("  %-12s %-32s %s%s", c.verb, c.resource, c.summary,
+            lines ~= format("  %-12s %-32s %s%s", c.verb, c.resource, brief(c.summary),
                 c.operatorOnly ? "  [operator]" : "");
         }
         lines.sort();
@@ -86,7 +120,7 @@ string nsHelp(string ns, Order order, const(Catalog)* overlay = null,
     string[] pathLines;
     foreach (c; cmds)
         if (c.paths.length)
-            pathLines ~= format("  %-32s %s%s", pathsText(c), c.summary, c.operatorOnly ? "  [operator]" : "");
+            pathLines ~= format("  %-32s %s%s", pathsText(c), brief(c.summary), c.operatorOnly ? "  [operator]" : "");
     if (pathLines.length)
     {
         pathLines.sort();
@@ -125,7 +159,7 @@ string resourceHelp(string ns, string resource, const(Catalog)* overlay = null,
         {
             buf.put(format("  %-32s %s %s%s\n", pathsText(c), c.method, c.path,
                 c.operatorOnly ? "  [operator]" : ""));
-            buf.put(format("  %-32s %s\n", "", c.summary));
+            buf.put(format("  %-32s %s\n", "", brief(c.summary)));
         }
         return buf.data;
     }
@@ -280,9 +314,12 @@ unittest
     assert(failHelp.canFind("--errorMessage="));
     assert(failHelp.canFind("--body="));
 
+    // A oneOf of object variants (by key or by BPMN process id) offers every
+    // variant's fields as flags; --body still works.
     auto create = findByOperationId("createProcessInstance");
     auto createHelp = commandHelp(create);
-    assert(createHelp.canFind("no documented top-level fields"));
+    assert(createHelp.canFind("--processDefinitionId="));
+    assert(createHelp.canFind("--processDefinitionKey="));
     assert(createHelp.canFind("--body='{…}'"));
 }
 
@@ -377,10 +414,30 @@ JSONValue commandJson(const ref Command c, bool detail)
     return j;
 }
 
-/// `--help --json` for one command.
-string commandHelpJson(const Command* c)
+/// `--help --json` for one command. `subcommands`: the commands under it
+/// when its x-cli path is also a group (`guide` over `guide skill`).
+string commandHelpJson(const Command* c, const(Command)[] subcommands = null)
 {
-    return commandJson(*c, true).toString(JSONOptions.doNotEscapeSlashes);
+    auto j = commandJson(*c, true);
+    if (subcommands.length)
+    {
+        JSONValue[] list;
+        foreach (ref s; subcommands)
+            list ~= commandJson(s, false);
+        j["subcommands"] = list;
+    }
+    return j.toString(JSONOptions.doNotEscapeSlashes);
+}
+
+/// The text help's "Subcommands:" block for a command that is also a group.
+string subcommandsText(const(Command)[] subcommands)
+{
+    if (!subcommands.length) return null;
+    auto buf = appender!string();
+    buf.put("\nSubcommands:\n");
+    foreach (ref s; subcommands)
+        buf.put(format("  %-32s %s\n", pathsText(s), brief(s.summary)));
+    return buf.data;
 }
 
 /// `--help --json` for a list of commands: `{"commands":[summary…]}`.

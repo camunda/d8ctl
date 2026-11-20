@@ -61,7 +61,16 @@ int run(string[] args, Dirs dirs)
             stdOut.writeln(resourceHelp(r.ns, r.resource, r.extCatalog, r.extRows, r.flags.operator));
         return 0;
     case Kind.helpCommand:
-        stdOut.writeln(r.flags.json ? commandHelpJson(r.command) : commandHelp(r.command));
+        {
+            // An x-cli command that is also a group lists what is under it.
+            const(Command)[] subs;
+            if (r.extCatalog !is null && r.command.paths.length)
+                subs = commandsUnderPath(r.extRows, r.command.paths[0], r.flags.operator);
+            if (r.flags.json)
+                stdOut.writeln(commandHelpJson(r.command, subs));
+            else
+                stdOut.writeln(commandHelp(r.command) ~ subcommandsText(subs));
+        }
         return 0;
     case Kind.version_:
         stdOut.writeln(versionString);

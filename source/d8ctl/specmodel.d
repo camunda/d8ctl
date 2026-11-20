@@ -220,7 +220,68 @@ private struct Flat
     }
 }
 
-/// Top-level properties after unfolding `allOf`; `isUnion` when a oneOf/anyOf blocks flattening.
+/// A `oneOf`/`anyOf` of object variants as flags: every variant's
+/// properties (the first declaration wins), required only when every variant
+/// requires it. The server still validates which combination is sent.
+/// `isUnion` (give up: `--body` only) when a variant is not an object with
+/// properties. Each variant gets its own copy of `seen`, so variants sharing
+/// a base schema both count it.
+private Flat flattenUnion(Spec spec, J schema, ref bool[string] seen, size_t depth)
+{
+    Flat out_;
+    J[] variants = itemsOf(schema.get("oneOf")).dup ~ itemsOf(schema.get("anyOf"));
+    bool[string] req;
+    foreach (i, v; variants)
+    {
+        auto own = seen.dup;
+        Flat f;
+        if (v.isObj && v.has("$ref"))
+        {
+            const r = spec.refName(v);
+            f = r.length ? flattenSchema(spec, r, spec.schemas.get(r), own, depth + 1) : Flat.init;
+        }
+        else
+            f = flattenSchema(spec, null, v, own, depth + 1);
+        if (f.isUnion || !f.names.length)
+        {
+            out_.isUnion = true;
+            return out_;
+        }
+        foreach (pn; f.names)
+            if (pn !in out_.props)
+                out_.put(pn, f.props[pn]);
+        if (i == 0)
+        {
+            foreach (k; f.required.byKey)
+                req[k] = true;
+        }
+        else
+            foreach (k; req.keys)
+                if (k !in f.required)
+                    req.remove(k);
+    }
+    out_.required = req;
+    return out_;
+}
+
+/// Merge `from` into `into`; false (stop: `--body` only) when `from` is an
+/// unusable oneOf/anyOf.
+private bool mergeFlat(ref Flat into, Flat from)
+{
+    if (from.isUnion)
+    {
+        into = from;
+        return false;
+    }
+    foreach (pn; from.names)
+        into.put(pn, from.props[pn]);
+    foreach (rn; from.required.byKey)
+        into.required[rn] = true;
+    return true;
+}
+
+/// Top-level properties after unfolding `allOf` and object `oneOf`/`anyOf`
+/// (see flattenUnion); `isUnion` when a oneOf/anyOf cannot be flattened.
 private Flat flattenSchema(Spec spec, string name, J schema, ref bool[string] seen, size_t depth = 0)
 {
     Flat out_;
@@ -234,11 +295,6 @@ private Flat flattenSchema(Spec spec, string name, J schema, ref bool[string] se
     }
     if (schema is null || !schema.isObj || !truthy(schema))
         return out_;
-    if (truthy(schema.get("oneOf")) || truthy(schema.get("anyOf")))
-    {
-        out_.isUnion = true;
-        return out_;
-    }
     J[] parts = itemsOf(schema.get("allOf")).dup ~ schema;
     foreach (part; parts)
     {
@@ -246,28 +302,17 @@ private Flat flattenSchema(Spec spec, string name, J schema, ref bool[string] se
         {
             const r = spec.refName(part);
             auto nested = r.length ? flattenSchema(spec, r, spec.schemas.get(r), seen, depth + 1) : Flat.init;
-            if (nested.isUnion)
-                return nested;
-            foreach (pn; nested.names)
-                out_.put(pn, nested.props[pn]);
-            foreach (rn; nested.required.byKey)
-                out_.required[rn] = true;
+            if (!mergeFlat(out_, nested))
+                return out_;
             // OpenAPI 3.1: sibling keywords next to `$ref` still apply.
         }
         if (truthy(part.get("oneOf")) || truthy(part.get("anyOf")))
-        {
-            out_.isUnion = true;
-            return out_;
-        }
+            if (!mergeFlat(out_, flattenUnion(spec, part, seen, depth)))
+                return out_;
         if (part !is schema && truthy(part.get("allOf")))
         {
-            auto nested = flattenSchema(spec, null, part, seen, depth + 1);
-            if (nested.isUnion)
-                return nested;
-            foreach (pn; nested.names)
-                out_.put(pn, nested.props[pn]);
-            foreach (rn; nested.required.byKey)
-                out_.required[rn] = true;
+            if (!mergeFlat(out_, flattenSchema(spec, null, part, seen, depth + 1)))
+                return out_;
             continue;
         }
         auto props = part.get("properties");
@@ -823,20 +868,15 @@ private void checkDerivedAgainstExplicit(const ref Catalog cat, const string[][]
     }
 }
 
-/// Register `p`; a duplicate path, or one that is a strict prefix of another
-/// (a group that would also be a leaf), is ambiguous and fails clearly.
+/// Register `p`; a duplicate path is ambiguous and fails clearly. A path
+/// that is a prefix of another (`guide` and `guide skill`) is allowed, as the
+/// x-cli contract allows it (nano-ide#617): the command is also a group, and
+/// the parser matches the longest path first.
 private void checkPathConflicts(ref string[][] known, string[] p, string opId, string where)
 {
     foreach (k; known)
-    {
-        const n = k.length < p.length ? k.length : p.length;
-        if (k[0 .. n] != p[0 .. n])
-            continue;
-        if (k.length == p.length)
+        if (k == p)
             throw new SpecModelException("duplicate x-cli command path '" ~ p.join(" ") ~ "' for " ~ opId, where);
-        throw new SpecModelException("x-cli command path '" ~ (k.length < p.length ? k : p).join(" ")
-            ~ "' is a prefix of '" ~ (k.length < p.length ? p : k).join(" ") ~ "' (" ~ opId ~ ")", where);
-    }
     known ~= p;
 }
 
@@ -1184,17 +1224,23 @@ unittest
         {"operationId": "getX", "x-cli": {"aliases": [["a", "b"]]}, "responses": {}}}}}`));
     assertThrown!SpecModelException(buildCatalog(`{"paths": {"/x": {"get":
         {"operationId": "getX", "x-cli": {"command": ["a", "b"], "aliases": ["a b"]}, "responses": {}}}}}`));
-    // Duplicate and strict-prefix paths are ambiguous.
+    // Duplicate paths are ambiguous; a path that prefixes another is a
+    // command that is also a group (nwf: `guide`, `guide skill`).
     assertThrown!SpecModelException(buildCatalog(`{"paths": {
         "/x": {"get": {"operationId": "getX", "x-cli": {"command": ["a", "b"]}, "responses": {}}},
         "/y": {"get": {"operationId": "getY", "x-cli": {"command": ["a", "b"]}, "responses": {}}}}}`));
     assertThrown!SpecModelException(buildCatalog(`{"paths": {
-        "/x": {"get": {"operationId": "getX", "x-cli": {"command": ["a"]}, "responses": {}}},
-        "/y": {"get": {"operationId": "getY", "x-cli": {"command": ["a", "b"]}, "responses": {}}}}}`));
-    assertThrown!SpecModelException(buildCatalog(`{"paths": {
-        "/x": {"get": {"operationId": "getX", "x-cli": {"command": ["a", "b", "c"]}, "responses": {}}},
+        "/x": {"get": {"operationId": "getX", "x-cli": {"command": ["a", "b"]}, "responses": {}}},
         "/y": {"get": {"operationId": "getY", "x-cli": {"command": ["z"], "aliases": [["a", "b"]]},
           "responses": {}}}}}`));
+    assert(buildCatalog(`{"paths": {
+        "/x": {"get": {"operationId": "getX", "x-cli": {"command": ["a"]}, "responses": {}}},
+        "/y": {"get": {"operationId": "getY", "x-cli": {"command": ["a", "b"]}, "responses": {}}}}}`)
+        .commands.length == 2);
+    assert(buildCatalog(`{"paths": {
+        "/x": {"get": {"operationId": "getX", "x-cli": {"command": ["a", "b", "c"]}, "responses": {}}},
+        "/y": {"get": {"operationId": "getY", "x-cli": {"command": ["z"], "aliases": [["a", "b"]]},
+          "responses": {}}}}}`).commands.length == 2);
     // An explicit path may not shadow an earlier derived command.
     assertThrown!SpecModelException(buildCatalog(`{"paths": {
         "/x": {"get": {"operationId": "getStatus", "responses": {}}},
@@ -1341,4 +1387,44 @@ unittest
       "paths": {"/x": {"get": {"operationId": "getX", "servers": [{"url": "/v1"}],
         "responses": {"200": {"description": "ok"}}}}}}`, null, "t");
     assert(!vcat.commands[0].rootServer);
+}
+
+/// Object unions become flags (nwf's ConvergenceStart: `pr` or `url`).
+unittest
+{
+    auto cat = buildCatalog(`{"paths": {
+      "/start": {"post": {"operationId": "startLoop",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"oneOf": [
+          {"type": "object", "required": ["pr", "mode"], "properties": {
+            "pr": {"type": "string", "description": "PR reference."},
+            "mode": {"type": "string"}, "rounds": {"type": "integer"}}},
+          {"type": "object", "required": ["url", "mode"], "properties": {
+            "url": {"type": "string"}, "mode": {"type": "string"},
+            "rounds": {"type": "string"}}}]}}}},
+        "responses": {"200": {"description": "ok"}}}},
+      "/shared": {"post": {"operationId": "startShared",
+        "requestBody": {"content": {"application/json": {"schema": {"anyOf": [
+          {"allOf": [{"$ref": "#/components/schemas/Base"}, {"properties": {"a": {"type": "string"}}}]},
+          {"allOf": [{"$ref": "#/components/schemas/Base"}, {"properties": {"b": {"type": "string"}}}]}]}}}},
+        "responses": {"200": {"description": "ok"}}}},
+      "/mixed": {"post": {"operationId": "startMixed",
+        "requestBody": {"content": {"application/json": {"schema": {"oneOf": [
+          {"type": "string"}, {"type": "object", "properties": {"x": {"type": "string"}}}]}}}},
+        "responses": {"200": {"description": "ok"}}}}},
+      "components": {"schemas": {"Base": {"type": "object", "required": ["tenant"],
+        "properties": {"tenant": {"type": "string"}}}}}}`);
+    assert(cat.commands[0].bodyFields == [
+        ModelField("pr", "string", false, "PR reference."),
+        ModelField("mode", "string", true, ""),
+        ModelField("rounds", "integer", false, ""),
+        ModelField("url", "string", false, ""),
+    ], "every variant's fields; required only when every variant requires it; first declaration wins");
+    // Both variants see the shared base (own `seen` per variant).
+    assert(cat.commands[1].bodyFields == [
+        ModelField("tenant", "string", true, ""),
+        ModelField("a", "string", false, ""),
+        ModelField("b", "string", false, ""),
+    ]);
+    // A non-object variant: --body only.
+    assert(cat.commands[2].bodyFields.length == 0);
 }

@@ -577,7 +577,11 @@ unittest
             "x-cli": {"command": ["pr", "run", "cancel"], "positional": ["id"],
               "aliases": [["cancel", "run"]]},
             "parameters": [{"name": "id", "in": "path", "required": true}],
-            "responses": {"200": {"description": "ok"}}}}
+            "responses": {"200": {"description": "ok"}}}},
+        "/agent": {"get": {"operationId": "getGuide", "summary": "The guide",
+            "x-cli": {"command": ["guide"]}, "responses": {"200": {"description": "ok"}}}},
+        "/agent/skill": {"get": {"operationId": "getSkill", "summary": "The skill",
+            "x-cli": {"command": ["guide", "skill"]}, "responses": {"200": {"description": "ok"}}}}
       }}`;
     auto sources = Sources.init;
     extensionCommand(dir, sources, ["add", "t"], ["spec": "http://h/openapi.json"], null, &ff);
@@ -609,6 +613,23 @@ unittest
         assert(gh.indexOf("pr run cancel | cancel run") >= 0, gh);
         auto nh = nsHelp("t", Order.resource, grp.extCatalog, grp.extRows);
         assert(nh.indexOf("pr run cancel") >= 0, nh);
+    }
+    // A command that is also a group (nwf: `guide`, `guide skill`): the
+    // longest path wins, and the command's help lists what is under it.
+    auto gl = parse(["t", "guide"], dir);
+    assert(gl.kind == Kind.invoke && gl.command.operationId == "getGuide" && !gl.positionals.length);
+    auto gs = parse(["t", "guide", "skill"], dir);
+    assert(gs.kind == Kind.invoke && gs.command.operationId == "getSkill" && !gs.positionals.length);
+    auto gx = parse(["t", "guide", "extra"], dir);
+    assert(gx.command.operationId == "getGuide" && gx.positionals == ["extra"]);
+    auto gh_ = parse(["t", "guide", "--help"], dir);
+    assert(gh_.kind == Kind.helpCommand && gh_.command.operationId == "getGuide");
+    {
+        import d8ctl.help : subcommandsText;
+
+        auto subs = commandsUnderPath(gh_.extRows, gh_.command.paths[0]);
+        assert(subs.length == 1 && subs[0].operationId == "getSkill");
+        assert(subcommandsText(subs).indexOf("guide skill") >= 0);
     }
     auto ch = parse(["t", "pr", "run", "cancel", "--help"], dir);
     assert(ch.kind == Kind.helpCommand && ch.command.operationId == "cancelRun");

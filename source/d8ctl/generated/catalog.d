@@ -257,7 +257,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
-        null,
+        [BodyField("ownerId", "string", true, "The ID of the owner of the permissions."), BodyField("ownerType", "string", true, ""), BodyField("resourceId", "string", false, "The ID of the resource to add permissions to."), BodyField("resourceType", "string", true, "The type of resource to add permissions to."), BodyField("permissionTypes", "json", true, "The permission types to add."), BodyField("resourcePropertyName", "string", false, "The name of the resource property on which this authorization is based.")],
         false,
     ),
     Command(
@@ -308,7 +308,7 @@ immutable Command[] catalog = [
         ["authorizationKey"],
         null,
         null,
-        null,
+        [BodyField("ownerId", "string", true, "The ID of the owner of the permissions."), BodyField("ownerType", "string", true, ""), BodyField("resourceId", "string", false, "The ID of the resource to add permissions to."), BodyField("resourceType", "string", true, "The type of resource to add permissions to."), BodyField("permissionTypes", "json", true, "The permission types to add."), BodyField("resourcePropertyName", "string", false, "The name of the resource property on which this authorization is based.")],
         false,
     ),
     Command(
@@ -886,7 +886,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
-        null,
+        [BodyField("decisionDefinitionId", "string", false, "The ID of the decision to be evaluated."), BodyField("variables", "json", false, "The decision evaluation variables as JSON document."), BodyField("tenantId", "string", false, "The tenant ID of the decision."), BodyField("decisionDefinitionKey", "string", false, "")],
         false,
     ),
     Command(
@@ -2297,7 +2297,7 @@ immutable Command[] catalog = [
         null,
         null,
         null,
-        null,
+        [BodyField("variables", "json", false, "JSON object that will instantiate the variables for the root variable scope of the process inst…"), BodyField("tenantId", "string", false, "The tenant id of the process definition."), BodyField("operationReference", "integer", false, ""), BodyField("startInstructions", "json", false, "List of start instructions."), BodyField("runtimeInstructions", "json", false, "Runtime instructions (alpha)."), BodyField("awaitCompletion", "boolean", false, "Wait for the process instance to complete."), BodyField("fetchVariables", "json", false, "List of variables by name to be included in the response when awaitCompletion is set to true."), BodyField("requestTimeout", "integer", false, "Timeout (in ms) the request waits for the process to complete."), BodyField("tags", "json", false, ""), BodyField("businessId", "string", false, ""), BodyField("processDefinitionKey", "string", false, "The unique key identifying the process definition, for example, returned for a process in the d…"), BodyField("processDefinitionVersion", "integer", false, "As the version is already identified by the `processDefinitionKey`, the value of this field is…"), BodyField("processDefinitionId", "string", false, "The BPMN process id of the process definition to start an instance of."), BodyField("processDefinitionVersionTag", "string", false, "The version tag of the process definition to start an instance of.")],
         false,
     ),
     Command(

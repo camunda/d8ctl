@@ -11,3 +11,4 @@ node_modules/
 orchestration-cluster-api-dlang/
 external-spec/upstream/
 package-lock.json
+/scripts/d8ctl-generate
