@@ -29,7 +29,7 @@ import d8ctl.specmodel : Catalog, ModelCommand, buildCatalog, kebab;
 import std.algorithm : canFind, sort;
 import std.array : appender, replace;
 import std.conv : to;
-import std.json : JSONType, JSONValue, parseJSON;
+import std.json : JSONOptions, JSONType, JSONValue, parseJSON;
 import std.string : endsWith, indexOf, join, startsWith, strip, toLower;
 
 /// Bad extension command, invalid name/spec, or unknown extension (exit 2).
@@ -530,7 +530,7 @@ private string manifestJson(const ref Manifest m)
         o["etag"] = m.etag;
     o["fetchedAt"] = m.fetchedAt;
     o["d8ctlVersion"] = m.d8ctlVersion;
-    return o.toPrettyString ~ "\n";
+    return o.toPrettyString(JSONOptions.doNotEscapeSlashes) ~ "\n";
 }
 
 /// True for a lowercase-hex SHA-256 fingerprint.
