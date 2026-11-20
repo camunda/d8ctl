@@ -20,7 +20,8 @@ string rootHelp()
     auto buf = appender!string();
     buf.put("d8ctl — Camunda 8 Orchestration Cluster CLI (spike)\n\n");
     buf.put("Usage:\n");
-    buf.put("  d8ctl [--help] [--version] [--dry-run] [--order=resource|verb]\n");
+    buf.put("  d8ctl [--help [--json]] [--version] [--dry-run] [--order=resource|verb]\n");
+    buf.put("        [--pretty|--compact] [--output=json|text]\n");
     buf.put("        [--profile=<name>] [--camunda-<key>=<value> …] cluster …\n");
     buf.put("  d8ctl profile list|show|add|use|remove …\n");
     buf.put("  d8ctl extension add|list|update|remove …\n\n");
@@ -34,6 +35,9 @@ string rootHelp()
     buf.put("one), or explicit switches such as --camunda-rest-address=<url>\n");
     buf.put("--camunda-client-id=… --camunda-client-secret=…. Switches win over the\n");
     buf.put("profile, which wins over env. See: d8ctl profile --help\n");
+    buf.put("\nOutput: the API response JSON on stdout (compact unless a terminal);\n");
+    buf.put("errors as JSON on stderr; exit codes by kind (2 usage, 3 auth, 4 not\n");
+    buf.put("found, 5 client, 6 server, 7 network). See the README.\n");
     buf.put("\nStart with: d8ctl cluster --help\n");
     return buf.data;
 }
@@ -223,8 +227,9 @@ string commandHelp(const Command* c)
     }
     else if (c.hasBody)
         buf.put("\nThis body has no documented top-level fields; use --body='{…}'.\n");
-    buf.put("\nGlobal flags: --dry-run  --header='Name: value'  --help  "
-        ~ "--operator  --order=resource|verb  --profile=NAME\n");
+    buf.put("\nGlobal flags: --dry-run  --header='Name: value'  --help [--json]  "
+        ~ "--operator  --order=resource|verb  --profile=NAME\n"
+        ~ "              --pretty|--compact  --output=json|text (errors)\n");
     return buf.data;
 }
 
@@ -316,4 +321,101 @@ private bool canFind(string hay, string needle)
 {
     import std.algorithm : countUntil;
     return hay.countUntil(needle) >= 0;
+}
+
+// ---- Machine-readable help (`--help --json`, #16) ----
+
+import std.json : JSONOptions, JSONValue;
+
+/// The words that invoke `c` (the first spelling when x-cli gives several).
+private string invocation(const ref Command c)
+{
+    import std.array : join;
+
+    if (c.paths.length)
+        return "d8ctl " ~ c.namespace ~ " " ~ c.paths[0].join(" ");
+    return "d8ctl " ~ c.namespace ~ " " ~ c.resource ~ " " ~ c.verb;
+}
+
+/// One command as JSON: a summary, plus its inputs when `detail`.
+JSONValue commandJson(const ref Command c, bool detail)
+{
+    import std.array : join;
+
+    JSONValue j = [
+        "command": invocation(c),
+        "operation": c.operationId,
+        "summary": c.summary,
+        "method": c.method,
+        "path": c.path,
+    ];
+    if (!detail) return j;
+    string[] aliases;
+    foreach (i, p; c.paths)
+        if (i) aliases ~= "d8ctl " ~ c.namespace ~ " " ~ p.join(" ");
+    if (aliases.length) j["aliases"] = aliases;
+    if (c.addedInVersion.length) j["addedInVersion"] = c.addedInVersion;
+    j["operatorOnly"] = c.operatorOnly;
+    // Positional arguments, in order: x-cli's, else the path parameters.
+    j["positional"] = c.positional.length ? c.positional.dup : c.pathParams.dup;
+    JSONValue[] flags;
+    foreach (q; c.requiredQuery)
+        flags ~= JSONValue(["name": JSONValue(q), "in": JSONValue("query"), "required": JSONValue(true)]);
+    foreach (q; c.optionalQuery)
+        flags ~= JSONValue(["name": JSONValue(q), "in": JSONValue("query"), "required": JSONValue(false)]);
+    foreach (f; c.bodyFields)
+    {
+        JSONValue fj = ["name": JSONValue(f.name), "in": JSONValue("body"),
+            "type": JSONValue(f.kind), "required": JSONValue(f.required)];
+        if (f.doc.length) fj["description"] = f.doc;
+        flags ~= fj;
+    }
+    j["flags"] = flags;
+    j["body"] = c.hasBody; // --body='{…}' accepted (wins over body flags)
+    // `json`: stdout is the response JSON; `text`: raw text; `void`: nothing.
+    j["output"] = c.kind == "multipart" ? "json" : c.kind;
+    return j;
+}
+
+/// `--help --json` for one command.
+string commandHelpJson(const Command* c)
+{
+    return commandJson(*c, true).toString(JSONOptions.doNotEscapeSlashes);
+}
+
+/// `--help --json` for a list of commands: `{"commands":[summary…]}`.
+string commandsHelpJson(const(Command)[] cmds)
+{
+    JSONValue[] list;
+    foreach (ref c; cmds)
+        list ~= commandJson(c, false);
+    JSONValue root = ["commands": list];
+    return root.toString(JSONOptions.doNotEscapeSlashes);
+}
+
+unittest
+{
+    import std.json : JSONType, parseJSON;
+
+    auto c = findByOperationId("getTopology");
+    assert(c !is null);
+    auto j = parseJSON(commandHelpJson(c));
+    assert(j["operation"].str == "getTopology");
+    assert(j["command"].str == "d8ctl cluster topology get");
+    assert(j["output"].str == "json" && j["body"].type == JSONType.false_);
+    assert(j["flags"].arrayNoRef.length == 0);
+
+    const(Command)* create;
+    foreach (ref row; commandsIn("cluster"))
+        if (row.bodyFields.length) { create = &row; break; }
+    assert(create !is null);
+    auto cj = parseJSON(commandHelpJson(create));
+    bool sawBodyFlag;
+    foreach (f; cj["flags"].arrayNoRef)
+        if (f["in"].str == "body") sawBodyFlag = true;
+    assert(sawBodyFlag && cj["body"].type == JSONType.true_);
+
+    auto list = parseJSON(commandsHelpJson([*c, *create]));
+    assert(list["commands"].arrayNoRef.length == 2);
+    assert("flags" !in list["commands"][0].objectNoRef, "lists carry summaries only");
 }

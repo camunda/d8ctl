@@ -54,6 +54,44 @@ evaluate decision, …) stay `--body` only.
 `--order=resource|verb` only changes how help lists commands. Both orders
 always parse.
 
+## Output contract
+
+d8ctl is built for agents and scripts, so its output is a contract (#16):
+
+- **stdout** is the API response, unchanged: no envelope, so the OpenAPI
+  spec is the output schema. JSON is compact when stdout is not a terminal
+  and pretty in one; `--pretty` / `--compact` override. A command whose
+  response has no body prints nothing.
+- **stderr** carries errors as one JSON line when stderr is not a terminal,
+  and as `d8ctl: <message>` in one; `--output=json|text` overrides. An HTTP
+  error carries the API's problem fields:
+
+  ```json
+  {"error":{"kind":"not-found","status":404,"operation":"getProcessInstance","message":"HTTP 404: Process instance not found","title":"Process instance not found","detail":"No process instance with key 2251799813685249.","type":"about:blank","instance":""}}
+  ```
+
+  Warnings are `{"warning":"…"}` lines.
+- **Exit codes:**
+
+  | code | `error.kind` |
+  | --- | --- |
+  | 0 | success |
+  | 1 | `other` |
+  | 2 | `usage`, `config` |
+  | 3 | `auth`: 401 or 403, or token fetch failed |
+  | 4 | `not-found`: 404 |
+  | 5 | `conflict` (409), `client` (other 4xx) |
+  | 6 | `server`: 5xx or backpressure |
+  | 7 | `network`: connection, timeout or TLS |
+
+- **`--help --json`** describes commands as JSON. On a command, it gives the
+  invocation, operation, positional arguments, flags (query and body, with
+  type and required), whether `--body` is accepted, and the output kind. On a
+  namespace, resource or the root, it lists command summaries
+  (`d8ctl --help --json` lists them all).
+
+`--pretty`, `--compact`, `--output` and `--json` are reserved global flags.
+
 ## Runtime extensions
 
 Beyond the built-in `cluster` namespace, d8ctl can install namespaces
