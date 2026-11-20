@@ -4,14 +4,15 @@ module d8ctl.app;
 @safe:
 
 import camunda.runtime;
-import d8ctl.catalog : catalogOperationCount;
+import d8ctl.catalog : Command, catalogOperationCount, commandsFor, commandsIn, commandsUnderPath, namespaces;
 import d8ctl.extensions;
 import d8ctl.version_ : cliVersion;
 import d8ctl.dispatch;
 import d8ctl.help;
 import d8ctl.parse;
+import d8ctl.output;
 import d8ctl.profiles;
-import d8ctl.safeio : stdErr, stdOut;
+import d8ctl.safeio : isTerminal, stdErr, stdOut;
 
 int run(string[] args)
 {
@@ -27,23 +28,40 @@ int run(string[] args, Dirs dirs)
     try
         r = parse(argv, dirs.d8ctl);
     catch (ExtensionException e)
-    {
-        stdErr.writeln("d8ctl: ", e.msg);
-        return 2;
-    }
+        return fail(r, Failure(ErrorKind.config, e.msg));
     final switch (r.kind)
     {
     case Kind.helpRoot:
-        stdOut.writeln(rootHelp());
+        if (r.flags.json)
+        {
+            const(Command)[] all;
+            foreach (ns; namespaces()) all ~= commandsIn(ns);
+            stdOut.writeln(commandsHelpJson(all));
+        }
+        else
+            stdOut.writeln(rootHelp());
         return 0;
     case Kind.helpNs:
-        stdOut.writeln(nsHelp(r.ns, r.flags.order, r.extCatalog, r.extRows, r.flags.operator));
+        if (r.flags.json)
+            stdOut.writeln(commandsHelpJson(commandsIn(r.ns, r.extCatalog, r.extRows, r.flags.operator)));
+        else
+            stdOut.writeln(nsHelp(r.ns, r.flags.order, r.extCatalog, r.extRows, r.flags.operator));
         return 0;
     case Kind.helpResource:
-        stdOut.writeln(resourceHelp(r.ns, r.resource, r.extCatalog, r.extRows, r.flags.operator));
+        if (r.flags.json)
+        {
+            import std.array : split;
+
+            auto cmds = commandsFor(r.ns, r.resource, r.extCatalog, r.extRows, r.flags.operator);
+            if (!cmds.length && r.extCatalog !is null) // an x-cli command group
+                cmds = commandsUnderPath(r.extRows, r.resource.split(" "), r.flags.operator);
+            stdOut.writeln(commandsHelpJson(cmds));
+        }
+        else
+            stdOut.writeln(resourceHelp(r.ns, r.resource, r.extCatalog, r.extRows, r.flags.operator));
         return 0;
     case Kind.helpCommand:
-        stdOut.writeln(commandHelp(r.command));
+        stdOut.writeln(r.flags.json ? commandHelpJson(r.command) : commandHelp(r.command));
         return 0;
     case Kind.version_:
         stdOut.writeln(versionString);
@@ -55,8 +73,7 @@ int run(string[] args, Dirs dirs)
         stdOut.writeln(extensionHelp());
         return 0;
     case Kind.error:
-        stdErr.writeln("d8ctl: ", r.message);
-        return 2;
+        return fail(r, Failure(ErrorKind.usage, r.message));
     case Kind.profile:
         try
         {
@@ -64,38 +81,27 @@ int run(string[] args, Dirs dirs)
                 r.flags.bare, configFromEnv(), r.flags.headers));
             return 0;
         }
-        catch (ProfileException e)
-        {
-            stdErr.writeln("d8ctl: ", e.msg);
-            return 2;
-        }
+        catch (Exception e)
+            return fail(r, classify(e, null));
     case Kind.extension:
         try
         {
             auto sources = loadSources(dirs);
-            foreach (w; sources.warnings) stdErr.writeln("d8ctl: warning: ", w);
+            foreach (w; sources.warnings) warn(r, w);
             stdOut.write(extensionCommand(dirs.d8ctl, sources, r.positionals,
                 r.flags.named, r.flags.bare, &fetchSpecHttp, r.flags.profile,
                 r.flags.config, r.flags.headers));
             return 0;
         }
-        catch (ExtensionException e)
-        {
-            stdErr.writeln("d8ctl: ", e.msg);
-            return 2;
-        }
-        catch (ProfileException e)
-        {
-            stdErr.writeln("d8ctl: ", e.msg);
-            return 2;
-        }
+        catch (Exception e)
+            return fail(r, classify(e, null));
     case Kind.invoke:
         try
         {
             import std.process : environment;
 
             auto sources = loadSources(dirs);
-            foreach (w; sources.warnings) stdErr.writeln("d8ctl: warning: ", w);
+            foreach (w; sources.warnings) warn(r, w);
             if (r.extCatalog !is null)
                 return invokeExtension(dirs, sources, r);
             auto conn = resolveConnection(sources, r.flags.profile,
@@ -108,32 +114,84 @@ int run(string[] args, Dirs dirs)
             // Transport.fromEnv still sends them — show them either way.
             auto previewHeaders = conn.overrides.get(headersKey,
                 environment.get(headersKey, null));
-            auto out_ = invoke(client, r, previewHeaders);
-            if (out_.length) stdOut.write(out_);
-            if (out_.length && out_[$ - 1] != '\n') stdOut.writeln();
+            writeResult(invoke(client, r, previewHeaders, null, prettyJson(r)));
             return 0;
         }
-        catch (ProfileException e)
-        {
-            stdErr.writeln("d8ctl: ", e.msg);
-            return 2;
-        }
-        catch (ExtensionException e)
-        {
-            stdErr.writeln("d8ctl: ", e.msg);
-            return 2;
-        }
-        catch (UsageException e)
-        {
-            stdErr.writeln("d8ctl: ", e.msg);
-            return 2;
-        }
-        catch (CamundaException e)
-        {
-            stdErr.writeln("d8ctl: ", e.msg);
-            return 1;
-        }
+        catch (Exception e)
+            return fail(r, classify(e, r.command is null ? null : r.command.operationId));
     }
+}
+
+// ---- Output contract (#16; see d8ctl.output) ----
+
+/// Pretty JSON on stdout: `--pretty`, or a terminal unless `--compact`.
+private bool prettyJson(const ref Result r)
+{
+    if (r.flags.pretty) return true;
+    if (r.flags.compact) return false;
+    return isTerminal(stdOut);
+}
+
+/// JSON errors: `--output=json`, or stderr is not a terminal unless `--output=text`.
+private bool jsonErrors(const ref Result r)
+{
+    if (r.flags.errorFormat == ErrorFormat.json) return true;
+    if (r.flags.errorFormat == ErrorFormat.text) return false;
+    return !isTerminal(stdErr);
+}
+
+/// Write `f` to stderr in the chosen format; its exit code.
+private int fail(const ref Result r, Failure f)
+{
+    stdErr.writeln(jsonErrors(r) ? errorJson(f) : errorText(f));
+    return exitCode(f.kind);
+}
+
+/// A non-fatal warning: `{"warning":"…"}` or `d8ctl: warning: …`.
+private void warn(const ref Result r, string message)
+{
+    import std.json : JSONOptions, JSONValue;
+
+    if (jsonErrors(r))
+    {
+        JSONValue w = ["warning": message];
+        stdErr.writeln(w.toString(JSONOptions.doNotEscapeSlashes));
+    }
+    else
+        stdErr.writeln("d8ctl: warning: ", message);
+}
+
+private void writeResult(string out_)
+{
+    if (out_.length) stdOut.write(out_);
+    if (out_.length && out_[$ - 1] != '\n') stdOut.writeln();
+}
+
+/// The failure for an exception from parsing, config or a request.
+Failure classify(Exception e, string operation)
+{
+    Failure f;
+    f.message = e.msg;
+    f.operation = operation;
+    if (auto api = cast(ApiException) e)
+    {
+        f.kind = kindOfStatus(api.status);
+        f.status = api.status;
+        f.body_ = api.body_;
+    }
+    else if (cast(UsageException) e || cast(ValidationException) e)
+        f.kind = ErrorKind.usage;
+    else if (cast(ProfileException) e || cast(ExtensionException) e || cast(ConfigException) e)
+        f.kind = ErrorKind.config;
+    else if (cast(AuthException) e)
+        f.kind = ErrorKind.auth;
+    else if (cast(NetworkException) e)
+        f.kind = ErrorKind.network;
+    else if (cast(BackpressureException) e)
+        f.kind = ErrorKind.server;
+    else
+        f.kind = ErrorKind.other;
+    return f;
 }
 
 /// Run one extension command against its own base URL. The profile (the
@@ -159,9 +217,7 @@ private int invokeExtension(Dirs dirs, const ref Sources sources, const ref Resu
     auto client = extensionTransport(overrides);
     client.userAgent = "d8ctl/" ~ cliVersion;
     auto previewHeaders = overrides.get(headersKey, null);
-    auto out_ = invoke(client, r, previewHeaders, base);
-    if (out_.length) stdOut.write(out_);
-    if (out_.length && out_[$ - 1] != '\n') stdOut.writeln();
+    writeResult(invoke(client, r, previewHeaders, base, prettyJson(r)));
     return 0;
 }
 
@@ -173,5 +229,11 @@ unittest
     assert(run(["d8ctl", "cluster", "topology"]) == 0);
     assert(run(["d8ctl", "cluster", "topology", "get", "--help"]) == 0);
     assert(run(["d8ctl", "nope"]) == 2);
+    // Output contract (#16).
+    assert(run(["d8ctl", "cluster", "topology", "get", "--help", "--json"]) == 0);
+    assert(run(["d8ctl", "cluster", "topology", "--help", "--json"]) == 0);
+    assert(run(["d8ctl", "cluster", "topology", "get", "--pretty", "--compact"]) == 2);
+    assert(run(["d8ctl", "cluster", "topology", "get", "--output=yaml"]) == 2);
+    assert(run(["d8ctl", "cluster", "topology", "get", "--output"]) == 2);
     assert(catalogOperationCount > 200); // moves with the upstream spec
 }

@@ -29,7 +29,8 @@ string substitutePath(string path, const string[] names, const string[] values)
     return out_;
 }
 
-string invoke(Transport client, const ref Result r, string headersJson = null, string baseUrl = null)
+string invoke(Transport client, const ref Result r, string headersJson = null, string baseUrl = null,
+    bool pretty = true)
 {
     auto c = r.command;
     if (c is null) throw new UsageException("no command");
@@ -120,7 +121,9 @@ string invoke(Transport client, const ref Result r, string headersJson = null, s
     if (c.kind == "text")
         return client.requestText(c.method, path, body_, query, server);
     auto payload = client.requestJson(c.method, path, body_, query, server);
-    return payload.toPrettyString;
+    // The response unchanged: the spec is the output schema (#16).
+    import d8ctl.output : formatJson;
+    return formatJson(payload, pretty);
 }
 
 bool isPathParam(const Command* c, string name)

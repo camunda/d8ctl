@@ -11,6 +11,7 @@ module d8ctl.parse;
 @safe:
 
 import d8ctl.extensions : Extension, ExtensionException, Manifest;
+import d8ctl.output : ErrorFormat;
 import d8ctl.profiles : Header, parseHeaderSwitch, ProfileException, switchToKey;
 import d8ctl.catalog;
 import d8ctl.specmodel : Catalog;
@@ -42,6 +43,15 @@ struct Flags
     Header[] headers;
     /// Value-less `--flag`s. Only `profile`/`extension` subcommands accept them.
     bool[string] bare;
+    /// `--pretty` / `--compact`: JSON layout on stdout (default: pretty in a
+    /// terminal, compact otherwise; #16).
+    bool pretty;
+    bool compact;
+    /// `--output=json|text`: the error format on stderr (default: text in a
+    /// terminal, JSON otherwise).
+    ErrorFormat errorFormat;
+    /// `--json`: machine-readable `--help`.
+    bool json;
 }
 
 enum Kind
@@ -99,7 +109,7 @@ Result parse(string[] args, string cfgDir)
     string[] joined;
     for (size_t i = 0; i < args.length; i++)
     {
-        if ((args[i] == "--profile" || args[i] == "--spec" || args[i] == "--base-url")
+        if ((args[i] == "--profile" || args[i] == "--spec" || args[i] == "--base-url" || args[i] == "--output")
             && i + 1 < args.length && !args[i + 1].startsWith("-"))
         {
             joined ~= args[i] ~ "=" ~ args[i + 1];
@@ -130,6 +140,36 @@ Result parse(string[] args, string cfgDir)
         if (a == "--dry-run")
         {
             flags.dryRun = true;
+            continue;
+        }
+        if (a == "--pretty" || a == "--compact")
+        {
+            if (a == "--pretty") flags.pretty = true;
+            else flags.compact = true;
+            if (flags.pretty && flags.compact)
+            {
+                r.kind = Kind.error;
+                r.message = "--pretty and --compact are exclusive";
+                return r;
+            }
+            continue;
+        }
+        if (a == "--json")
+        {
+            flags.json = true;
+            continue;
+        }
+        if (a.startsWith("--output="))
+        {
+            auto v = a[9 .. $];
+            if (v == "json") flags.errorFormat = ErrorFormat.json;
+            else if (v == "text") flags.errorFormat = ErrorFormat.text;
+            else
+            {
+                r.kind = Kind.error;
+                r.message = "unknown --output=" ~ v ~ " (expected json or text)";
+                return r;
+            }
             continue;
         }
         if (a == "--operator")
@@ -183,7 +223,7 @@ Result parse(string[] args, string cfgDir)
             auto eq = rest.indexOf('=');
             if (eq < 0)
             {
-                if (rest.startsWith("camunda-") || rest == "profile" || rest == "header")
+                if (rest.startsWith("camunda-") || rest == "profile" || rest == "header" || rest == "output")
                 {
                     r.kind = Kind.error;
                     r.message = "flag --" ~ rest ~ " needs a value (--" ~ rest ~ "=…)";

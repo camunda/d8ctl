@@ -145,3 +145,37 @@ BoundedResponse boundedGet(string url, const string[string] headers, size_t maxB
     r.etag = etag;
     return r;
 }
+
+/// Whether `f` is an interactive terminal (output contract, #16: pretty JSON
+/// and text errors for people, compact JSON and JSON errors otherwise).
+/// `@trusted`: reads the descriptor's / handle's mode only — `isatty` on
+/// POSIX, `GetConsoleMode` on Windows (fails for files, pipes and NUL) —
+/// with a local out-parameter; nothing is written through or retained.
+bool isTerminal(ref File f) @trusted
+{
+    if (!f.isOpen) return false;
+    version (Windows)
+    {
+        import core.sys.windows.wincon : GetConsoleMode;
+        import core.sys.windows.windef : DWORD;
+
+        DWORD mode;
+        return GetConsoleMode(f.windowsHandle, &mode) != 0;
+    }
+    else
+    {
+        import core.sys.posix.unistd : isatty;
+
+        return isatty(f.fileno) == 1;
+    }
+}
+
+unittest
+{
+    import std.file : deleteme, remove;
+
+    auto path = deleteme ~ ".isterminal";
+    auto f = File(path, "w");
+    scope (exit) { f.close(); remove(path); }
+    assert(!isTerminal(f), "a regular file is not a terminal");
+}
