@@ -167,14 +167,6 @@ private bool nameIn(const string[] xs, string x)
     return xs.canFind(x);
 }
 
-private const(ResponseField)* findChild(const(ResponseField)[] fields, string name)
-{
-    foreach (i, ref f; fields)
-        if (f.name == name)
-            return &fields[i];
-    return null;
-}
-
 private void collectPaths(const(ResponseField)[] fields, string prefix, ref string[] out_)
 {
     foreach (f; fields)
@@ -206,19 +198,43 @@ private string[2] splitPath(string path)
     return [path[0 .. dot], path[dot + 1 .. $]];
 }
 
+/// Schema-aware head match: the declared field whose name is all of `sel`
+/// or a `name.` prefix of it, longest name first, so a declared property
+/// whose name itself contains dots (e.g. `camunda.document.type`) is
+/// selectable. `rest` receives the remaining dotted suffix (empty if none).
+private const(ResponseField)* matchHead(const(ResponseField)[] fields, string sel, out string rest)
+{
+    import std.algorithm.searching : startsWith;
+
+    const(ResponseField)* best;
+    foreach (i, ref f; fields)
+    {
+        const n = f.name;
+        if (best !is null && n.length <= best.name.length)
+            continue;
+        if (sel == n)
+            best = &fields[i];
+        else if (sel.length > n.length && sel.startsWith(n) && sel[n.length] == '.')
+            best = &fields[i];
+    }
+    if (best !is null)
+        rest = sel.length > best.name.length ? sel[best.name.length + 1 .. $] : null;
+    return best;
+}
+
 /// Validate one selection against the schema fields: every dotted step must
 /// be a declared object/array-of-objects property.
 private void validatePath(const(Command)* c, const(ResponseField)[] fields, string sel)
 {
-    auto hr = splitPath(sel);
-    auto f = findChild(fields, hr[0]);
+    string rest;
+    auto f = matchHead(fields, sel, rest);
     if (f is null)
-        throwFieldsError(c, "unknown field '" ~ hr[0] ~ "'");
-    if (!hr[1].length)
+        throwFieldsError(c, "unknown field '" ~ splitPath(sel)[0] ~ "'");
+    if (!rest.length)
         return;
     if (!f.children.length)
-        throwFieldsError(c, "'" ~ hr[0] ~ "' has no nested fields ('" ~ sel ~ "')");
-    validatePath(c, f.children, hr[1]);
+        throwFieldsError(c, "'" ~ f.name ~ "' has no nested fields ('" ~ sel ~ "')");
+    validatePath(c, f.children, rest);
 }
 
 /// Validate the complete `--fields` selection against the command's response
@@ -254,7 +270,7 @@ void validateFields(const(Command)* c, const string[] fields)
             }
             else if (findResponseField(c, hr[0]) !is null)
                 validatePath(c, c.responseFields, f);
-            else if (findChild(arr.children, hr[0]) !is null)
+            else if (isItemField(arr, f))
                 validatePath(c, arr.children, f);
             else
                 throwFieldsError(c, "unknown field '" ~ hr[0] ~ "'");
@@ -283,38 +299,75 @@ void validateFields(const(Command)* c, const string[] fields)
     }
 }
 
-/// Project `obj` to the selected `paths` (dotted `a.b` paths keep the
-/// nesting). Callers validate first (`validateFields`), so every path is
-/// schema-declared; fields absent from this particular response are simply
-/// not printed.
-private JSONValue projectObject(const JSONValue obj, const string[] paths, const(ResponseField)[] fields)
+private bool isItemField(const(ResponseField)* arr, string sel)
 {
+    string rest;
+    return arr !is null && matchHead(arr.children, sel, rest) !is null;
+}
+
+/// A whole-field selection: keep only schema-declared properties, recursing
+/// through objects and arrays of objects. A field with no declared children
+/// (scalar, opaque `json`, free-form map) is kept as-is.
+private JSONValue filterSchema(const JSONValue v, const(ResponseField)[] fields)
+{
+    if (!fields.length)
+        return v;
+    if (v.type == JSONType.array)
+    {
+        JSONValue[] items;
+        foreach (it; v.arrayNoRef)
+            items ~= filterSchema(it, fields);
+        return JSONValue(items);
+    }
+    if (v.type != JSONType.object)
+        return v;
     JSONValue out_ = parseJSON("{}");
+    foreach (ref f; fields)
+        if (auto sv = f.name in v.objectNoRef)
+            out_[f.name] = filterSchema(*sv, f.children);
+    return out_;
+}
+
+/// Project `v` to the selected `paths` (dotted `a.b` paths keep the
+/// nesting). Selections are grouped per declared property before recursing,
+/// so deep siblings (`a.b.x,a.b.y`) all survive; arrays of objects are
+/// projected element-wise. Callers validate first (`validateFields`);
+/// fields absent from this particular response are simply not printed.
+private JSONValue projectObject(const JSONValue v, const string[] paths, const(ResponseField)[] fields)
+{
+    foreach (p; paths)
+        if (!p.length)
+            return filterSchema(v, fields); // the whole field was selected
+    if (v.type == JSONType.array)
+    {
+        JSONValue[] items;
+        foreach (it; v.arrayNoRef)
+            items ~= projectObject(it, paths, fields);
+        return JSONValue(items);
+    }
+    if (v.type != JSONType.object)
+        return v; // the server sent a non-object where the schema declares one
+    string[] order;
+    string[][string] groups;
+    const(ResponseField)*[string] byName;
     foreach (p; paths)
     {
-        auto hr = splitPath(p);
-        auto rf = findChild(fields, hr[0]);
-        auto v = hr[0] in obj.objectNoRef;
-        if (v is null || rf is null)
-            continue; // absent from this response: nothing to keep
-        if (hr[1].length && v.type == JSONType.object)
-        {
-            auto sub = projectObject(*v, [hr[1]], rf.children);
-            if (auto slot = hr[0] in out_.objectNoRef)
-            {
-                auto merged = *slot;
-                foreach (k, sv; sub.objectNoRef)
-                    merged[k] = sv;
-                out_[hr[0]] = merged;
-            }
-            else
-                out_[hr[0]] = sub;
+        string rest;
+        auto rf = matchHead(fields, p, rest);
+        if (rf is null)
             continue;
+        if (rf.name !in groups)
+        {
+            order ~= rf.name;
+            groups[rf.name] = null;
+            byName[rf.name] = rf;
         }
-        // No dotted rest, or the server sent a non-object where the schema
-        // declares one: keep the value as-is rather than drop it.
-        out_[hr[0]] = *v;
+        groups[rf.name] ~= rest;
     }
+    JSONValue out_ = parseJSON("{}");
+    foreach (name; order)
+        if (auto sv = name in v.objectNoRef)
+            out_[name] = projectObject(*sv, groups[name], byName[name].children);
     return out_;
 }
 
@@ -350,7 +403,7 @@ JSONValue selectFields(const JSONValue payload, const string[] fields, const(Com
                 if (hr[1].length)
                     itemSel ~= hr[1];
             }
-            else if (findChild(arr.children, hr[0]) !is null)
+            else if (isItemField(arr, f))
                 itemSel ~= f;
         }
         if (!itemSel.length)
@@ -618,4 +671,38 @@ unittest
     assertThrown!FieldsException(selectFields(payload, ["prs.nope.name"], c));
     // Deeper than the schema declares: `spec.name.x` has no object to enter.
     assertThrown!FieldsException(selectFields(payload, ["prs.spec.name.x"], c));
+}
+
+unittest
+{
+    // #22 round 3: literal dotted keys, deep siblings, nested arrays, and
+    // whole-parent selections are all schema-filtered.
+    auto c = new Command;
+    c.operationId = "t";
+    c.responseTarget = "object";
+    ResponseField leaf(string n) { return ResponseField(n, "string", null); }
+    c.responseFields = [
+        ResponseField("doc", "object", [leaf("camunda.document.type"), leaf("camunda")]),
+        ResponseField("a", "object", [ResponseField("b", "object", [leaf("x"), leaf("y")])]),
+        ResponseField("parts", "array", [leaf("id"), leaf("role")]),
+        ResponseField("spec", "object", [leaf("name")]),
+        ResponseField("meta", "json", null),
+    ];
+    auto in_ = parseJSON(`{"doc":{"camunda.document.type":"t","camunda":"c"},
+        "a":{"b":{"x":1,"y":2,"z":3}},"parts":[{"id":1,"role":"L","h":0}],
+        "spec":{"name":"n","other":2},"meta":{"k":1}}`);
+    auto r = selectFields(in_, ["doc.camunda.document.type"], c);
+    assert(r["doc"].objectNoRef.length == 1 && r["doc"]["camunda.document.type"].str == "t");
+    r = selectFields(in_, ["a.b.x", "a.b.y"], c);
+    assert(r["a"]["b"]["x"].integer == 1 && r["a"]["b"]["y"].integer == 2
+        && "z" !in r["a"]["b"].objectNoRef);
+    r = selectFields(in_, ["parts.id"], c);
+    assert(r["parts"][0].objectNoRef.length == 1 && r["parts"][0]["id"].integer == 1);
+    r = selectFields(in_, ["spec", "parts", "meta"], c);
+    assert("other" !in r["spec"].objectNoRef && "h" !in r["parts"][0].objectNoRef);
+    assert(r["meta"]["k"].integer == 1);
+    bool threw;
+    try selectFields(in_, ["doc.camunda.nope"], c);
+    catch (FieldsException) threw = true;
+    assert(threw);
 }
