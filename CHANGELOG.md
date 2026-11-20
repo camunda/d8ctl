@@ -1,3 +1,10 @@
+# [0.7.0](https://github.com/camunda/d8ctl/compare/v0.6.2...v0.7.0) (2026-11-20)
+
+
+### Features
+
+* agent output contract (structured errors, exit codes, compact JSON, JSON help) ([#17](https://github.com/camunda/d8ctl/issues/17)) ([8d0f0a9](https://github.com/camunda/d8ctl/commit/8d0f0a9045a9abe917db736c8138e3d9195bbab9)), closes [#16](https://github.com/camunda/d8ctl/issues/16)
+
 ## [0.6.2](https://github.com/camunda/d8ctl/compare/v0.6.1...v0.6.2) (2026-11-20)
 
 
