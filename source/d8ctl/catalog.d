@@ -15,7 +15,7 @@ import d8ctl.util : eqIgnoreCase;
 import std.algorithm : canFind, sort, uniq;
 import std.array : array;
 
-public import d8ctl.generated.catalog : BodyField, Command, catalog, catalogOperationCount, catalogSpecHash;
+public import d8ctl.generated.catalog : BodyField, Command, ResponseField, catalog, catalogOperationCount, catalogSpecHash;
 
 /// Copy a model row into a `Command` (the generated table's row type).
 Command toCommand(const ref ModelCommand c)
@@ -41,6 +41,9 @@ Command toCommand(const ref ModelCommand c)
     r.positional = c.positional.dup;
     foreach (p; c.paths)
         r.paths ~= p.dup;
+    r.responseTarget = c.responseTarget;
+    foreach (f; c.responseFields)
+        r.responseFields ~= ResponseField(f.name, f.kind, f.children.dup);
     return r;
 }
 
@@ -267,4 +270,43 @@ unittest
     assert(commandsUnderPath(rows, ["door"]).length == 0);
     assert(isVerb("get", overlay, rows));
     assert(!isVerb("open", overlay, rows));
+}
+
+/// `--fields` model in the generated catalog (#21): searchProcessInstances
+/// targets `items`; an nwf-like spec with two arrays requires a prefix.
+unittest
+{
+    auto search = findByOperationId("searchProcessInstances");
+    assert(search !is null);
+    assert(search.responseTarget == "items");
+    string[] names;
+    foreach (f; search.responseFields)
+        names ~= f.name;
+    import std.conv : to;
+
+    assert(names.canFind("processInstanceKey"), names.to!string);
+    assert(names.canFind("processDefinitionId"));
+    assert(names.canFind("startDate"));
+
+    // A plain-object response: getTopology's target is `items` (brokers)…
+    auto topo = findByOperationId("getTopology");
+    assert(topo.responseTarget == "items");
+
+    // An nwf-like spec: `prs` + `deliveries` arrays → multi, prefix required.
+    import d8ctl.specmodel : buildCatalog;
+
+    auto cat = buildCatalog(`{"paths": {"/status": {"get": {"operationId": "getStatus",
+        "responses": {"200": {"description": "ok", "content": {"application/json":
+          {"schema": {"type": "object", "properties": {
+            "prs": {"type": "array", "items": {"type": "object", "properties": {
+              "prKey": {"type": "string"}, "status": {"type": "string"}}}},
+            "deliveries": {"type": "array", "items": {"type": "object", "properties": {
+              "id": {"type": "string"}}}}}}}}}}}}}}`, null, "nwf");
+    assert(cat.commands[0].responseTarget == "multi");
+    auto overlay = new Catalog;
+    *overlay = cat;
+    auto rows = overlayRows(overlay);
+    assert(rows[0].responseTarget == "multi", "extensions carry the model");
+    assert(rows[0].responseFields.length == 2
+        && rows[0].responseFields[0].children == ["prKey", "status"]);
 }

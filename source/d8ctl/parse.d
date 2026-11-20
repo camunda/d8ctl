@@ -52,6 +52,9 @@ struct Flags
     ErrorFormat errorFormat;
     /// `--json`: machine-readable `--help`.
     bool json;
+    /// `--fields=a,b.c`: response field selection (#21), comma-separated and
+    /// trimmed at parse time; empty entries are a usage error.
+    string[] fields;
 }
 
 enum Kind
@@ -195,6 +198,25 @@ Result parse(string[] args, string cfgDir)
             flags.bodyJson = a[7 .. $];
             continue;
         }
+        if (a.startsWith("--fields="))
+        {
+            import std.algorithm.iteration : map;
+            import std.array : array, split;
+            import std.string : strip;
+
+            auto raw = a[9 .. $];
+            foreach (f; raw.split(",").map!(x => x.strip).array)
+            {
+                if (!f.length)
+                {
+                    r.kind = Kind.error;
+                    r.message = "--fields: empty field name in '" ~ raw ~ "'";
+                    return r;
+                }
+                flags.fields ~= f;
+            }
+            continue;
+        }
         if (a.startsWith("--header="))
         {
             try flags.headers ~= parseHeaderSwitch(a[9 .. $]);
@@ -223,7 +245,8 @@ Result parse(string[] args, string cfgDir)
             auto eq = rest.indexOf('=');
             if (eq < 0)
             {
-                if (rest.startsWith("camunda-") || rest == "profile" || rest == "header" || rest == "output")
+                if (rest.startsWith("camunda-") || rest == "profile" || rest == "header" || rest == "output"
+                    || rest == "fields")
                 {
                     r.kind = Kind.error;
                     r.message = "flag --" ~ rest ~ " needs a value (--" ~ rest ~ "=…)";

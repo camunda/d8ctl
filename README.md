@@ -87,6 +87,20 @@ d8ctl is built for agents and scripts, so its output is a contract (#16):
   | 6 | `server`: 5xx or backpressure |
   | 7 | `network`: connection, timeout or TLS |
 
+- **`--fields=a,b.c`** trims the JSON response client-side (the API has no
+  server-side selection). It applies to the operation's response schema: an
+  array → each item; an object with one array of objects (`items`) → each item,
+  other top-level fields (`page`) kept; otherwise the object itself. With
+  several arrays, prefix the array name (`--fields=prs.prKey,prs.status`).
+  Dotted paths keep nesting. Unknown fields are a usage error (exit 2) listing
+  the valid names; undeclared fields the server sends are dropped. Not for
+  non-JSON responses (usage error) and never applied to errors. `--dry-run`
+  shows the selection; `--help` lists "Response fields" (`responseFields` in
+  `--help --json`).
+
+  ```sh
+  d8ctl cluster process-instances search --filter='{"state":"ACTIVE"}' --fields=processInstanceKey,startDate
+  ```
 - **`--help --json`** describes commands as JSON. On a command, it gives the
   invocation, operation, positional arguments, flags (query and body, with
   type and required), whether `--body` is accepted, and the output kind. On a

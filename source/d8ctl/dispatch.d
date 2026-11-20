@@ -107,8 +107,13 @@ string invoke(Transport client, const ref Result r, string headersJson = null, s
 
     auto path = substitutePath(c.path, pathNames, pathValues);
 
+    // --fields (#21): only JSON responses are selectable.
+    if (r.flags.fields.length && c.kind != "json")
+        throw new UsageException("--fields does not apply to " ~ c.operationId
+            ~ " (its response is " ~ c.kind ~ ", not JSON).");
+
     if (r.flags.dryRun)
-        return formatDryRun(c, path, query, body_, headersJson, baseUrl);
+        return formatDryRun(c, path, query, body_, headersJson, baseUrl, r.flags.fields);
 
     // Cluster-admin operations live at the bare root, not under /v2.
     const server = c.rootServer ? ServerBase.root : ServerBase.api;
@@ -121,9 +126,11 @@ string invoke(Transport client, const ref Result r, string headersJson = null, s
     if (c.kind == "text")
         return client.requestText(c.method, path, body_, query, server);
     auto payload = client.requestJson(c.method, path, body_, query, server);
-    // The response unchanged: the spec is the output schema (#16).
-    import d8ctl.output : formatJson;
-    return formatJson(payload, pretty);
+    // The response unchanged: the spec is the output schema (#16) — except
+    // --fields, which trims it client-side to the schema's names (#21).
+    import d8ctl.output : formatJson, selectFields;
+    auto out_ = r.flags.fields.length ? selectFields(payload, r.flags.fields, c) : payload;
+    return formatJson(out_, pretty);
 }
 
 bool isPathParam(const Command* c, string name)
@@ -256,7 +263,7 @@ string bodyKindHint(string kind)
 }
 
 string formatDryRun(const Command* c, string path, string[string] query, JSONValue body_,
-    string headersJson = null, string baseUrl = null)
+    string headersJson = null, string baseUrl = null, const string[] fields = null)
 {
     import d8ctl.profiles : headersFromJson;
     import std.format : format;
@@ -280,6 +287,11 @@ string formatDryRun(const Command* c, string path, string[string] query, JSONVal
         s ~= "\n" ~ body_.toPrettyString(JSONOptions.doNotEscapeSlashes);
     else if (c.hasBody)
         s ~= "\n{}";
+    if (fields.length)
+    {
+        import std.array : join;
+        s ~= "\nfields: " ~ fields.join(",");
+    }
     return s ~ "\n";
 }
 

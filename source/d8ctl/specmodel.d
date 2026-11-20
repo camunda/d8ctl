@@ -15,7 +15,8 @@ module d8ctl.specmodel;
 
 @safe:
 
-import std.array : appender, join, replace;
+import std.algorithm.iteration : map;
+import std.array : appender, array, join, replace;
 import std.conv : to;
 import std.regex : ctRegex, matchFirst, replaceAll;
 import std.string : endsWith, indexOf, startsWith, strip, stripRight, toLower, toUpper;
@@ -40,6 +41,18 @@ struct ModelField
     string kind;
     bool required;
     string doc;
+}
+
+/// A selectable response field: a top-level name of the selection target
+/// (see `ModelCommand.responseTarget`), with the names of its own object
+/// properties when it is an object (dotted `--fields=a.b` paths).
+struct ModelResponseField
+{
+    string name;
+    /// `string`, `integer`, `number`, `boolean`, `array`, `object`, or `json`.
+    string kind;
+    /// Nested object property names, one level deep.
+    string[] children;
 }
 
 /// One CLI command derived from one OpenAPI operation.
@@ -72,6 +85,15 @@ struct ModelCommand
     /// (namespace-relative words, as authored). Non-empty = the command is
     /// reached only by these exact word paths, never by resource/verb reordering.
     string[][] paths;
+    /// Where `--fields` selection applies (#21): `array` (trim each item),
+    /// `items` (trim each item of the one array-of-objects property), `object`
+    /// (trim the response itself), `multi` (several arrays of objects: a
+    /// `name.field` prefix is required), or empty (no JSON object/array
+    /// response — `--fields` is a usage error).
+    string responseTarget;
+    /// Selection-target fields, in declaration order. `multi` targets carry
+    /// the array names (each with its items' property names as children).
+    ModelResponseField[] responseFields;
 }
 
 /// The command model of a whole spec.
@@ -337,6 +359,10 @@ private struct OpInfo
     string[] optionalQuery;
     long successStatus = 200;
     bool hasResponseSchema;
+    /// `components/schemas` name of the 2xx JSON response, when it is one.
+    string responseRef;
+    /// The 2xx JSON response schema itself, when not a bare `$ref`.
+    J responseSchema;
     string[] requestBodyContentTypes;
     bool hasRequestBody;
     string bodyRef;
@@ -387,6 +413,278 @@ private ModelField[] bodyFieldsOf(Spec spec, ref OpInfo op)
             firstSentence(p.get("description").orS("")));
     }
     return fields;
+}
+
+// ---- Response field selection (`--fields`, #21) ----
+
+/// The property names of an object schema (one level), after unfolding
+/// `$ref`/`allOf`/object `oneOf`/`anyOf`. Empty for non-objects and
+/// unflattenable unions.
+private string[] propNames(Spec spec, J schema, bool[string] seen, size_t depth = 0)
+{
+    if (schema is null || !schema.isObj || !truthy(schema))
+        return null;
+    if (depth > maxSchemaDepth)
+        throw new OpenApiLimitException("schema property listing too deep");
+    if (schema.has("$ref"))
+    {
+        const name = spec.refName(schema);
+        if (!name.length || name in seen)
+            return null;
+        seen[name] = true;
+        return propNames(spec, spec.schemas.get(name), seen, depth + 1);
+    }
+    string[] out_;
+    foreach (part; itemsOf(schema.get("allOf")))
+        foreach (n; propNames(spec, part, seen, depth + 1))
+        {
+            import std.algorithm.searching : canFind;
+
+            if (!out_.canFind(n))
+                out_ ~= n;
+        }
+    if (truthy(schema.get("oneOf")) || truthy(schema.get("anyOf")))
+    {
+        auto own = seen.dup;
+        auto flat = flattenUnion(spec, schema, own, depth);
+        if (!flat.isUnion)
+            foreach (n; flat.names)
+            {
+                import std.algorithm.searching : canFind;
+
+                if (!out_.canFind(n))
+                    out_ ~= n;
+            }
+    }
+    auto props = schema.get("properties");
+    foreach (k; keysOf(props))
+    {
+        import std.algorithm.searching : canFind;
+
+        if (!out_.canFind(k))
+            out_ ~= k;
+    }
+    return out_;
+}
+
+/// The `items` schema of an array schema (through `$ref`/`allOf`), or null.
+private J arrayItems(Spec spec, J schema, bool[string] seen, size_t depth = 0)
+{
+    if (schema is null || !schema.isObj || !truthy(schema))
+        return null;
+    if (depth > maxSchemaDepth)
+        throw new OpenApiLimitException("array items resolution too deep");
+    if (schema.has("$ref"))
+    {
+        const name = spec.refName(schema);
+        if (!name.length || name in seen)
+            return null;
+        seen[name] = true;
+        return arrayItems(spec, spec.schemas.get(name), seen, depth + 1);
+    }
+    if (auto it = schema.get("items"))
+        if (truthy(it) && it.isObj)
+            return it;
+    foreach (part; itemsOf(schema.get("allOf")))
+        if (auto got = arrayItems(spec, part, seen, depth + 1))
+            return got;
+    return null;
+}
+
+/// True when the schema is (through `$ref`/`allOf`) an object with properties.
+private bool isObjectWithProps(Spec spec, J schema, bool[string] seen, size_t depth = 0)
+{
+    if (schema is null || !schema.isObj || !truthy(schema))
+        return false;
+    if (depth > maxSchemaDepth)
+        throw new OpenApiLimitException("object check too deep");
+    if (schema.has("$ref"))
+    {
+        const name = spec.refName(schema);
+        if (!name.length || name in seen)
+            return false;
+        seen[name] = true;
+        return isObjectWithProps(spec, spec.schemas.get(name), seen, depth + 1);
+    }
+    if (truthy(schema.get("properties")))
+        return true;
+    foreach (part; itemsOf(schema.get("allOf")))
+        if (isObjectWithProps(spec, part, seen, depth + 1))
+            return true;
+    return false;
+}
+
+/// One flattened property as a selectable response field (its own object
+/// properties become dotted-path children).
+private ModelResponseField responseFieldOf(Spec spec, string name, J prop, bool[string] seen)
+{
+    ModelResponseField f;
+    f.name = name;
+    f.kind = classifyProp(spec, prop);
+    if (f.kind == "json")
+    {
+        // classifyProp only knows scalars; label arrays and objects.
+        bool[string] own;
+        const t = unwrapType(spec, prop, own);
+        if (t == "array")
+            f.kind = "array";
+        else if (t == "object")
+            f.kind = "object";
+        else
+        {
+            bool[string] objSeen;
+            if (isObjectWithProps(spec, prop, objSeen))
+                f.kind = "object";
+        }
+    }
+    if (f.kind == "object")
+    {
+        auto own = seen.dup;
+        f.children = propNames(spec, prop, own);
+    }
+    return f;
+}
+
+/// The selectable fields of an object schema, in declaration order.
+private ModelResponseField[] objectFields(Spec spec, J schema, bool[string] seen, size_t depth = 0)
+{
+    ModelResponseField[] out_;
+    if (schema is null || !schema.isObj || !truthy(schema))
+        return out_;
+    if (depth > maxSchemaDepth)
+        throw new OpenApiLimitException("response field listing too deep");
+    if (schema.has("$ref"))
+    {
+        const name = spec.refName(schema);
+        if (!name.length || name in seen)
+            return out_;
+        seen[name] = true;
+        return objectFields(spec, spec.schemas.get(name), seen, depth + 1);
+    }
+    foreach (part; itemsOf(schema.get("allOf")))
+        foreach (f; objectFields(spec, part, seen, depth + 1))
+        {
+            import std.algorithm.searching : canFind;
+
+            if (!out_.map!(x => x.name).canFind(f.name))
+                out_ ~= f;
+        }
+    if (truthy(schema.get("oneOf")) || truthy(schema.get("anyOf")))
+    {
+        auto own = seen.dup;
+        auto flat = flattenUnion(spec, schema, own, depth);
+        if (!flat.isUnion)
+            foreach (n; flat.names)
+            {
+                import std.algorithm.searching : canFind;
+
+                if (!out_.map!(x => x.name).canFind(n))
+                    out_ ~= responseFieldOf(spec, n, flat.props[n], seen);
+            }
+    }
+    auto props = schema.get("properties");
+    foreach (k; keysOf(props))
+    {
+        import std.algorithm.searching : canFind;
+
+        if (!out_.map!(x => x.name).canFind(k))
+            out_ ~= responseFieldOf(spec, k, props.fields[k], seen);
+    }
+    return out_;
+}
+
+/// Derive the `--fields` selection target and its fields from the 2xx JSON
+/// response schema (#21): an array trims each item; an object with exactly
+/// one array-of-objects property (Camunda `items`, nwf `prs`, …) trims that
+/// array's items and keeps the other top-level fields; several such arrays
+/// require a `name.field` prefix (`multi`); anything else trims the object.
+private void responseModel(Spec spec, ref OpInfo op, out string target, out ModelResponseField[] fields)
+{
+    target = null;
+    fields = null;
+    if (!op.hasResponseSchema || op.successStatus == 204)
+        return;
+    J schema;
+    bool[string] seen;
+    if (op.responseRef.length)
+    {
+        schema = spec.schemas.get(op.responseRef);
+        if (schema is null)
+            throw new OpenApiException("$ref to missing schema component: #/components/schemas/"
+                ~ pointerEscape(op.responseRef));
+        seen[op.responseRef] = true;
+    }
+    else
+        schema = op.responseSchema;
+    const t = unwrapType(spec, schema, seen);
+    if (t == "array")
+    {
+        auto items = arrayItems(spec, schema, seen.dup);
+        if (!propNames(spec, items, seen.dup).length)
+            return; // an array of scalars: nothing to select
+        target = "array";
+        fields = objectFields(spec, items, seen.dup);
+        return;
+    }
+    // Object (or unknown) shape: look at its properties.
+    auto flat = objectFields(spec, schema, seen.dup);
+    if (!flat.length)
+        return; // scalar or opaque JSON: --fields is a usage error
+    // The array-of-objects properties (Camunda `items`; nwf `prs`, …).
+    ModelResponseField[] arrays;
+    foreach (f; flat)
+    {
+        if (f.kind != "array")
+            continue;
+        auto prop = findProp(spec, schema, f.name, seen.dup);
+        auto items = arrayItems(spec, prop, seen.dup);
+        if (items is null || !isObjectWithProps(spec, items, seen.dup))
+            continue;
+        auto itemFields = objectFields(spec, items, seen.dup);
+        if (!itemFields.length)
+            continue;
+        f.children = itemFields.map!(x => x.name).array;
+        arrays ~= f;
+    }
+    if (arrays.length == 1)
+    {
+        target = "items";
+        auto items = arrayItems(spec, findProp(spec, schema, arrays[0].name, seen.dup), seen.dup);
+        fields = objectFields(spec, items, seen.dup);
+        return;
+    }
+    if (arrays.length > 1)
+    {
+        target = "multi";
+        fields = arrays;
+        return;
+    }
+    target = "object";
+    fields = flat;
+}
+
+/// The (possibly `$ref`/`allOf`-nested) declaration of property `name`.
+private J findProp(Spec spec, J schema, string name, bool[string] seen, size_t depth = 0)
+{
+    if (schema is null || !schema.isObj || !truthy(schema))
+        return null;
+    if (depth > maxSchemaDepth)
+        throw new OpenApiLimitException("property lookup too deep");
+    if (schema.has("$ref"))
+    {
+        const n = spec.refName(schema);
+        if (!n.length || n in seen)
+            return null;
+        seen[n] = true;
+        return findProp(spec, spec.schemas.get(n), name, seen, depth + 1);
+    }
+    if (auto props = schema.get("properties"))
+        if (auto p = props.get(name))
+            return p;
+    foreach (part; itemsOf(schema.get("allOf")))
+        if (auto p = findProp(spec, part, name, seen, depth + 1))
+            return p;
+    return null;
 }
 
 /// Path part of the first server URL (`{schema}://{host}:{port}/v2` → `/v2`); null without servers.
@@ -565,7 +863,8 @@ private OpInfo fromMeta(J op, size_t i)
     }
     auto st = op.get("successStatus");
     o.successStatus = truthy(st) ? pyStr(st).to!double.to!long : 200;
-    o.hasResponseSchema = truthy(op.get("successResponseSchemaRef"));
+    o.responseRef = pyStrOrNull(op.get("successResponseSchemaRef"));
+    o.hasResponseSchema = o.responseRef.length > 0;
     foreach (c; itemsOf(op.get("requestBodyContentTypes")))
         o.requestBodyContentTypes ~= pyStr(c);
     o.hasRequestBody = truthy(op.get("hasRequestBody"));
@@ -676,7 +975,8 @@ private OpInfo fromPaths(Spec spec, J op)
         }
         auto resp = resolveComponent(spec, responses.fields[code], "responses", where ~ "/responses/" ~ code);
         auto media = jsonContent(resp.get("content"));
-        const hasSchema = media !is null && truthy(media.get("schema"));
+        auto respSchema = media is null ? null : media.get("schema");
+        const hasSchema = truthy(respSchema);
         // Rank: JSON schema > any body > no content.
         const rank = hasSchema ? 2 : (keysOf(resp.get("content")).length ? 1 : 0);
         if (!found || rank > bestRank)
@@ -684,6 +984,16 @@ private OpInfo fromPaths(Spec spec, J op)
             o.successStatus = status;
             o.hasResponseSchema = hasSchema;
             bestRank = rank;
+            o.responseRef = null;
+            o.responseSchema = null;
+            if (hasSchema)
+            {
+                // A `$ref` with siblings (OpenAPI 3.1) keeps the whole schema.
+                if (respSchema.isObj && keysOf(respSchema).length == 1)
+                    o.responseRef = spec.refName(respSchema);
+                if (!o.responseRef.length)
+                    o.responseSchema = respSchema;
+            }
         }
         found = true;
         if (hasSchema)
@@ -800,6 +1110,7 @@ Catalog buildCatalog(Spec spec, string ns = "cluster")
             || (!cli.present && isMcpExcluded(op.vendorExtensions));
         c.positional = cli.positional;
         c.paths = paths;
+        responseModel(spec, op, c.responseTarget, c.responseFields);
         validatePositional(c, "#/paths/" ~ pointerEscape(op.path) ~ "/" ~ op.method.toLower);
         cat.commands ~= c;
     }
@@ -959,6 +1270,27 @@ private string dBodyFields(const ModelField[] fields)
     return "[" ~ parts.join(", ") ~ "]";
 }
 
+private string dResponseFields(const ModelResponseField[] fields)
+{
+    if (!fields.length)
+        return "null";
+    string[] parts;
+    foreach (f; fields)
+        parts ~= "ResponseField(" ~ dString(f.name) ~ ", " ~ dString(f.kind) ~ ", "
+            ~ dStringArray(f.children) ~ ")";
+    return "[" ~ parts.join(", ") ~ "]";
+}
+
+private string dPaths(const string[][] paths)
+{
+    if (!paths.length)
+        return "null";
+    string[] parts;
+    foreach (p; paths)
+        parts ~= dStringArray(p);
+    return "[" ~ parts.join(", ") ~ "]";
+}
+
 /// Render `cat` as the D source of `d8ctl.generated.catalog`; `generator` names the script in the header.
 string renderCatalogModule(const ref Catalog cat, string generator)
 {
@@ -972,7 +1304,9 @@ string renderCatalogModule(const ref Catalog cat, string generator)
                 dString(c.method), dString(c.path), dString(c.summary), dString(c.addedInVersion),
                 dString(c.kind), c.hasBody ? "true" : "false", dStringArray(c.pathParams),
                 dStringArray(c.requiredQuery), dStringArray(c.optionalQuery), dBodyFields(c.bodyFields),
-                c.rootServer ? "true" : "false"])
+                c.rootServer ? "true" : "false", c.operatorOnly ? "true" : "false",
+                dStringArray(c.positional), dPaths(c.paths),
+                dString(c.responseTarget), dResponseFields(c.responseFields)])
             rows.put("        " ~ v ~ ",\n");
         rows.put("    ),");
     }
@@ -1004,6 +1338,17 @@ struct BodyField
     string doc;
 }
 
+/// A selectable response field (` ~ "`--fields`" ~ `, d8ctl#21): a top-level name of the
+/// command's selection target. ` ~ "`children`" ~ ` are its own object property names
+/// (dotted ` ~ "`a.b`" ~ ` paths); on a ` ~ "`multi`" ~ ` target they are the array's item fields.
+struct ResponseField
+{
+    string name;
+    /// ` ~ "`string`, `integer`, `number`, `boolean`, `array`, `object`, or `json`" ~ `.
+    string kind;
+    string[] children;
+}
+
 /// A generated CLI command. ` ~ "`namespace`" ~ ` is always ` ~ "`cluster`" ~ ` (the OC
 /// surface). ` ~ "`resource` / `verb`" ~ ` are split from the operationId so the
 /// parser can accept either order.
@@ -1032,6 +1377,11 @@ struct Command
     string[] positional;
     /// Explicit command paths from ` ~ "`x-cli.command`/`aliases`" ~ `; empty = resource/verb.
     string[][] paths;
+    /// Where ` ~ "`--fields`" ~ ` selection applies (d8ctl#21): ` ~ "`array`, `items`, `object`" ~ `
+    /// or ` ~ "`multi`" ~ `; empty = no selectable JSON response (usage error).
+    string responseTarget;
+    /// Selection-target fields, in declaration order.
+    ResponseField[] responseFields;
 }
 
 `;
@@ -1427,4 +1777,74 @@ unittest
     ]);
     // A non-object variant: --body only.
     assert(cat.commands[2].bodyFields.length == 0);
+}
+
+/// Response field selection (#21): target derivation per response shape.
+unittest
+{
+    enum spec = `{
+      "paths": {
+        "/search": {"post": {"operationId": "searchThings",
+          "responses": {"200": {"description": "ok", "content": {"application/json":
+            {"schema": {"$ref": "#/components/schemas/SearchResult"}}}}}}},
+        "/list": {"get": {"operationId": "listThings",
+          "responses": {"200": {"description": "ok", "content": {"application/json":
+            {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Thing"}}}}}}}},
+        "/one": {"get": {"operationId": "getThing",
+          "responses": {"200": {"description": "ok", "content": {"application/json":
+            {"schema": {"$ref": "#/components/schemas/Thing"}}}}}}},
+        "/status": {"get": {"operationId": "getStatus",
+          "responses": {"200": {"description": "ok", "content": {"application/json":
+            {"schema": {"$ref": "#/components/schemas/Status"}}}}}}},
+        "/plain": {"get": {"operationId": "getPlain",
+          "responses": {"200": {"description": "ok", "content": {"application/json":
+            {"schema": {"type": "string"}}}}}}},
+        "/empty": {"get": {"operationId": "deleteThing",
+          "responses": {"204": {"description": "gone"}}}}
+      },
+      "components": {"schemas": {
+        "SearchResult": {"type": "object", "properties": {
+          "items": {"type": "array", "items": {"$ref": "#/components/schemas/Thing"}},
+          "page": {"type": "object", "properties": {
+            "totalItems": {"type": "integer"}, "limit": {"type": "integer"}}}}},
+        "Thing": {"type": "object", "properties": {
+          "key": {"type": "string"}, "state": {"type": "string"},
+          "spec": {"type": "object", "properties": {"name": {"type": "string"}}}}},
+        "Status": {"type": "object", "properties": {
+          "prs": {"type": "array", "items": {"type": "object", "properties": {
+            "prKey": {"type": "string"}, "status": {"type": "string"}}}},
+          "deliveries": {"type": "array", "items": {"type": "object", "properties": {
+            "id": {"type": "string"}}}},
+          "count": {"type": "integer"}}}
+      }}}`;
+    auto cat = buildCatalog(spec, null, "t");
+
+    // One array-of-objects property → items target; page's children are not
+    // selectable (the items are the target), but the item's object field is.
+    auto search = cat.commands[0];
+    assert(search.responseTarget == "items");
+    assert(search.responseFields.map!(f => f.name).array == ["key", "state", "spec"]);
+    assert(search.responseFields[2].children == ["name"]);
+
+    // A bare array → each item is trimmed.
+    auto list = cat.commands[1];
+    assert(list.responseTarget == "array");
+    assert(list.responseFields.map!(f => f.name).array == ["key", "state", "spec"]);
+
+    // A plain object → the object itself is trimmed; nested names ride along.
+    auto one = cat.commands[2];
+    assert(one.responseTarget == "object");
+    assert(one.responseFields.map!(f => f.name).array == ["key", "state", "spec"]);
+
+    // Two arrays of objects → multi: the fields are the array names, the
+    // children their item fields (nwf status: prs + deliveries).
+    auto status = cat.commands[3];
+    assert(status.responseTarget == "multi");
+    assert(status.responseFields.map!(f => f.name).array == ["prs", "deliveries"]);
+    assert(status.responseFields[0].children == ["prKey", "status"]);
+    assert(status.responseFields[1].children == ["id"]);
+
+    // A scalar JSON response and a 204 have no selection target.
+    assert(cat.commands[4].responseTarget == "");
+    assert(cat.commands[5].responseTarget == "");
 }
