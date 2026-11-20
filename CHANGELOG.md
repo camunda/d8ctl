@@ -1,3 +1,10 @@
+## [0.7.1](https://github.com/camunda/d8ctl/compare/v0.7.0...v0.7.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **extensions:** accept the nwf spec (command groups, object unions, brief listings) ([#19](https://github.com/camunda/d8ctl/issues/19)) ([df7a8e1](https://github.com/camunda/d8ctl/commit/df7a8e1a951ed2446f4e66c2b9b96a3397136957)), closes [nano-ide#617](https://github.com/nano-ide/issues/617) [#12](https://github.com/camunda/d8ctl/issues/12)
+
 # [0.7.0](https://github.com/camunda/d8ctl/compare/v0.6.2...v0.7.0) (2026-11-20)
 
 
