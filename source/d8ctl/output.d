@@ -394,27 +394,55 @@ JSONValue selectFields(const JSONValue payload, const string[] fields, const(Com
         auto arr = findResponseField(c, c.selection);
         // Split the selection: item fields trim the array's items; other
         // envelope fields stay as-is. `items.a` is the same as `a`.
+        // A bare `items` keeps the empty suffix: the whole (schema-filtered)
+        // item wins over any sibling `items.x`, as in projectObject.
         string[] itemSel;
+        string[] envOrder;
+        string[][string] envSel;
+        const(ResponseField)*[string] envField;
         foreach (f; fields)
         {
             auto hr = splitPath(f);
             if (hr[0] == c.selection)
-            {
-                if (hr[1].length)
-                    itemSel ~= hr[1];
-            }
+                itemSel ~= hr[1];
             else if (isItemField(arr, f))
                 itemSel ~= f;
+            else
+            {
+                // An envelope path (`page.totalItems`): unselected envelope
+                // fields stay, selected envelope objects are projected.
+                string rest;
+                auto rf = matchHead(c.responseFields, f, rest);
+                if (rf is null)
+                    continue;
+                if (rf.name !in envSel)
+                {
+                    envOrder ~= rf.name;
+                    envSel[rf.name] = null;
+                    envField[rf.name] = rf;
+                }
+                envSel[rf.name] ~= rest;
+            }
+        }
+        JSONValue out_ = payload;
+        foreach (name; envOrder)
+        {
+            import std.algorithm.searching : canFind;
+
+            auto sv = name in payload.objectNoRef;
+            // A bare envelope selection keeps that field untouched.
+            if (sv is null || envSel[name].canFind(""))
+                continue;
+            out_[name] = projectObject(*sv, envSel[name], envField[name].children);
         }
         if (!itemSel.length)
-            return payload; // only envelope fields selected: nothing to trim
+            return out_; // only envelope fields selected: items untouched
         auto slot = c.selection in payload.objectNoRef;
         if (slot is null || slot.type != JSONType.array)
-            return payload; // the array is absent from this response
+            return out_; // the array is absent from this response
         JSONValue[] items;
         foreach (it; slot.arrayNoRef)
             items ~= it.type == JSONType.object ? projectObject(it, itemSel, arr.children) : it;
-        JSONValue out_ = payload;
         out_[c.selection] = JSONValue(items);
         return out_;
     case "object":
@@ -542,6 +570,35 @@ unittest
     auto env = selectFields(parseJSON(`{"page":{"totalItems":1},"items":[{"a":"1","b":"2"}]}`),
         ["page.totalItems"], c);
     assert(env.toString == `{"items":[{"a":"1","b":"2"}],"page":{"totalItems":1}}`, env.toString);
+}
+
+/// Envelope projections and whole-array selections in the `items` target.
+unittest
+{
+    import d8ctl.specmodel : buildCatalog;
+    import d8ctl.catalog : toCommand;
+
+    auto cat = buildCatalog(`{"paths": {"/s": {"post": {"operationId": "s",
+        "responses": {"200": {"description": "ok", "content": {"application/json":
+          {"schema": {"type": "object", "properties": {
+            "page": {"type": "object", "properties": {"totalItems": {"type": "integer"},
+              "endCursor": {"type": "string"}}},
+            "items": {"type": "array", "items": {"type": "object", "properties": {
+              "a": {"type": "string"}, "b": {"type": "string"}}}}}}}}}}}}}}`, null, "x");
+    auto c = new Command;
+    *c = toCommand(cat.commands[0]);
+    const body_ = `{"page":{"totalItems":1,"endCursor":"z"},"items":[{"a":"1","b":"2"}]}`;
+    // An explicit envelope path projects that envelope object.
+    auto r = selectFields(parseJSON(body_), ["page.totalItems"], c);
+    assert(r.toString == `{"items":[{"a":"1","b":"2"}],"page":{"totalItems":1}}`, r.toString);
+    r = selectFields(parseJSON(body_), ["page.totalItems", "items.a"], c);
+    assert(r.toString == `{"items":[{"a":"1"}],"page":{"totalItems":1}}`, r.toString);
+    // A bare envelope selection keeps it whole, even beside a child path.
+    r = selectFields(parseJSON(body_), ["page", "page.totalItems"], c);
+    assert(r.toString == parseJSON(body_).toString, r.toString);
+    // A whole-array selection wins over sibling item projections.
+    r = selectFields(parseJSON(body_), ["items", "items.a"], c);
+    assert(r.toString == parseJSON(body_).toString, r.toString);
 }
 
 /// `--fields` projection (#21): each selection target, dotted paths, unknown

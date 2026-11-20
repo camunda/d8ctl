@@ -191,6 +191,9 @@ string firstSentence(string text, size_t limit = 96)
 }
 
 private enum maxSchemaDepth = 200;
+/// Cap on response fields expanded per operation (#21): a compact spec whose
+/// properties fan out to the next component expands exponentially otherwise.
+private enum maxResponseFields = 20_000;
 
 /// Best-effort JSON type of a (possibly `$ref` / `allOf`) schema.
 private string unwrapType(Spec spec, J schema, ref bool[string] seen, size_t depth = 0)
@@ -535,8 +538,13 @@ private bool isObjectWithProps(Spec spec, J schema, bool[string] seen, size_t de
 /// One flattened property as a selectable response field. Object properties
 /// recurse, so a dotted path can go as deep as the schema declares objects;
 /// arrays of objects carry their item fields as children.
-private ModelResponseField responseFieldOf(Spec spec, string name, J prop, bool[string] seen)
+private ModelResponseField responseFieldOf(Spec spec, string name, J prop, bool[string] seen,
+    ref size_t work, size_t depth = 0)
 {
+    if (++work > maxResponseFields)
+        throw new OpenApiLimitException("response schema expands to too many fields");
+    if (depth > maxSchemaDepth)
+        throw new OpenApiLimitException("response field nesting too deep");
     ModelResponseField f;
     f.name = name;
     f.kind = classifyProp(spec, prop);
@@ -557,18 +565,19 @@ private ModelResponseField responseFieldOf(Spec spec, string name, J prop, bool[
         }
     }
     if (f.kind == "object")
-        f.children = objectFields(spec, prop, seen.dup);
+        f.children = objectFields(spec, prop, seen.dup, work, depth + 1);
     else if (f.kind == "array")
     {
         auto items = arrayItems(spec, prop, seen.dup);
         if (items !is null && isObjectWithProps(spec, items, seen.dup))
-            f.children = objectFields(spec, items, seen.dup);
+            f.children = objectFields(spec, items, seen.dup, work, depth + 1);
     }
     return f;
 }
 
 /// The selectable fields of an object schema, in declaration order.
-private ModelResponseField[] objectFields(Spec spec, J schema, bool[string] seen, size_t depth = 0)
+private ModelResponseField[] objectFields(Spec spec, J schema, bool[string] seen, ref size_t work,
+    size_t depth = 0)
 {
     ModelResponseField[] out_;
     if (schema is null || !schema.isObj || !truthy(schema))
@@ -581,10 +590,10 @@ private ModelResponseField[] objectFields(Spec spec, J schema, bool[string] seen
         if (!name.length || name in seen)
             return out_;
         seen[name] = true;
-        return objectFields(spec, spec.schemas.get(name), seen, depth + 1);
+        return objectFields(spec, spec.schemas.get(name), seen, work, depth + 1);
     }
     foreach (part; itemsOf(schema.get("allOf")))
-        foreach (f; objectFields(spec, part, seen, depth + 1))
+        foreach (f; objectFields(spec, part, seen, work, depth + 1))
         {
             import std.algorithm.searching : canFind;
 
@@ -601,7 +610,7 @@ private ModelResponseField[] objectFields(Spec spec, J schema, bool[string] seen
                 import std.algorithm.searching : canFind;
 
                 if (!out_.map!(x => x.name).canFind(n))
-                    out_ ~= responseFieldOf(spec, n, flat.props[n], seen);
+                    out_ ~= responseFieldOf(spec, n, flat.props[n], seen, work, depth + 1);
             }
     }
     auto props = schema.get("properties");
@@ -610,7 +619,7 @@ private ModelResponseField[] objectFields(Spec spec, J schema, bool[string] seen
         import std.algorithm.searching : canFind;
 
         if (!out_.map!(x => x.name).canFind(k))
-            out_ ~= responseFieldOf(spec, k, props.fields[k], seen);
+            out_ ~= responseFieldOf(spec, k, props.fields[k], seen, work, depth + 1);
     }
     return out_;
 }
@@ -631,6 +640,7 @@ private void responseModel(Spec spec, ref OpInfo op, out string target, out stri
     target = null;
     selection = null;
     fields = null;
+    size_t work;
     if (!op.hasResponseSchema || op.successStatus == 204)
         return;
     J schema;
@@ -651,7 +661,7 @@ private void responseModel(Spec spec, ref OpInfo op, out string target, out stri
         if (!propNames(spec, items, null))
             return; // an array of scalars: nothing to select
         target = "array";
-        fields = objectFields(spec, items, null);
+        fields = objectFields(spec, items, null, work);
         return;
     }
     // Object (or unknown) shape: flatten the envelope's properties.
@@ -666,7 +676,7 @@ private void responseModel(Spec spec, ref OpInfo op, out string target, out stri
     foreach (n; flat.names)
     {
         auto prop = flat.props[n];
-        auto f = responseFieldOf(spec, n, prop, null);
+        auto f = responseFieldOf(spec, n, prop, null, work);
         if (f.kind != "array")
         {
             // classifyProp reports a oneOf/anyOf as `json`; an array variant
@@ -676,7 +686,7 @@ private void responseModel(Spec spec, ref OpInfo op, out string target, out stri
                 f.kind = "array";
                 auto items = arrayItems(spec, prop, null);
                 if (items !is null && isObjectWithProps(spec, items, null))
-                    f.children = objectFields(spec, items, null);
+                    f.children = objectFields(spec, items, null, work);
             }
         }
         if (f.kind != "array" || !f.children.length)
@@ -694,7 +704,7 @@ private void responseModel(Spec spec, ref OpInfo op, out string target, out stri
         target = "items";
         selection = arrays[0].name;
         foreach (n; flat.names)
-            fields ~= n == selection ? arrays[0] : responseFieldOf(spec, n, flat.props[n], null);
+            fields ~= n == selection ? arrays[0] : responseFieldOf(spec, n, flat.props[n], null, work);
         return;
     }
     if (arrays.length > 1)
@@ -705,7 +715,7 @@ private void responseModel(Spec spec, ref OpInfo op, out string target, out stri
     }
     target = "object";
     foreach (n; flat.names)
-        fields ~= responseFieldOf(spec, n, flat.props[n], null);
+        fields ~= responseFieldOf(spec, n, flat.props[n], null, work);
 }
 
 /// The (possibly `$ref`/`allOf`/object-union-nested) declaration of property
@@ -2059,4 +2069,39 @@ unittest
             "fields": {"type": "string"}, "note": {"type": "string"}}}}}},
         "responses": {"200": {"description": "ok"}}}}}}`, null, "t");
     assert(cat.commands[0].bodyFields.map!(f => f.name).array == ["note"]);
+}
+
+/// A compact spec whose properties fan out to the next component (2^N
+/// response fields) or nest beyond the depth cap fails closed instead of
+/// hanging or exhausting memory (#21).
+unittest
+{
+    import std.conv : to;
+    import std.exception : assertThrown;
+
+    string schemas;
+    foreach (i; 0 .. 40)
+        schemas ~= `"S` ~ i.to!string ~ `": {"type": "object", "properties": {`
+            ~ `"a": {"$ref": "#/components/schemas/S` ~ (i + 1).to!string ~ `"},`
+            ~ `"b": {"$ref": "#/components/schemas/S` ~ (i + 1).to!string ~ `"}}},`;
+    schemas ~= `"S40": {"type": "object", "properties": {"x": {"type": "string"}}}`;
+    const spec = `{"paths": {"/x": {"get": {"operationId": "getX", "responses": {"200": {
+        "description": "ok", "content": {"application/json": {"schema":
+        {"$ref": "#/components/schemas/S0"}}}}}}}}, "components": {"schemas": {` ~ schemas ~ `}}}`;
+    enum meta = `{"operations": [{"operationId": "getX", "method": "get", "path": "/x",
+        "successStatus": "200", "successResponseSchemaRef": "S0"}]}`;
+    assertThrown!OpenApiLimitException(buildCatalog(spec, meta, "t"));
+
+    // A long acyclic single-property chain exceeds the cumulative depth cap.
+    string chain;
+    foreach (i; 0 .. 300)
+        chain ~= `"C` ~ i.to!string ~ `": {"type": "object", "properties": {"n": {"$ref": "#/components/schemas/C`
+            ~ (i + 1).to!string ~ `"}}},`;
+    chain ~= `"C300": {"type": "object", "properties": {"x": {"type": "string"}}}`;
+    const spec2 = `{"paths": {"/x": {"get": {"operationId": "getX", "responses": {"200": {
+        "description": "ok", "content": {"application/json": {"schema":
+        {"$ref": "#/components/schemas/C0"}}}}}}}}, "components": {"schemas": {` ~ chain ~ `}}}`;
+    enum meta2 = `{"operations": [{"operationId": "getX", "method": "get", "path": "/x",
+        "successStatus": "200", "successResponseSchemaRef": "C0"}]}`;
+    assertThrown!OpenApiLimitException(buildCatalog(spec2, meta2, "t"));
 }
