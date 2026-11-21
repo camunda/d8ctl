@@ -13,3 +13,5 @@ external-spec/upstream/
 package-lock.json
 /scripts/d8ctl-generate
 .next-version
+npm-out/
+npm-dirs.txt
