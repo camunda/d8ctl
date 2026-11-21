@@ -4,4 +4,4 @@ module d8ctl.version_;
 @safe:
 
 /// SemVer of this CLI (`dub.json` `version`, git tag `v` + this string).
-enum cliVersion = "0.8.0";
+enum cliVersion = "0.8.1";

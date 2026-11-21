@@ -1,3 +1,10 @@
+## [0.8.1](https://github.com/camunda/d8ctl/compare/v0.8.0...v0.8.1) (2026-11-21)
+
+
+### Bug Fixes
+
+* **help:** keep full field descriptions for --help --json ([#24](https://github.com/camunda/d8ctl/issues/24)) ([4e92086](https://github.com/camunda/d8ctl/commit/4e9208606d546044191a9fe0e76317becdd43cfd)), closes [#23](https://github.com/camunda/d8ctl/issues/23)
+
 # [0.8.0](https://github.com/camunda/d8ctl/compare/v0.7.2...v0.8.0) (2026-11-20)
 
 
