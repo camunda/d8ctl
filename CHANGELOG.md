@@ -1,3 +1,10 @@
+## [0.9.2](https://github.com/camunda/d8ctl/compare/v0.9.1...v0.9.2) (2026-11-21)
+
+
+### Bug Fixes
+
+* **release:** binaries report the version they are released as; add windows-amd64 ([#31](https://github.com/camunda/d8ctl/issues/31)) ([8224132](https://github.com/camunda/d8ctl/commit/822413297ab36a27c3e03d5d2b22556f6d91b61c)), closes [#18](https://github.com/camunda/d8ctl/issues/18) [#14](https://github.com/camunda/d8ctl/issues/14)
+
 ## [0.9.1](https://github.com/camunda/d8ctl/compare/v0.9.0...v0.9.1) (2026-11-21)
 
 
