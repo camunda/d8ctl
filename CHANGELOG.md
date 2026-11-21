@@ -1,3 +1,10 @@
+# [0.11.0](https://github.com/camunda/d8ctl/compare/v0.10.0...v0.11.0) (2026-11-21)
+
+
+### Features
+
+* shell completion for bash, zsh, fish and PowerShell ([#35](https://github.com/camunda/d8ctl/issues/35)) ([538556b](https://github.com/camunda/d8ctl/commit/538556b58bbc551aabd116802db8a6f379f47493)), closes [#34](https://github.com/camunda/d8ctl/issues/34)
+
 # [0.10.0](https://github.com/camunda/d8ctl/compare/v0.9.2...v0.10.0) (2026-11-21)
 
 
