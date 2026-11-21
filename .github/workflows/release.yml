@@ -147,3 +147,43 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx semantic-release
+
+  # npm: @camunda8/d8ctl + one package per platform, from the same binaries.
+  # Off until the repo variable NPM_PUBLISH is 'true' (after the first manual
+  # publish and npm Trusted Publisher setup; see npm/README.md). Trusted
+  # publishing (OIDC): no token. Re-runs skip versions already on npm.
+  npm:
+    name: Publish to npm
+    needs: [version, release]
+    if: vars.NPM_PUBLISH == 'true' && needs.version.outputs.next != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - name: npm >= 11.5 (trusted publishing)
+        run: npm install -g npm@latest
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Stage packages
+        run: bash scripts/npm-stage.sh "${{ needs.version.outputs.next }}" release-assets npm-out | tee npm-dirs.txt
+      - name: Publish (platform packages first)
+        run: |
+          set -euo pipefail
+          while read -r dir; do
+            name="$(jq -r .name "$dir/package.json")"
+            ver="${{ needs.version.outputs.next }}"
+            if npm view "$name@$ver" version > /dev/null 2>&1; then
+              echo "$name@$ver already published; skipping"
+              continue
+            fi
+            npm publish "$dir" --provenance --access public
+          done < npm-dirs.txt

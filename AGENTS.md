@@ -37,7 +37,8 @@ Transport: `camunda-orchestration-sdk:runtime` from
 | `scripts/generate.d` | Thin catalog generator (`dub run --single`). Reads `external-spec/bundled/`, calls `specmodel`. |
 | `external-spec/bundled/` | Bundled spec + `spec-metadata.json` (`npm run bundle:spec`). Committed. |
 | `scripts/check-safe.sh` | `@safe` ratchet (same contract as the SDK). |
-| `scripts/prepare-release.sh` | Stamps `dub.json` + `version_.d` for semantic-release. |
+| `scripts/prepare-release.sh` | Stamps `dub.json` + `version_.d` (the release builds, then semantic-release). |
+| `scripts/npm-stage.sh`, `npm/` | npm packages from the release binaries: `@camunda8/d8ctl` (launcher `npm/d8ctl/bin/d8ctl.js`) + one per platform. `npm/README.md` has the first-publish steps. |
 | `docs/` | GitHub Pages explainer (`camunda.github.io/d8ctl`). |
 
 ## Strictness
@@ -48,10 +49,13 @@ Release keeps `-boundscheck=on`. No extra dub packages beyond the SDK's `:runtim
 
 ## Releases
 
-Pushes to `main` run `.github/workflows/release.yml`: build linux/darwin
-amd64+arm64, then semantic-release tags `vX.Y.Z` and attaches the binaries
-to a GitHub Release. Homebrew tap and `curl | sh` install are tracked as
-issues, not shipped yet.
+Pushes to `main` run `.github/workflows/release.yml`:
+1. `version` dry-runs semantic-release to get the next version (none due means nothing else runs).
+2. `build` stamps it and builds linux/darwin amd64+arm64 and windows amd64; each binary must report that version.
+3. `release` (semantic-release) tags `vX.Y.Z` and attaches the binaries to a GitHub Release.
+4. `npm` publishes the same binaries to npm when the repo variable `NPM_PUBLISH` is `true`.
+
+Homebrew lives in [camunda/homebrew-tap](https://github.com/camunda/homebrew-tap), which picks up new releases itself. `curl | sh` is #3.
 
 ## Commands
 
