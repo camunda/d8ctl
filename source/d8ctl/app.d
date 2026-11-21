@@ -97,9 +97,11 @@ int run(string[] args, Dirs dirs)
         {
             auto sources = loadSources(dirs);
             foreach (w; sources.warnings) warn(r, w);
+            import std.process : environment;
+
             stdOut.write(extensionCommand(dirs.d8ctl, sources, r.positionals,
                 r.flags.named, r.flags.bare, &fetchSpecHttp, r.flags.profile,
-                r.flags.config, r.flags.headers));
+                r.flags.config, r.flags.headers, environment.get("D8CTL_PROFILE")));
             return 0;
         }
         catch (Exception e)
@@ -205,7 +207,8 @@ Failure classify(Exception e, string operation)
 
 /// Run one extension command against its own base URL. The profile (the
 /// manifest's default or `--profile`) supplies only auth and headers — never
-/// its cluster address; `--camunda-*` switches and `--header` apply on top.
+/// its cluster address — except for a profile-relative extension (#25), whose
+/// paths resolve against the selected profile's origin; `--camunda-*` switches and `--header` apply on top.
 /// With no profile, requests send no auth and no ambient default headers.
 /// The manifest is the snapshot parsed with the command model (one cache
 /// generation): an update between parse and invoke never pairs an old model
@@ -217,10 +220,22 @@ private int invokeExtension(Dirs dirs, const ref Sources sources, const ref Resu
         m = *r.extManifest;
     else
         m = readManifest(dirs.d8ctl, r.ns); // defensive: parse always sets it
-    auto profileName = r.flags.profile.length ? r.flags.profile : m.profile;
+    import std.process : environment;
+
+    // A relative extension (#25) follows the selected profile, like `cluster`.
+    string profileName, origin;
+    if (m.relative)
+    {
+        auto route = relativeRoute(sources, r.flags.profile, environment.get("D8CTL_PROFILE"));
+        profileName = route.profile;
+        origin = route.origin;
+    }
+    else
+        profileName = r.flags.profile.length ? r.flags.profile : m.profile;
+    auto fullBase = baseUrlFor(m, origin);
     // Root-server operations go to the bare origin, not the spec's
     // top-level server path (which need not end in the SDK's `/v2`).
-    auto base = r.command !is null && r.command.rootServer ? originOf(m.baseUrl) : m.baseUrl;
+    auto base = r.command !is null && r.command.rootServer ? originOf(fullBase) : fullBase;
     auto overrides = extensionConnection(sources, profileName, r.flags.config,
         r.flags.headers, base);
     auto client = extensionTransport(overrides);
