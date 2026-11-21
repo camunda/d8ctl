@@ -107,6 +107,7 @@ int run(string[] args, Dirs dirs)
         catch (Exception e)
             return fail(r, classify(e, null));
     case Kind.invoke:
+        auto stats = new RetryStats;
         try
         {
             import std.process : environment;
@@ -114,22 +115,25 @@ int run(string[] args, Dirs dirs)
             auto sources = loadSources(dirs);
             foreach (w; sources.warnings) warn(r, w);
             if (r.extCatalog !is null)
-                return invokeExtension(dirs, sources, r);
+                return invokeExtension(dirs, sources, r, stats);
             auto conn = resolveConnection(sources, r.flags.profile,
                 environment.get("D8CTL_PROFILE"), r.flags.config,
                 (string k) => environment.get(k), r.flags.headers);
-            auto client = Transport.fromEnv(conn.overrides);
+            auto overrides = conn.overrides.dup;
+            applyRetryDefaults(overrides, (string k) => environment.get(k));
+            auto client = countedTransport(overrides, stats,
+                (string[string] o) => Transport.fromEnv(o));
             client.userAgent = "d8ctl/" ~ cliVersion;
             // Dry-run preview: env-only CAMUNDA_DEFAULT_HEADERS never enter
             // conn.overrides (resolveConnection leaves them to the SDK), but
             // Transport.fromEnv still sends them — show them either way.
             auto previewHeaders = conn.overrides.get(headersKey,
                 environment.get(headersKey, null));
-            writeResult(invoke(client, r, previewHeaders, null, prettyJson(r)));
+            writeResult(invoke(client, r, previewHeaders, null, prettyJson(r), stats));
             return 0;
         }
         catch (Exception e)
-            return fail(r, classify(e, r.command is null ? null : r.command.operationId));
+            return fail(r, classify(e, r.command is null ? null : r.command.operationId, stats));
     }
 }
 
@@ -179,11 +183,17 @@ private void writeResult(string out_)
 }
 
 /// The failure for an exception from parsing, config or a request.
-Failure classify(Exception e, string operation)
+Failure classify(Exception e, string operation, const RetryStats stats = null)
 {
     Failure f;
     f.message = e.msg;
     f.operation = operation;
+    if (stats !is null && stats.retried)
+    {
+        f.attempts = stats.attempts;
+        f.elapsedMs = stats.elapsedMs;
+        f.retryNote = stats.note;
+    }
     if (auto api = cast(ApiException) e)
     {
         f.kind = kindOfStatus(api.status);
@@ -213,7 +223,8 @@ Failure classify(Exception e, string operation)
 /// The manifest is the snapshot parsed with the command model (one cache
 /// generation): an update between parse and invoke never pairs an old model
 /// with a new base URL or profile.
-private int invokeExtension(Dirs dirs, const ref Sources sources, const ref Result r)
+private int invokeExtension(Dirs dirs, const ref Sources sources, const ref Result r,
+    RetryStats stats)
 {
     Manifest m;
     if (r.extManifest !is null)
@@ -238,10 +249,10 @@ private int invokeExtension(Dirs dirs, const ref Sources sources, const ref Resu
     auto base = r.command !is null && r.command.rootServer ? originOf(fullBase) : fullBase;
     auto overrides = extensionConnection(sources, profileName, r.flags.config,
         r.flags.headers, base);
-    auto client = extensionTransport(overrides);
+    auto client = countedTransport(overrides, stats, (string[string] o) => extensionTransport(o));
     client.userAgent = "d8ctl/" ~ cliVersion;
     auto previewHeaders = overrides.get(headersKey, null);
-    writeResult(invoke(client, r, previewHeaders, base, prettyJson(r)));
+    writeResult(invoke(client, r, previewHeaders, base, prettyJson(r), stats));
     return 0;
 }
 

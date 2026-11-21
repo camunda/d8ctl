@@ -90,14 +90,22 @@ d8ctl is built for agents and scripts, so its output is a contract (#16):
 - **Retries.** Every request — cluster and extension calls, and extension
   spec downloads — is retried on a network error (dropped connection, reset,
   TLS handshake failure, timeout) and on HTTP 429/502/503/504, with
-  exponential backoff and full jitter. Defaults: 3 attempts, 100 ms base,
-  2 s cap. For a flaky route raise them per call
+  exponential backoff and full jitter. d8ctl uses a CLI-sized window: 6
+  attempts, 250 ms base, 4 s cap — about 10 s worst case, ~5 s on average,
+  so a few seconds of flaky link (a Tailscale Funnel TLS drop) does not fail
+  the step. (The SDK's own defaults — 3 attempts, 100 ms, 2 s — give up within
+  ~0.3 s; they suit long-running workers.) Precedence: `--camunda-*` switch >
+  profile > environment > d8ctl default. Tune per call
   (`--camunda-sdk-http-retry-max-attempts=10
   --camunda-sdk-http-retry-max-delay-ms=5000`) or in the profile
   (`CAMUNDA_SDK_HTTP_RETRY_MAX_ATTEMPTS`, `…_BASE_DELAY_MS`, `…_MAX_DELAY_MS`).
+  A failure after retries says so: the error has `"attempts":6,"elapsedMs":8123`
+  and the message ends "(after 6 attempts over 8.1 s)"; a failure without
+  them failed on the first attempt (not retryable).
   POST/PUT/PATCH are retried too, so a request that reached the server
   before the connection dropped can be applied twice — the same trade-off
-  as `curl --retry`.
+  as `curl --retry`. A retried write's error adds "retried, the request may
+  have been applied": check state before retrying a non-idempotent action.
 - **`--fields=a,b.c`** trims the JSON response client-side (the API has no
   server-side selection). It applies to the operation's response schema: an
   array → each item; an object with one array of objects (`items`) → each item,

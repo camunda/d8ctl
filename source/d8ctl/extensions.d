@@ -372,8 +372,14 @@ Transport extensionTransport(string[string] overrides) @safe
     scope (exit)
         foreach (k, v; saved)
             setEnv(k, v);
+    // The CLI retry window (#29) where the overrides set none; the
+    // environment is masked here, so only the overrides count.
+    import d8ctl.dispatch : applyRetryDefaults;
+
+    auto withDefaults = overrides.dup;
+    applyRetryDefaults(withDefaults);
     CamundaOptions o;
-    o.config = overrides;
+    o.config = withDefaults;
     return new Transport(o);
 }
 
@@ -1929,6 +1935,30 @@ version (unittest)
         out_.put(accepted);
     }
 
+    /// Accepts `n` connections and closes each at once, before any
+    /// ServerHello: an https client sees a TLS connect error (the Funnel
+    /// drop of #29). Sends the port, then the number accepted.
+    private void tlsRefuser(int n, Chan!int out_)
+    {
+        import std.socket : InternetAddress, SocketOption, SocketOptionLevel, TcpSocket;
+
+        auto listener = new TcpSocket();
+        scope (exit)
+            listener.close();
+        listener.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, true);
+        listener.bind(new InternetAddress("127.0.0.1", InternetAddress.PORT_ANY));
+        listener.listen(8);
+        out_.put((cast(InternetAddress) listener.localAddress).port);
+        int accepted;
+        foreach (i; 0 .. n)
+        {
+            auto c = listener.accept();
+            accepted++;
+            c.close();
+        }
+        out_.put(accepted);
+    }
+
     import camunda.safeio : Chan;
 
     private int startFlaky(int fail, int serve, int status, string body_, Chan!int ch)
@@ -2020,4 +2050,69 @@ unittest
         assert(e.msg[$ - 8 .. $] == "HTTP 503", e.msg);
     ch.take(accepted);
     assert(accepted == 2, accepted.to!string);
+}
+
+/// #29: the CLI retry window. A drop-prone link survives with the d8ctl
+/// defaults (6 attempts, ~10 s worst case), and on exhaustion the attempts
+/// and their span are recorded for the error envelope — here for a TLS
+/// handshake refused before ServerHello, like a Tailscale Funnel drop.
+unittest
+{
+    import camunda.errors : NetworkException;
+    import camunda.safeio : spawn;
+    import camunda.transport : ServerBase;
+    import d8ctl.dispatch : RetryStats, countedTransport, retrying;
+    import std.conv : to;
+    import std.json : JSONValue;
+    import std.string : indexOf;
+
+    int accepted;
+
+    // Five drops then an answer: the SDK default (3 attempts) would fail,
+    // the CLI default (6) succeeds well inside its window.
+    auto ch = Chan!int.make;
+    auto port = startFlaky(5, 1, 0, `{"ok":true}`, ch);
+    string[string] conn = [
+        "CAMUNDA_REST_ADDRESS": "http://127.0.0.1:" ~ port.to!string,
+        "CAMUNDA_AUTH_STRATEGY": "NONE",
+    ];
+    auto stats = new RetryStats;
+    auto client = countedTransport(conn, stats, (string[string] o) => extensionTransport(o));
+    assert(stats.config.maxAttempts == 6 && stats.config.baseDelayMs == 250
+        && stats.config.maxDelayMs == 4000);
+    auto got = retrying!JSONValue(client, stats, "GET",
+        () => client.requestJson("GET", "/ping", JSONValue(null), null, ServerBase.root));
+    assert(got["ok"].boolean);
+    ch.take(accepted);
+    assert(accepted == 6, accepted.to!string);
+    assert(stats.attempts == 6);
+    // Worst case: 250 + 500 + 1000 + 2000 + 4000 ms of backoff.
+    assert(stats.elapsedMs < 7750 + 2000, stats.elapsedMs.to!string);
+
+    // TLS refused on every attempt: the error comes after exactly the
+    // configured attempts, and they are counted.
+    ch = Chan!int.make;
+    spawn(&tlsRefuser, 3, ch);
+    ch.take(port);
+    conn = [
+        "CAMUNDA_REST_ADDRESS": "https://127.0.0.1:" ~ port.to!string,
+        "CAMUNDA_AUTH_STRATEGY": "NONE",
+        "CAMUNDA_SDK_HTTP_RETRY_BASE_DELAY_MS": "1",
+        "CAMUNDA_SDK_HTTP_RETRY_MAX_DELAY_MS": "5",
+        "CAMUNDA_SDK_HTTP_RETRY_MAX_ATTEMPTS": "3",
+    ];
+    stats = new RetryStats;
+    client = countedTransport(conn, stats, (string[string] o) => extensionTransport(o));
+    bool threw;
+    try
+        cast(void) retrying!JSONValue(client, stats, "POST",
+            () => client.requestJson("POST", "/x", JSONValue(null), null, ServerBase.root));
+    catch (NetworkException)
+        threw = true;
+    assert(threw);
+    ch.take(accepted);
+    assert(accepted == 3, accepted.to!string);
+    assert(stats.attempts == 3 && stats.elapsedMs >= 0);
+    assert(stats.note.indexOf("after 3 attempts over") >= 0, stats.note);
+    assert(stats.note.indexOf("may have been applied") >= 0, stats.note);
 }

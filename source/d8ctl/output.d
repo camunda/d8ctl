@@ -80,6 +80,11 @@ struct Failure
     string operation;
     /// The response body, when there was one (an RFC 9457 problem, usually).
     string body_;
+    /// Attempts made and their span, when the call was retried (#29).
+    uint attempts;
+    long elapsedMs;
+    /// Appended to the message: " (after N attempts over X s[; …])".
+    string retryNote;
 }
 
 /// How to write errors.
@@ -126,6 +131,12 @@ string errorJson(const ref Failure f)
         else
             e["body"] = f.body_;
     }
+    if (f.attempts > 1)
+    {
+        e["attempts"] = f.attempts;
+        e["elapsedMs"] = f.elapsedMs;
+    }
+    if (f.retryNote.length) e["message"] = e["message"].str ~ f.retryNote;
     JSONValue root = ["error": e];
     return root.toString(JSONOptions.doNotEscapeSlashes);
 }
@@ -133,7 +144,7 @@ string errorJson(const ref Failure f)
 /// The error as d8ctl's text line (`d8ctl: <message>`).
 string errorText(const ref Failure f)
 {
-    return "d8ctl: " ~ f.message;
+    return "d8ctl: " ~ f.message ~ f.retryNote;
 }
 
 /// A JSON response for stdout: pretty or compact.
@@ -784,4 +795,17 @@ unittest
     try selectFields(in_, ["doc.camunda.nope"], c);
     catch (FieldsException) threw = true;
     assert(threw);
+}
+
+/// #29: a retried failure carries its attempts and span.
+unittest
+{
+    auto f = Failure(ErrorKind.network, "network error: SSL connect error", 0, "getTopology", null,
+        6, 8123, " (after 6 attempts over 8.1 s)");
+    auto j = parseJSON(errorJson(f))["error"];
+    assert(j["attempts"].integer == 6 && j["elapsedMs"].integer == 8123);
+    assert(j["message"].str == "network error: SSL connect error (after 6 attempts over 8.1 s)", j["message"].str);
+    assert(errorText(f) == "d8ctl: network error: SSL connect error (after 6 attempts over 8.1 s)");
+    auto once = Failure(ErrorKind.network, "x");
+    assert(("attempts" in parseJSON(errorJson(once))["error"].objectNoRef) is null);
 }
