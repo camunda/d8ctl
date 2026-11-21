@@ -87,10 +87,24 @@ d8ctl is built for agents and scripts, so its output is a contract (#16):
   | 6 | `server`: 5xx or backpressure |
   | 7 | `network`: connection, timeout or TLS |
 
+- **Retries.** Every request — cluster and extension calls, and extension
+  spec downloads — is retried on a network error (dropped connection, reset,
+  TLS handshake failure, timeout) and on HTTP 429/502/503/504, with
+  exponential backoff and full jitter. Defaults: 3 attempts, 100 ms base,
+  2 s cap. For a flaky route raise them per call
+  (`--camunda-sdk-http-retry-max-attempts=10
+  --camunda-sdk-http-retry-max-delay-ms=5000`) or in the profile
+  (`CAMUNDA_SDK_HTTP_RETRY_MAX_ATTEMPTS`, `…_BASE_DELAY_MS`, `…_MAX_DELAY_MS`).
+  POST/PUT/PATCH are retried too, so a request that reached the server
+  before the connection dropped can be applied twice — the same trade-off
+  as `curl --retry`.
 - **`--fields=a,b.c`** trims the JSON response client-side (the API has no
   server-side selection). It applies to the operation's response schema: an
   array → each item; an object with one array of objects (`items`) → each item,
-  other top-level fields (`page`) kept; otherwise the object itself. With
+  other top-level fields (`page`) kept, unless you name one: then you get
+  exactly the fields you named (`--fields=page.totalItems` prints only the
+  count; add `items.x` or bare `items` to get items too); otherwise the
+  object itself. With
   several arrays, prefix the array name (`--fields=prs.prKey,prs.status`).
   Dotted paths keep nesting. The whole selection is validated against the
   schema before the request is sent: unknown fields are a usage error
