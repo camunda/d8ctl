@@ -265,11 +265,27 @@ d8ctl profile add gw --camunda-rest-address=https://gw/v2 --header 'X-Api-Key: �
 
 `d8ctl profile --help` lists every switch.
 
+## Install
+
+```sh
+brew install camunda/tap/d8ctl        # macOS, Linux
+npm install -g @camunda8/d8ctl        # or: npx @camunda8/d8ctl …
+```
+
+Or download the binary for your platform from
+[Releases](https://github.com/camunda/d8ctl/releases): `d8ctl-darwin-arm64`,
+`d8ctl-darwin-amd64`, `d8ctl-linux-amd64`, `d8ctl-linux-arm64`, or
+`d8ctl-windows-amd64.exe`. Each has a `.sha256` file to check it against. The
+Linux binaries need glibc and `libcurl4`. On Windows d8ctl uses the system's
+HTTP stack (WinHTTP), so nothing else is needed.
+
 ## Releases
 
-Pushes to `main` cut a GitHub Release (`vX.Y.Z`) with linux/darwin
-amd64+arm64 binaries. Install from the release assets until Homebrew /
-`curl | sh` land. The explainer site is `docs/` →
+Pushes to `main` cut a GitHub Release (`vX.Y.Z`) with the binaries above,
+built after the version is resolved, so each reports its own version. The
+same binaries go to npm ([npm/README.md](npm/README.md)), and the Homebrew
+tap [camunda/homebrew-tap](https://github.com/camunda/homebrew-tap) picks
+up new releases on its own. The explainer site is `docs/` →
 [camunda.github.io/d8ctl](https://camunda.github.io/d8ctl/).
 
 ## Generation
