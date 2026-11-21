@@ -16,8 +16,39 @@ permissions:
   id-token: write
 
 jobs:
+  # The version this push will release, worked out before anything is built,
+  # so every binary reports the version it is released as. A dry run of the
+  # same semantic-release config; empty when no release is due.
+  version:
+    name: Next version
+    runs-on: ubuntu-latest
+    outputs:
+      next: ${{ steps.next.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Fetch remote refs for semantic-release
+        run: git fetch origin '+refs/heads/*:refs/remotes/origin/*' --prune
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install
+      - id: next
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          rm -f .next-version
+          npx semantic-release --dry-run
+          v="$(cat .next-version 2>/dev/null || true)"
+          echo "next version: ${v:-none}"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build ${{ matrix.asset }}
+    needs: version
+    if: needs.version.outputs.next != ''
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -31,6 +62,11 @@ jobs:
             asset: d8ctl-darwin-arm64
           - os: macos-15-intel
             asset: d8ctl-darwin-amd64
+          - os: windows-latest
+            asset: d8ctl-windows-amd64.exe
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v5
       - uses: dlang-community/setup-dlang@v2
@@ -39,6 +75,8 @@ jobs:
       - name: Linux build dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libcurl4-openssl-dev zlib1g-dev
+      - name: Stamp ${{ needs.version.outputs.next }}
+        run: bash scripts/prepare-release.sh "${{ needs.version.outputs.next }}"
       - run: dub test
       - run: dub build -b release
       - name: Stage binary
@@ -46,13 +84,21 @@ jobs:
           set -euo pipefail
           mkdir -p release-assets
           bin=d8ctl
+          [ "$RUNNER_OS" = Windows ] && bin=d8ctl.exe
           if [ ! -f "$bin" ]; then
             echo "::error::release binary $bin not found"
             exit 1
           fi
+          got="$(./"$bin" --version | tr -d '\r')"
+          case "$got" in
+            "d8ctl ${{ needs.version.outputs.next }} "*) ;;
+            *) echo "::error::$bin reports '$got', expected ${{ needs.version.outputs.next }}"; exit 1 ;;
+          esac
           cp "$bin" "release-assets/${{ matrix.asset }}"
           chmod +x "release-assets/${{ matrix.asset }}"
-          (cd release-assets && shasum -a 256 "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256")
+          # sha256sum is on every runner (coreutils; Git Bash on Windows); macOS has shasum.
+          if command -v sha256sum > /dev/null; then sum="sha256sum"; else sum="shasum -a 256"; fi
+          (cd release-assets && $sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256")
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
@@ -61,7 +107,7 @@ jobs:
 
   release:
     name: Version & GitHub Release
-    needs: build
+    needs: [version, build]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
