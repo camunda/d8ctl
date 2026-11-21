@@ -279,6 +279,25 @@ Or download the binary for your platform from
 Linux binaries need glibc and `libcurl4`. On Windows d8ctl uses the system's
 HTTP stack (WinHTTP), so nothing else is needed.
 
+### Shell completion
+
+Homebrew sets up completion for bash, zsh and fish. Otherwise:
+
+```sh
+d8ctl completion install                # adds it to ~/.bashrc or ~/.zshrc, or fish's completions dir
+source <(d8ctl completion bash)         # or zsh; just this session
+d8ctl completion fish | source
+d8ctl completion powershell | Out-String | Invoke-Expression   # add to $PROFILE
+```
+
+Tab completes namespaces (including installed extensions), resources and
+verbs in either order, each command's flags with their descriptions, values
+the spec lists (`--ownerType=<Tab>`), `true`/`false`, profile names and
+extension names. The script asks d8ctl on each Tab (`d8ctl __complete
+<words…>`, a few milliseconds, never the network), so a new extension or
+profile completes at once. Agents can call `__complete` too: it prints one
+`value<TAB>description` per line, then a `:N` directive line (1 = no space after).
+
 ## Releases
 
 Pushes to `main` cut a GitHub Release (`vX.Y.Z`) with the binaries above,

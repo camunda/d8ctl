@@ -4,6 +4,7 @@ module d8ctl.app;
 @safe:
 
 import camunda.runtime;
+import d8ctl.completion : complete, install, script;
 import d8ctl.catalog : Command, catalogOperationCount, commandsFor, commandsIn, commandsUnderPath, namespaces;
 import d8ctl.extensions;
 import d8ctl.version_ : cliVersion;
@@ -25,6 +26,15 @@ int run(string[] args, Dirs dirs)
     // args[0] is the program name.
     auto argv = args.length > 1 ? args[1 .. $] : (string[]).init;
     Result r;
+    // Shell completion (#34) runs before the parser: `__complete` must
+    // answer for half-typed command lines the parser would reject.
+    if (argv.length && argv[0] == "__complete")
+    {
+        stdOut.write(complete(argv[1 .. $], dirs));
+        return 0;
+    }
+    if (argv.length && argv[0] == "completion")
+        return completionCommand(argv[1 .. $]);
     try
         r = parse(argv, dirs.d8ctl);
     catch (ExtensionException e)
@@ -132,6 +142,61 @@ int run(string[] args, Dirs dirs)
             return fail(r, classify(e, r.command is null ? null : r.command.operationId));
     }
 }
+
+/// `d8ctl completion bash|zsh|fish|powershell|install [--shell=…]`.
+private int completionCommand(string[] args)
+{
+    import std.algorithm : startsWith;
+    import std.process : environment;
+
+    Result r;
+    string shell;
+    string[] pos;
+    foreach (a; args)
+    {
+        if (a.startsWith("--shell="))
+            shell = a[8 .. $];
+        else if (a == "--help" || a == "-h")
+            pos = ["help"];
+        else
+            pos ~= a;
+    }
+    if (!pos.length || pos[0] == "help")
+    {
+        stdOut.write(completionHelp);
+        return pos.length ? 0 : fail(r, Failure(ErrorKind.usage,
+            "completion needs a shell: bash, zsh, fish, powershell or install"));
+    }
+    try
+    {
+        if (pos[0] == "install")
+            stdOut.write(install(shell, environment.get("HOME", environment.get("USERPROFILE", "")),
+                environment.get("SHELL", "")));
+        else
+            stdOut.write(script(pos[0]));
+        return 0;
+    }
+    catch (Exception e)
+        return fail(r, classify(e, null));
+}
+
+private enum completionHelp = `d8ctl completion — shell completion
+
+Usage:
+  d8ctl completion bash|zsh|fish|powershell   Print the script
+  d8ctl completion install [--shell=bash|zsh|fish]
+                                              Add it to your shell's startup
+
+Load it for this session:
+  bash         source <(d8ctl completion bash)
+  zsh          source <(d8ctl completion zsh)
+  fish         d8ctl completion fish | source
+  PowerShell   d8ctl completion powershell | Out-String | Invoke-Expression
+
+Homebrew installs completion for bash, zsh and fish automatically.
+Completions come from d8ctl itself on each Tab (d8ctl __complete <words…>),
+so new extensions and profiles complete at once. No network calls.
+`;
 
 // ---- Output contract (#16; see d8ctl.output) ----
 
@@ -260,4 +325,9 @@ unittest
     assert(run(["d8ctl", "cluster", "topology", "get", "--output=yaml"]) == 2);
     assert(run(["d8ctl", "cluster", "topology", "get", "--output"]) == 2);
     assert(catalogOperationCount > 200); // moves with the upstream spec
+    // Shell completion (#34).
+    assert(run(["d8ctl", "completion", "zsh"]) == 0);
+    assert(run(["d8ctl", "completion"]) == 2);
+    assert(run(["d8ctl", "completion", "tcsh"]) == 2);
+    assert(run(["d8ctl", "__complete", "cluster", ""]) == 0);
 }

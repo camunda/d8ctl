@@ -24,7 +24,8 @@ string rootHelp()
     buf.put("        [--pretty|--compact] [--output=json|text] [--fields=a,b.c]\n");
     buf.put("        [--profile=<name>] [--camunda-<key>=<value> …] cluster …\n");
     buf.put("  d8ctl profile list|show|add|use|remove …\n");
-    buf.put("  d8ctl extension add|list|update|remove …\n\n");
+    buf.put("  d8ctl extension add|list|update|remove …\n");
+    buf.put("  d8ctl completion bash|zsh|fish|powershell|install\n\n");
     buf.put(format("The Orchestration Cluster surface is under `cluster` (%s operations).\n", catalogOperationCount));
     buf.put("Both `cluster <resource> <verb>` and `cluster <verb> <resource>` parse.\n");
     buf.put("`--order` only changes how help lists them (default: resource).\n");
@@ -240,6 +241,8 @@ string commandHelp(const Command* c)
             buf.put(format(" %s --%s=%s\n", star, f.name, hint));
             if (f.doc.length)
                 buf.put(format("               %s\n", firstSentence(f.doc)));
+            if (f.values.length)
+                buf.put(format("               One of: %-(%s, %)\n", f.values));
         }
         buf.put("  * required unless supplied via --body.\n");
         buf.put("  Nested objects/arrays: pass JSON, e.g. --filter='{\"state\":\"ACTIVE\"}'.\n");
@@ -420,6 +423,7 @@ JSONValue commandJson(const ref Command c, bool detail)
         JSONValue fj = ["name": JSONValue(f.name), "in": JSONValue("body"),
             "type": JSONValue(f.kind), "required": JSONValue(f.required)];
         if (f.doc.length) fj["description"] = f.doc;
+        if (f.values.length) fj["enum"] = f.values.dup;
         flags ~= fj;
     }
     j["flags"] = flags;
