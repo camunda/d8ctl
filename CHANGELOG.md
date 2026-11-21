@@ -1,3 +1,10 @@
+# [0.9.0](https://github.com/camunda/d8ctl/compare/v0.8.1...v0.9.0) (2026-11-21)
+
+
+### Features
+
+* **extensions:** profile-relative extensions follow the selected profile ([#26](https://github.com/camunda/d8ctl/issues/26)) ([56b132c](https://github.com/camunda/d8ctl/commit/56b132c16d561a5c7b3bc9e1553adf0d510cc1d1)), closes [#25](https://github.com/camunda/d8ctl/issues/25)
+
 ## [0.8.1](https://github.com/camunda/d8ctl/compare/v0.8.0...v0.8.1) (2026-11-21)
 
 
