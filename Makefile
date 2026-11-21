@@ -15,7 +15,9 @@ bundle-spec:
 generate: bundle-spec generate-local
 
 generate-local:
-	dub run -q --single scripts/generate.d
+	# --force: dub only watches generate.d, not the specmodel.d it imports,
+	# so a cached scripts/d8ctl-generate would emit a stale catalog.
+	dub run -q --single --force scripts/generate.d
 
 test:
 	dub test

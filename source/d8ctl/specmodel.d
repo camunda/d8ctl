@@ -172,17 +172,50 @@ string[2] splitOp(string oid)
     return [oid, oid];
 }
 
+/// `text` with HTML tags removed and whitespace collapsed: the full
+/// description, kept in the model so `--help --json` can carry it whole (#23).
+string cleanDoc(string text)
+{
+    text = text.replaceAll(ctRegex!`<[^>]+>`, "");
+    return text.replaceAll(ctRegex!`\s+`, " ").strip;
+}
+
+/// Index of the period that ends the first sentence of `t` (a `.` followed
+/// by whitespace or the end), or -1. Common abbreviations such as "e.g." and
+/// "i.e." do not end a sentence (#23).
+ptrdiff_t sentenceEnd(const(dchar)[] t)
+{
+    import std.uni : isAlpha, isWhite, toLower;
+
+    static immutable dstring[] abbrevs = ["e.g", "i.e", "etc", "vs", "cf", "approx"];
+    foreach (i, ch; t)
+    {
+        if (ch != '.' || (i + 1 < t.length && !isWhite(t[i + 1])))
+            continue;
+        bool abbrev;
+        foreach (a; abbrevs)
+            if (i >= a.length && toLower(t[i - a.length .. i]) == a
+                && (i == a.length || !isAlpha(t[i - a.length - 1])))
+            {
+                abbrev = true;
+                break;
+            }
+        if (!abbrev)
+            return i;
+    }
+    return -1;
+}
+
 /// First sentence of `text` (HTML tags removed, whitespace collapsed), at most `limit` characters.
 string firstSentence(string text, size_t limit = 96)
 {
     import std.utf : toUTF8, toUTF32;
 
-    text = text.replaceAll(ctRegex!`<[^>]+>`, "");
-    text = text.replaceAll(ctRegex!`\s+`, " ").strip;
+    text = cleanDoc(text);
     if (!text.length)
         return "";
     dstring t = text.toUTF32;
-    const cut = t.indexOf(". "d);
+    const cut = sentenceEnd(t);
     if (cut >= 0 && cut < limit)
         t = t[0 .. cut + 1];
     else if (t.length > limit)
@@ -420,7 +453,7 @@ private ModelField[] bodyFieldsOf(Spec spec, ref OpInfo op)
             continue;
         auto p = flat.props[n];
         fields ~= ModelField(n, classifyProp(spec, p), (n in flat.required) !is null,
-            firstSentence(p.get("description").orS("")));
+            cleanDoc(p.get("description").orS("")));
     }
     return fields;
 }
@@ -1506,6 +1539,13 @@ unittest
     assert(kebab("--a_b--") == "a-b");
     assert(firstSentence("Hello <b>world</b>.  More text.") == "Hello world.");
     assert(firstSentence("") == "");
+    // #23: abbreviations do not end a sentence.
+    assert(firstSentence("An npm name (e.g. `pkg`) to use. More.") == "An npm name (e.g. `pkg`) to use.");
+    assert(firstSentence("One, i.e. two. Three.") == "One, i.e. two.");
+    assert(firstSentence("Ends with etc.") == "Ends with etc.");
+    assert(firstSentence("A vs. B. C.") == "A vs. B.");
+    assert(firstSentence("Version 1.2. Next.") == "Version 1.2.");
+    assert(cleanDoc("a <b>b</b>\n  c. d.") == "a b c. d.");
 }
 
 /// A small non-Camunda spec, no metadata: the model still builds.
@@ -1587,7 +1627,8 @@ unittest
 
     auto update = cat.commands[3];
     assert(update.kind == "text");
-    assert(update.bodyFields == [ModelField("name", "string", true, "New name.")]);
+    // #23: the model keeps the whole description; help shortens it for display.
+    assert(update.bodyFields == [ModelField("name", "string", true, "New name. Ignored rest.")]);
 
     assert(cat.commands[4].operationId == "getHealth");
     assert(cat.commands[4].verb == "get" && cat.commands[4].resource == "health");
