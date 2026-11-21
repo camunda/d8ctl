@@ -280,7 +280,7 @@ alias FetchFn = FetchResult function(string url, string etag, string[string] con
 /// custom headers; the request goes to the spec URL, never the base URL.
 FetchResult fetchSpecHttp(string url, string etag, string[string] conn) @safe
 {
-    import camunda.errors : CamundaException;
+    import camunda.errors : ApiException, CamundaException;
     import d8ctl.safeio : boundedGet;
     import camunda.runtime : Transport;
     import camunda.transport : mergeHeadersCaseInsensitive;
@@ -298,14 +298,28 @@ FetchResult fetchSpecHttp(string url, string etag, string[string] conn) @safe
         if (etag.length)
             base["If-None-Match"] = etag;
         auto hdrs = mergeHeadersCaseInsensitive(base, client.headers);
-        // Bounded while receiving: the hardened reader's own size limit runs
-        // only after the download, too late to stop a memory blow-up.
-        auto r = boundedGet(url, hdrs, MAX_SPEC_BYTES, client.config.tls.certPath,
-            client.config.tls.keyPath, client.config.tls.caPath, client.config.tls.keyPassphrase);
+        // Same retry as API calls (the SDK's policy and the profile's
+        // CAMUNDA_SDK_HTTP_RETRY_*): network errors and 429/502/503/504.
+        import camunda.errors : ApiException;
+        import camunda.retry : isRetryable, withRetry;
+        import d8ctl.safeio : BoundedResponse;
+
+        auto r = withRetry!BoundedResponse(client.config.retry, client.clock, {
+            // Bounded while receiving: the hardened reader's own size limit
+            // runs only after the download, too late to stop a memory blow-up.
+            auto got = boundedGet(url, hdrs, MAX_SPEC_BYTES, client.config.tls.certPath,
+                client.config.tls.keyPath, client.config.tls.caPath, client.config.tls.keyPassphrase);
+            if (isRetryable(new ApiException(got.status, "")))
+                throw new ApiException(got.status, got.body_);
+            return got;
+        });
         status = r.status;
         gotEtag = r.etag;
         bodyText = r.body_;
     }
+    catch (ApiException e)
+        throw new ExtensionException("cannot download the spec from " ~ url
+            ~ ": HTTP " ~ e.status.to!string);
     catch (CamundaException e)
         throw new ExtensionException("cannot download the spec from " ~ url ~ ": " ~ e.msg);
     if (status == 304)
@@ -1866,4 +1880,144 @@ unittest
     m = readManifest(dir, "abs");
     assert(!m.relative && m.baseUrl == "http://h/api" && m.profile == "away");
     assert(baseUrlFor(m, "https://ts.example") == "http://h/api");
+}
+
+version (unittest)
+{
+    /// One connection per request (`Connection: close`): the first `fail`
+    /// connections are dropped after the request head (`status == 0`, a
+    /// network error) or answered with `status`; later ones get 200 `body_`.
+    /// Sends the port on `out_`, then the number of connections accepted.
+    private void flakyServer(int fail, int serve, int status, string body_, Chan!int out_)
+    {
+        import std.conv : to;
+        import std.socket : InternetAddress, SocketOption, SocketOptionLevel, TcpSocket;
+        import std.string : indexOf;
+
+        auto listener = new TcpSocket();
+        scope (exit)
+            listener.close();
+        listener.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, true);
+        listener.bind(new InternetAddress("127.0.0.1", InternetAddress.PORT_ANY));
+        listener.listen(8);
+        out_.put((cast(InternetAddress) listener.localAddress).port);
+        int accepted;
+        foreach (i; 0 .. fail + serve)
+        {
+            auto c = listener.accept();
+            accepted++;
+            string head;
+            ubyte[4096] chunk;
+            while (head.indexOf("\r\n\r\n") < 0)
+            {
+                const n = c.receive(chunk[]);
+                if (n <= 0)
+                    break;
+                head ~= cast(const(char)[]) chunk[0 .. n];
+            }
+            if (i < fail && status == 0)
+            {
+                c.close(); // dropped mid-request: an empty reply
+                continue;
+            }
+            const code = i < fail ? status : 200;
+            const text = i < fail ? "" : body_;
+            c.send("HTTP/1.1 " ~ code.to!string ~ " X\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: "
+                ~ text.length.to!string ~ "\r\n\r\n" ~ text);
+            c.close();
+        }
+        out_.put(accepted);
+    }
+
+    import camunda.safeio : Chan;
+
+    private int startFlaky(int fail, int serve, int status, string body_, Chan!int ch)
+    {
+        import camunda.safeio : spawn;
+
+        spawn(&flakyServer, fail, serve, status, body_, ch);
+        int port;
+        ch.take(port);
+        return port;
+    }
+}
+
+/// Retries are real, not assumed (agent feedback on Funnel drops): API calls
+/// and spec downloads both survive dropped connections and 503s, honour
+/// CAMUNDA_SDK_HTTP_RETRY_MAX_ATTEMPTS, and give up after it.
+unittest
+{
+    import camunda.errors : NetworkException;
+    import camunda.transport : ServerBase;
+    import std.conv : to;
+    import std.exception : assertThrown;
+    import std.json : JSONValue;
+
+    string[string] conn(int port, int attempts)
+    {
+        return [
+            "CAMUNDA_REST_ADDRESS": "http://127.0.0.1:" ~ port.to!string,
+            "CAMUNDA_AUTH_STRATEGY": "NONE",
+            "CAMUNDA_SDK_HTTP_RETRY_BASE_DELAY_MS": "1",
+            "CAMUNDA_SDK_HTTP_RETRY_MAX_DELAY_MS": "5",
+            "CAMUNDA_SDK_HTTP_RETRY_MAX_ATTEMPTS": attempts.to!string,
+        ];
+    }
+
+    int accepted;
+
+    // An API call: two dropped connections, then an answer on the third try.
+    auto ch = Chan!int.make;
+    auto port = startFlaky(2, 1, 0, `{"ok":true}`, ch);
+    auto got = extensionTransport(conn(port, 3)).requestJson("GET", "/ping", JSONValue(null), null, ServerBase.root);
+    assert(got["ok"].boolean);
+    ch.take(accepted);
+    assert(accepted == 3, accepted.to!string);
+
+    // Out of attempts: the network error surfaces after exactly that many.
+    ch = Chan!int.make;
+    port = startFlaky(2, 0, 0, "", ch);
+    assertThrown!NetworkException(extensionTransport(conn(port, 2))
+        .requestJson("GET", "/ping", JSONValue(null), null, ServerBase.root));
+    ch.take(accepted);
+    assert(accepted == 2, accepted.to!string);
+
+    // A spec download: a dropped connection, then a 503, then the spec.
+    ch = Chan!int.make;
+    port = startFlaky(1, 0, 0, "", ch);
+    auto url = "http://127.0.0.1:" ~ port.to!string ~ "/openapi.json";
+    // With one attempt allowed, a single drop is fatal: no hidden retries.
+    assertThrown!ExtensionException(fetchSpecHttp(url, "", conn(port, 1)));
+    ch.take(accepted);
+    assert(accepted == 1);
+
+    ch = Chan!int.make;
+    port = startFlaky(2, 1, 503, `{"openapi":"3.0.3"}`, ch);
+    url = "http://127.0.0.1:" ~ port.to!string ~ "/openapi.json";
+    auto r = fetchSpecHttp(url, "", conn(port, 3));
+    assert(r.body_ == `{"openapi":"3.0.3"}`, r.body_);
+    ch.take(accepted);
+    assert(accepted == 3, accepted.to!string);
+
+    ch = Chan!int.make;
+    port = startFlaky(2, 1, 0, `{"openapi":"3.0.3"}`, ch);
+    url = "http://127.0.0.1:" ~ port.to!string ~ "/openapi.json";
+    r = fetchSpecHttp(url, "", conn(port, 3));
+    assert(r.body_ == `{"openapi":"3.0.3"}`);
+    ch.take(accepted);
+    assert(accepted == 3, accepted.to!string);
+
+    // A persistent 503 is reported as such once the attempts run out.
+    ch = Chan!int.make;
+    port = startFlaky(2, 0, 503, "", ch);
+    url = "http://127.0.0.1:" ~ port.to!string ~ "/openapi.json";
+    try
+    {
+        fetchSpecHttp(url, "", conn(port, 2));
+        assert(false);
+    }
+    catch (ExtensionException e)
+        assert(e.msg[$ - 8 .. $] == "HTTP 503", e.msg);
+    ch.take(accepted);
+    assert(accepted == 2, accepted.to!string);
 }
