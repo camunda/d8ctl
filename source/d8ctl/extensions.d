@@ -50,6 +50,10 @@ struct Manifest
     /// `baseUrl` came from the spec's `servers` (refreshed by `update`),
     /// not from `--base-url` (kept as given).
     bool baseUrlFromSpec;
+    /// Profile-relative (#25): `specUrl` and `baseUrl` are root-relative
+    /// paths, resolved per call against the origin of the selected profile's
+    /// REST address. The route (and its credentials) follow the profile.
+    bool relative;
     string profile;
     string sha256;
     string etag;
@@ -190,6 +194,18 @@ string resolveBaseUrl(string specJson, string specUrl)
         return joinUrl(stripRightSlash(baseOf(specUrl)), raw); // root-relative
     // Bare name (e.g. nwf's `api`): resolve against the spec's parent dir.
     return joinUrl(stripRightSlash(baseOf(baseOf(specUrl))), raw);
+}
+
+/// The spec's base (see `resolveBaseUrl`) as a root-relative path, for a
+/// profile-relative extension fetched from `fetchUrl` on `origin`. A server
+/// on another host cannot follow the profile, so it is an error.
+string relativeBase(string specJson, string fetchUrl, string origin)
+{
+    auto abs = resolveBaseUrl(specJson, fetchUrl);
+    if (originOf(abs) != origin)
+        throw new ExtensionException("the spec's server " ~ abs ~ " is not on the profile's host "
+            ~ origin ~ "; pass --base-url=<path>");
+    return abs[origin.length .. $]; // "" is the origin itself
 }
 
 private string stripRightSlash(string s)
@@ -461,6 +477,55 @@ private void pinExtensionAuth(ref string[string] o)
         throw new ExtensionException("unsupported auth strategy '" ~ strategy ~ "' for an extension");
 }
 
+/// True for a profile-relative reference: a root-relative path (`/…`, not
+/// the protocol-relative `//host`), resolved against a profile's origin (#25).
+bool isRelativeRef(string u) pure nothrow
+{
+    return u.startsWith("/") && !u.startsWith("//");
+}
+
+/// Where a profile-relative extension goes for one call: the profile chosen
+/// and the origin (`scheme://host:port`) of its REST address.
+struct Route
+{
+    string profile;
+    string origin;
+}
+
+/// Pick the profile the way `cluster` commands do: `--profile`, else
+/// `D8CTL_PROFILE`, else the active profile. Its credentials only ever go to
+/// its own origin, so following the active profile cannot leak them.
+Route relativeRoute(const ref Sources s, string flagProfile, string envProfile)
+{
+    import d8ctl.profiles : activeName;
+
+    auto name = flagProfile.length ? flagProfile : envProfile.length ? envProfile : activeName(s);
+    if (!name.length)
+        throw new ExtensionException("this extension resolves against a profile, and none is "
+            ~ "selected: pass --profile=<name> or run `d8ctl profile use <name>`");
+    auto p = findProfile(s, name);
+    if (p is null)
+        throw new ExtensionException("profile '" ~ name ~ "' not found. See `d8ctl profile list`.");
+    auto addr = p.config.get("CAMUNDA_REST_ADDRESS", null).strip;
+    if (addr.indexOf("://") < 0)
+        throw new ExtensionException("profile '" ~ name ~ "' has no REST address "
+            ~ "(CAMUNDA_REST_ADDRESS), so a relative extension cannot resolve against it");
+    return Route(name, originOf(addr));
+}
+
+/// The absolute spec URL and base URL of `m` for one call (`origin` is only
+/// used by relative extensions).
+string specUrlFor(const ref Manifest m, string origin) pure
+{
+    return m.relative ? origin ~ m.specUrl : m.specUrl;
+}
+
+/// ditto
+string baseUrlFor(const ref Manifest m, string origin) pure
+{
+    return m.relative ? origin ~ m.baseUrl : m.baseUrl;
+}
+
 /// `scheme://authority` of `url` — the base for operations whose spec
 /// server is the bare root (`rootServer`), whatever the top-level path is.
 string originOf(string url)
@@ -523,6 +588,8 @@ private string manifestJson(const ref Manifest m)
     o["specUrl"] = m.specUrl;
     o["baseUrl"] = m.baseUrl;
     o["baseUrlSource"] = m.baseUrlFromSpec ? "spec" : "flag";
+    if (m.relative)
+        o["relative"] = true;
     if (m.profile.length)
         o["profile"] = m.profile;
     o["sha256"] = m.sha256;
@@ -597,6 +664,15 @@ private Manifest readManifestAt(string gen, string name)
     if (!isSha256Hex(m.sha256))
         throw new ExtensionException(path ~ ": \"sha256\" must be 64 lowercase hex digits");
     m.profile = field("profile", false);
+    if (auto rel = "relative" in j.objectNoRef)
+    {
+        if (rel.type != JSONType.true_ && rel.type != JSONType.false_)
+            throw new ExtensionException(path ~ ": \"relative\" must be a boolean");
+        m.relative = rel.type == JSONType.true_;
+    }
+    if (m.relative && (!isRelativeRef(m.specUrl) || (m.baseUrl.length && !isRelativeRef(m.baseUrl))))
+        throw new ExtensionException(path ~ ": a relative extension needs root-relative "
+            ~ "\"specUrl\" and \"baseUrl\" paths");
     m.etag = field("etag", false);
     m.fetchedAt = field("fetchedAt", false);
     m.d8ctlVersion = field("d8ctlVersion", false);
@@ -768,7 +844,8 @@ private void install(string cfgDir, Manifest m, string specText)
 /// `--profile=<name>` switch (a default profile for `add`).
 string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
     string[string] named, const bool[string] bare, FetchFn fetch, string profileFlag = null,
-    const string[string] switches = null, const Header[] headers = null)
+    const string[string] switches = null, const Header[] headers = null,
+    string envProfile = null)
 {
     import d8ctl.version_ : cliVersion;
 
@@ -811,7 +888,7 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
         allowFlags(["spec", "base-url", "profile"], null);
         if (rest.length != 1)
             throw new ExtensionException(
-                "usage: d8ctl extension add <name> --spec=<url> [--base-url=<url>] [--profile=<name>]");
+                "usage: d8ctl extension add <name> --spec=<url|/path> [--base-url=<url|/path>] [--profile=<name>]");
         auto name = rest[0];
         requireExtensionName(name);
         if (listExtensionNames(cfgDir).canFind(name))
@@ -821,26 +898,51 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
         auto specUrl = takeFlag("spec");
         if (!specUrl.length)
             throw new ExtensionException("extension add needs --spec=<url>");
-        auto profile = takeFlag("profile").length ? takeFlag("profile") : profileFlag;
-        requireExtensionProfile(sources, profile);
         auto baseOverride = takeFlag("base-url");
-        auto got = fetch(specUrl, null, extensionConnection(sources, profile, switches, headers));
+        const relative = isRelativeRef(specUrl);
+        if (!relative && baseOverride.length && isRelativeRef(baseOverride))
+            throw new ExtensionException("--base-url=" ~ baseOverride ~ " is a path: use a path "
+                ~ "for --spec too (a profile-relative extension), or give a full --base-url");
+        if (relative && baseOverride.length && !isRelativeRef(baseOverride))
+            throw new ExtensionException("--spec=" ~ specUrl ~ " is a path (profile-relative), "
+                ~ "so --base-url must be a path too (e.g. --base-url=/api)");
+        string profile, fetchUrl, origin;
+        if (relative)
+        {
+            // The route is chosen per call; the profile used here only fetches.
+            auto route = relativeRoute(sources, profileFlag, envProfile);
+            profile = route.profile;
+            origin = route.origin;
+            fetchUrl = origin ~ specUrl;
+        }
+        else
+        {
+            profile = takeFlag("profile").length ? takeFlag("profile") : profileFlag;
+            requireExtensionProfile(sources, profile);
+            fetchUrl = specUrl;
+        }
+        auto got = fetch(fetchUrl, null, extensionConnection(sources, profile, switches, headers));
         if (got.notModified || !got.body_.length)
-            throw new ExtensionException("the server returned no spec for " ~ specUrl);
+            throw new ExtensionException("the server returned no spec for " ~ fetchUrl);
         // Untrusted input: the hardened reader's limits apply; a bad spec
         // stops the add and leaves any existing cache untouched.
         Catalog cat;
         try
             cat = buildCatalog(got.body_, null, name);
         catch (OpenApiException e)
-            throw new ExtensionException("the spec at " ~ specUrl ~ " is not usable: " ~ e.msg);
+            throw new ExtensionException("the spec at " ~ fetchUrl ~ " is not usable: " ~ e.msg);
         Manifest m;
         m.name = name;
         m.specUrl = specUrl;
-        m.baseUrl = baseOverride.length ? stripRightSlash(baseOverride)
-            : resolveBaseUrl(got.body_, specUrl);
+        m.relative = relative;
+        if (baseOverride.length)
+            m.baseUrl = stripRightSlash(baseOverride);
+        else if (relative)
+            m.baseUrl = relativeBase(got.body_, fetchUrl, origin);
+        else
+            m.baseUrl = resolveBaseUrl(got.body_, specUrl);
         m.baseUrlFromSpec = !baseOverride.length;
-        m.profile = profile;
+        m.profile = relative ? null : profile;
         m.sha256 = sha256Hex(got.body_);
         m.etag = got.etag;
         m.fetchedAt = nowIso();
@@ -852,7 +954,9 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
             return 0;
         });
         return "Installed extension '" ~ name ~ "' (" ~ cat.commands.length.to!string
-            ~ " commands) from " ~ specUrl ~ "\n  base URL: " ~ m.baseUrl
+            ~ " commands) from " ~ fetchUrl ~ "\n  base URL: " ~ m.baseUrl
+            ~ (relative ? " (relative: follows --profile / D8CTL_PROFILE / the active profile; now "
+                ~ baseUrlFor(m, origin) ~ " via '" ~ profile ~ "')" : "")
             ~ "\n  sha256:   " ~ m.sha256[0 .. 12] ~ "…\nTry: d8ctl " ~ name ~ " --help\n";
 
     case "list", "ls":
@@ -868,12 +972,23 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
             auto m = readManifest(cfgDir, n);
             buf.put(n ~ "  " ~ m.baseUrl ~ "  sha256:" ~ m.sha256[0 .. 12]
                 ~ "…  fetched " ~ m.fetchedAt);
-            if (m.profile.length)
+            if (m.relative)
+                buf.put("  relative to the selected profile");
+            else if (m.profile.length)
                 buf.put("  profile " ~ m.profile);
             if ("check" in bare)
             {
-                auto got = fetch(m.specUrl, m.etag, extensionConnection(sources,
-                    profileFlag.length ? profileFlag : m.profile, switches, headers));
+                string conn, origin;
+                if (m.relative)
+                {
+                    auto route = relativeRoute(sources, profileFlag, envProfile);
+                    conn = route.profile;
+                    origin = route.origin;
+                }
+                else
+                    conn = profileFlag.length ? profileFlag : m.profile;
+                auto got = fetch(specUrlFor(m, origin), m.etag, extensionConnection(sources,
+                    conn, switches, headers));
                 if (got.notModified)
                     buf.put("  [up to date]");
                 else if (got.body_.length && sha256Hex(got.body_) == m.sha256)
@@ -914,8 +1029,18 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
                 auto m = readManifest(cfgDir, n);
                 // An explicit --profile wins (switch credentials, or recover
                 // after the stored profile was removed); a rewritten cache keeps it.
-                if (profileFlag.length)
-                    m.profile = profileFlag;
+                // A relative extension stores no profile: the route is chosen
+                // per call, so it fetches through the selected one.
+                string conn = m.profile, origin;
+                if (m.relative)
+                {
+                    auto route = relativeRoute(sources, profileFlag, envProfile);
+                    conn = route.profile;
+                    origin = route.origin;
+                }
+                else if (profileFlag.length)
+                    m.profile = conn = profileFlag;
+                const fetchUrl = specUrlFor(m, origin);
                 // A corrupt cached spec must be repaired, not reported as up
                 // to date: verify the cached bytes first, and only revalidate
                 // (ETag / sha256 skip) when they still match the manifest.
@@ -930,8 +1055,8 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
                     catch (Exception)
                         cachedOk = false;
                 }
-                auto got = fetch(m.specUrl, cachedOk ? m.etag : null,
-                    extensionConnection(sources, m.profile, switches, headers));
+                auto got = fetch(fetchUrl, cachedOk ? m.etag : null,
+                    extensionConnection(sources, conn, switches, headers));
                 // A concurrent `remove` could not have run (we hold the lock),
                 // but a stale reader of this code path could: re-verify the
                 // install still names the generation we read before committing.
@@ -940,10 +1065,8 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
                         ~ "' was removed while updating; nothing was installed.");
                 if (got.notModified && cachedOk)
                     return n ~ ": up to date (ETag matched)\n";
-                if (got.notModified)
-                    throw new ExtensionException("the server returned no spec for " ~ m.specUrl);
-                if (!got.body_.length)
-                    throw new ExtensionException("the server returned no spec for " ~ m.specUrl);
+                if (got.notModified || !got.body_.length)
+                    throw new ExtensionException("the server returned no spec for " ~ fetchUrl);
                 const hash = sha256Hex(got.body_);
                 if (hash == m.sha256 && cachedOk)
                 {
@@ -960,7 +1083,7 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
                 try
                     cat = buildCatalog(got.body_, null, n);
                 catch (OpenApiException e)
-                    throw new ExtensionException("the new spec at " ~ m.specUrl
+                    throw new ExtensionException("the new spec at " ~ fetchUrl
                         ~ " is not usable: " ~ e.msg ~ " (the installed copy was kept)");
                 m.sha256 = hash;
                 m.etag = got.etag;
@@ -968,7 +1091,9 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
                 m.d8ctlVersion = cliVersion;
                 // A spec-derived base follows the new spec's servers; an explicit
                 // --base-url is kept.
-                if (m.baseUrlFromSpec || !m.baseUrl.length)
+                if (m.relative && m.baseUrlFromSpec)
+                    m.baseUrl = relativeBase(got.body_, fetchUrl, origin);
+                else if (!m.relative && (m.baseUrlFromSpec || !m.baseUrl.length))
                 {
                     m.baseUrl = resolveBaseUrl(got.body_, m.specUrl);
                     m.baseUrlFromSpec = true;
@@ -1010,7 +1135,7 @@ string extensionHelp()
     auto buf = appender!string();
     buf.put("d8ctl extension — namespaces generated from a server's OpenAPI spec\n\n");
     buf.put("Usage:\n");
-    buf.put("  d8ctl extension add <name> --spec=<url> [--base-url=<url>] [--profile=<name>]\n");
+    buf.put("  d8ctl extension add <name> --spec=<url|/path> [--base-url=<url|/path>] [--profile=<name>]\n");
     buf.put("                            Download the spec, generate commands, cache them\n");
     buf.put("  d8ctl extension list [--check]            Installed extensions (age, sha256, source)\n");
     buf.put("  d8ctl extension update [<name>|--all]     Re-download (skips on a matching sha256)\n");
@@ -1027,7 +1152,13 @@ string extensionHelp()
     buf.put("against the spec URL, or --base-url). A profile supplies only auth and\n");
     buf.put("headers — never its cluster address. With no profile, requests send no auth\n");
     buf.put("and no CAMUNDA_DEFAULT_HEADERS from the environment. --camunda-* switches and\n");
-    buf.put("--header apply on top; spec downloads use the same connection.\n");
+    buf.put("--header apply on top; spec downloads use the same connection.\n\n");
+    buf.put("Profile-relative: give --spec (and --base-url) as paths, e.g.\n");
+    buf.put("  d8ctl extension add nwf --spec=/console/app-view/Workforce/app/api-docs/openapi.json\n");
+    buf.put("Each call then resolves them against the origin of the selected profile's\n");
+    buf.put("REST address (--profile, else D8CTL_PROFILE, else the active profile), and\n");
+    buf.put("uses that profile's auth — so one extension follows the route a profile\n");
+    buf.put("names. Credentials go only to the profile's own host.\n");
     return buf.data;
 }
 
@@ -1635,4 +1766,104 @@ unittest
     auto out_ = extensionCommand(dir, sources, ["update", "t"], null, null, &etagFetchImpl);
     assert(out_.indexOf("up to date") >= 0, out_);
     assert(readManifest(dir, "t").etag == "\"v2\"");
+}
+
+version (unittest)
+{
+    private string routeUrl, routeUser, routeStrategy;
+
+    private FetchResult routeFetch(string url, string etag, string[string] conn) @safe
+    {
+        routeUrl = url;
+        routeUser = conn.get("CAMUNDA_BASIC_AUTH_USERNAME", null);
+        routeStrategy = conn.get("CAMUNDA_AUTH_STRATEGY", null);
+        return FetchResult(fakeBody, null, false);
+    }
+}
+
+unittest
+{
+    // #25: a profile-relative extension follows --profile > D8CTL_PROFILE >
+    // the active profile, resolves its paths against that profile's origin,
+    // and sends that profile's credentials only to that origin.
+    import std.exception : assertThrown;
+
+    Sources sources;
+    sources.store.profiles["home"] = ["CAMUNDA_REST_ADDRESS": "http://lan:8080"];
+    sources.store.profiles["away"] = ["CAMUNDA_REST_ADDRESS": "https://ts.example/v2",
+        "CAMUNDA_BASIC_AUTH_USERNAME": "u", "CAMUNDA_BASIC_AUTH_PASSWORD": "p"];
+    sources.store.profiles["noaddr"] = ["CAMUNDA_AUTH_STRATEGY": "NONE"];
+    sources.store.active = "home";
+
+    assert(relativeRoute(sources, null, null) == Route("home", "http://lan:8080"));
+    assert(relativeRoute(sources, null, "away") == Route("away", "https://ts.example"));
+    assert(relativeRoute(sources, "home", "away") == Route("home", "http://lan:8080"));
+    assertThrown!ExtensionException(relativeRoute(sources, "nope", null));
+    assertThrown!ExtensionException(relativeRoute(sources, "noaddr", null));
+    Sources none;
+    assertThrown!ExtensionException(relativeRoute(none, null, null));
+
+    assert(isRelativeRef("/a") && !isRelativeRef("//h/a") && !isRelativeRef("http://h/a")
+        && !isRelativeRef("a"));
+
+    auto dir = testDir("rel");
+    scope (exit)
+        cleanupDir(dir);
+    fakeBody = xcliSpec; // servers: [{"url": "api"}]
+
+    // add through the active profile; nothing about the route is stored.
+    auto added = extensionCommand(dir, sources, ["add", "w"],
+        ["spec": "/app/api-docs/openapi.json"], null, &routeFetch);
+    assert(routeUrl == "http://lan:8080/app/api-docs/openapi.json" && routeStrategy == "NONE", routeUrl);
+    assert(added.indexOf("http://lan:8080/app/api via 'home'") >= 0, added);
+    auto m = readManifest(dir, "w");
+    assert(m.relative && m.specUrl == "/app/api-docs/openapi.json" && m.baseUrl == "/app/api");
+    assert(!m.profile.length && m.baseUrlFromSpec);
+    assert(baseUrlFor(m, "https://ts.example") == "https://ts.example/app/api");
+    assert(specUrlFor(m, "http://lan:8080") == "http://lan:8080/app/api-docs/openapi.json");
+
+    // update via --profile: the other route, with its own credentials; the
+    // profile is not stored, so the next call follows the active one again.
+    fakeBody = xcliSpec.replace(`"T"`, `"T2"`);
+    auto upd = extensionCommand(dir, sources, ["update", "w"], null, null, &routeFetch, "away");
+    assert(upd.indexOf("updated") >= 0, upd);
+    assert(routeUrl == "https://ts.example/app/api-docs/openapi.json", routeUrl);
+    assert(routeStrategy == "BASIC" && routeUser == "u");
+    m = readManifest(dir, "w");
+    assert(!m.profile.length && m.baseUrl == "/app/api" && m.sha256 == sha256Hex(fakeBody));
+
+    // list --check through D8CTL_PROFILE.
+    auto listed = extensionCommand(dir, sources, ["list"], null, ["check": true], &routeFetch,
+        null, null, null, "away");
+    assert(listed.indexOf("relative to the selected profile") >= 0
+        && listed.indexOf("[up to date]") >= 0, listed);
+    assert(routeUrl.startsWith("https://ts.example/"), routeUrl);
+
+    // An explicit path base is kept; the root base is the origin itself.
+    extensionCommand(dir, sources, ["add", "x"], ["spec": "/o.json", "base-url": "/"], null,
+        &routeFetch);
+    m = readManifest(dir, "x");
+    assert(m.baseUrl == "" && baseUrlFor(m, "http://lan:8080") == "http://lan:8080");
+
+    // Mixing a path with a full URL, or a spec server on another host, fails.
+    assertThrown!ExtensionException(extensionCommand(dir, sources, ["add", "y"],
+        ["spec": "/o.json", "base-url": "http://elsewhere/api"], null, &routeFetch));
+    assertThrown!ExtensionException(extensionCommand(dir, sources, ["add", "y"],
+        ["spec": "http://h/o.json", "base-url": "/api"], null, &routeFetch));
+    fakeBody = xcliSpec.replace(`"url": "api"`, `"url": "https://other.example/api"`);
+    assertThrown!ExtensionException(extensionCommand(dir, sources, ["add", "y"],
+        ["spec": "/o.json"], null, &routeFetch));
+    // No profile selected at all: a usage error, never a request to "".
+    routeUrl = null;
+    assertThrown!ExtensionException(extensionCommand(dir, none, ["add", "y"],
+        ["spec": "/o.json"], null, &routeFetch));
+    assert(routeUrl is null);
+
+    // An absolute extension still never takes a profile's address.
+    fakeBody = xcliSpec;
+    extensionCommand(dir, sources, ["add", "abs"], ["spec": "http://h/o.json"], null, &routeFetch,
+        "away");
+    m = readManifest(dir, "abs");
+    assert(!m.relative && m.baseUrl == "http://h/api" && m.profile == "away");
+    assert(baseUrlFor(m, "https://ts.example") == "http://h/api");
 }

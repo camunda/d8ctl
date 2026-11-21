@@ -33,7 +33,7 @@ Transport: `camunda-orchestration-sdk:runtime` from
 | `source/d8ctl/generated/catalog.d` | **Generated.** `make generate`. Never hand-edit. |
 | `source/d8ctl/version_.d` | SemVer stamp (`scripts/prepare-release.sh`). |
 | `source/d8ctl/specmodel.d` | OpenAPI (+ optional Camunda spec-metadata) → command model: verb/resource split, kebab flags, body flags, root server, `x-cli`. Throws, never exits. Shared by the generator and runtime extensions. |
-| `source/d8ctl/extensions.d` | Runtime extensions (#9): `extension add/list/update/remove`, the `<configDir>/extensions/<name>/` cache (spec + manifest, 0600/0700, atomic), and the model built from it. |
+| `source/d8ctl/extensions.d` | Runtime extensions (#9): `extension add/list/update/remove`, the `<configDir>/extensions/<name>/` cache (spec + manifest, 0600/0700, atomic), and the model built from it. Profile-relative extensions (#25) resolve path `--spec`/`--base-url` against the selected profile's origin per call. |
 | `scripts/generate.d` | Thin catalog generator (`dub run --single`). Reads `external-spec/bundled/`, calls `specmodel`. |
 | `external-spec/bundled/` | Bundled spec + `spec-metadata.json` (`npm run bundle:spec`). Committed. |
 | `scripts/check-safe.sh` | `@safe` ratchet (same contract as the SDK). |

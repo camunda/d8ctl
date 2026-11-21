@@ -134,6 +134,25 @@ The namespace has its own base URL (the spec's `servers[0].url` resolved
 against the spec URL, or `--base-url`); a profile supplies only auth and
 headers, never its cluster address.
 
+**Profile-relative extensions.** When the same server is reachable by more
+than one route (a LAN address at home, a Tailscale URL with basic auth away),
+give `--spec` (and `--base-url`, if needed) as root-relative **paths**. The
+extension then follows the selected profile, like `cluster` commands do:
+
+```sh
+d8ctl extension add nwf --spec=/console/app-view/Workforce/app/api-docs/openapi.json
+d8ctl nwf escalations list                      # the active profile's host
+d8ctl nwf escalations list --profile=merlin-ts  # same API, the Tailscale route
+```
+
+Each call resolves the paths against the origin (`scheme://host:port`) of the
+selected profile's REST address: `--profile`, else `D8CTL_PROFILE`, else the
+active profile. That profile's credentials go only to its own host, so
+following the active profile cannot send them anywhere new. No profile is
+stored with the extension; `add`, `update` and `list --check` fetch the spec
+through the selected profile into one shared cache. A spec whose server is on
+another host is refused (pass `--base-url=<path>`).
+
 Command names come from the spec's `x-cli.command` when present, else from
 splitting the `operationId`. `x-cli.command` is a non-empty array of
 kebab-case words (nano-ide ADR 0068), used as an exact command path —
