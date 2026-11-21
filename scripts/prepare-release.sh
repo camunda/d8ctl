@@ -6,7 +6,9 @@ set -euo pipefail
 VERSION="${1:?usage: prepare-release.sh <version>}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-python3 - "$REPO_ROOT/dub.json" "$VERSION" <<'PY'
+# Windows runners (Git Bash) have `python`, not always `python3`.
+PYTHON="$(command -v python3 || command -v python)"
+"$PYTHON" - "$REPO_ROOT/dub.json" "$VERSION" <<'PY'
 import json, sys
 path, version = sys.argv[1], sys.argv[2]
 data = json.loads(open(path, encoding="utf-8").read())
