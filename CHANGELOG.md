@@ -1,3 +1,10 @@
+# [0.10.0](https://github.com/camunda/d8ctl/compare/v0.9.2...v0.10.0) (2026-11-21)
+
+
+### Features
+
+* **release:** publish to npm as @camunda8/d8ctl ([#33](https://github.com/camunda/d8ctl/issues/33)) ([f9ef6bf](https://github.com/camunda/d8ctl/commit/f9ef6bffa5838e1af716285d0a5c86aee7abc8fb))
+
 ## [0.9.2](https://github.com/camunda/d8ctl/compare/v0.9.1...v0.9.2) (2026-11-21)
 
 
