@@ -35,7 +35,7 @@ Command toCommand(const ref ModelCommand c)
     r.requiredQuery = c.requiredQuery.dup;
     r.optionalQuery = c.optionalQuery.dup;
     foreach (f; c.bodyFields)
-        r.bodyFields ~= BodyField(f.name, f.kind, f.required, f.doc);
+        r.bodyFields ~= BodyField(f.name, f.kind, f.required, f.doc, f.values.dup);
     r.rootServer = c.rootServer;
     r.operatorOnly = c.operatorOnly;
     r.positional = c.positional.dup;

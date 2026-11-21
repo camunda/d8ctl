@@ -41,6 +41,8 @@ struct ModelField
     string kind;
     bool required;
     string doc;
+    /// Allowed values from the schema's string `enum` (shell completion, help).
+    string[] values;
 }
 
 /// A selectable response field: a top-level name of the selection target
@@ -256,6 +258,34 @@ private string unwrapType(Spec spec, J schema, ref bool[string] seen, size_t dep
     return null;
 }
 
+/// String `enum` values of a (possibly `$ref` / `allOf`) schema; empty when
+/// none. Capped at 256 values so a hostile spec cannot bloat the catalog.
+private string[] enumValues(Spec spec, J schema, ref bool[string] seen, size_t depth = 0)
+{
+    if (schema is null || !schema.isObj || !truthy(schema))
+        return null;
+    if (depth > maxSchemaDepth)
+        throw new OpenApiLimitException("schema enum resolution too deep");
+    if (schema.has("$ref"))
+    {
+        const name = spec.refName(schema);
+        if (!name.length || name in seen)
+            return null;
+        seen[name] = true;
+        return enumValues(spec, spec.schemas.get(name), seen, depth + 1);
+    }
+    string[] out_;
+    foreach (v; itemsOf(schema.get("enum")))
+        if (v !is null && v.isStr && out_.length < 256)
+            out_ ~= v.text;
+    if (out_.length)
+        return out_;
+    foreach (part; itemsOf(schema.get("allOf")))
+        if (auto got = enumValues(spec, part, seen, depth + 1))
+            return got;
+    return null;
+}
+
 /// Flag kind of a body property.
 string classifyProp(Spec spec, J prop)
 {
@@ -452,8 +482,9 @@ private ModelField[] bodyFieldsOf(Spec spec, ref OpInfo op)
         if (isReservedFlag(n))
             continue;
         auto p = flat.props[n];
+        bool[string] seenEnum;
         fields ~= ModelField(n, classifyProp(spec, p), (n in flat.required) !is null,
-            cleanDoc(p.get("description").orS("")));
+            cleanDoc(p.get("description").orS("")), enumValues(spec, p, seenEnum));
     }
     return fields;
 }
@@ -1404,7 +1435,8 @@ private string dBodyFields(const ModelField[] fields)
     string[] parts;
     foreach (f; fields)
         parts ~= "BodyField(" ~ dString(f.name) ~ ", " ~ dString(f.kind) ~ ", "
-            ~ (f.required ? "true" : "false") ~ ", " ~ dString(f.doc) ~ ")";
+            ~ (f.required ? "true" : "false") ~ ", " ~ dString(f.doc)
+            ~ (f.values.length ? ", " ~ dStringArray(f.values) : "") ~ ")";
     return "[" ~ parts.join(", ") ~ "]";
 }
 
@@ -1474,6 +1506,8 @@ struct BodyField
     string kind;
     bool required;
     string doc;
+    /// Allowed values (the schema's string ` ~ "`enum`" ~ `); empty = any.
+    string[] values;
 }
 
 /// A selectable response field (` ~ "`--fields`" ~ `, d8ctl#21): a top-level name of the
@@ -1618,7 +1652,7 @@ unittest
     assert(create.hasBody && create.kind == "json");
     assert(create.bodyFields == [
         ModelField("name", "string", true, ""),
-        ModelField("tag", "string", false, ""),
+        ModelField("tag", "string", false, "", ["a", "b"]), // $ref enum
         ModelField("meta", "json", false, ""),
     ]);
 

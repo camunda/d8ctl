@@ -24,7 +24,7 @@ jobs:
           compiler: ldc-1.43.0
       - name: Linux build dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq libcurl4-openssl-dev zlib1g-dev
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libcurl4-openssl-dev zlib1g-dev zsh fish
       - run: dub run -q --single scripts/generate.d
       - name: Fail if the catalog drifted
         run: git diff --exit-code -- source/d8ctl/generated
@@ -32,6 +32,8 @@ jobs:
       - run: dub build -b release
       - run: ./d8ctl --help
       - run: ./d8ctl cluster topology get --help
+      - name: Shell completion (bash, zsh, fish) answers a real Tab
+        run: ./scripts/test-completion.sh ./d8ctl
 
   # Windows (#14): native WinHTTP transport from the SDK (11.0.0-alpha.8+),
   # no libcurl. A required job like the others.
@@ -52,6 +54,19 @@ jobs:
         run: dub build -b release
       - name: d8ctl --help
         run: ./d8ctl.exe --help
+      - name: PowerShell completion answers a real Tab
+        shell: pwsh
+        run: |
+          $env:PATH = "$PWD;$env:PATH"
+          d8ctl completion powershell | Out-String | Invoke-Expression
+          $line = 'd8ctl cluster get topo'
+          $got = (TabExpansion2 -inputScript $line -cursorColumn $line.Length).CompletionMatches.CompletionText
+          Write-Output "got: $got"
+          if ($got -notcontains 'topology') { throw "expected 'topology'" }
+          $line = 'd8ctl cluster topology '
+          $got = (TabExpansion2 -inputScript $line -cursorColumn $line.Length).CompletionMatches.CompletionText
+          Write-Output "got: $got"
+          if ($got -notcontains 'get') { throw "expected 'get' after an empty word" }
       - name: HTTP through WinHTTP (connection refused is a pass; a crash is not)
         run: |
           test -x ./d8ctl.exe || { echo "d8ctl.exe missing; build must have failed"; exit 1; }
