@@ -1,3 +1,10 @@
+## [0.9.1](https://github.com/camunda/d8ctl/compare/v0.9.0...v0.9.1) (2026-11-21)
+
+
+### Bug Fixes
+
+* retry extension spec downloads; --fields prints only named envelope fields ([#27](https://github.com/camunda/d8ctl/issues/27)) ([d6e16cd](https://github.com/camunda/d8ctl/commit/d6e16cd1752d2d0a7b7d09c7a4b793a335384f4a))
+
 # [0.9.0](https://github.com/camunda/d8ctl/compare/v0.8.1...v0.9.0) (2026-11-21)
 
 
