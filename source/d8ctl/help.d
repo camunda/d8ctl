@@ -6,7 +6,7 @@ module d8ctl.help;
 import d8ctl.profiles : profileHelp;
 import d8ctl.catalog;
 import d8ctl.parse : Kind, Order, Result;
-import d8ctl.specmodel : Catalog;
+import d8ctl.specmodel : Catalog, firstSentence;
 import d8ctl.util : eqIgnoreCase;
 import d8ctl.version_ : cliVersion;
 import std.algorithm : sort;
@@ -46,22 +46,7 @@ string rootHelp()
 /// Command help still shows the whole summary.
 string brief(string summary, size_t max = 90)
 {
-    import std.string : indexOf, strip;
-    import std.utf : toUTF32, toUTF8;
-
-    auto s = summary.strip;
-    foreach (i; 0 .. s.length)
-        if (s[i] == '.' && (i + 1 == s.length || s[i + 1] == ' ' || s[i + 1] == '\n'))
-        {
-            s = s[0 .. i + 1];
-            break;
-        }
-    const nl = s.indexOf('\n');
-    if (nl >= 0) s = s[0 .. nl].strip;
-    auto d = s.toUTF32;
-    if (d.length > max)
-        return (d[0 .. max - 1]).toUTF8.strip ~ "…";
-    return s;
+    return firstSentence(summary, max);
 }
 
 unittest
@@ -254,7 +239,7 @@ string commandHelp(const Command* c)
             auto hint = bodyKindHint(f.kind);
             buf.put(format(" %s --%s=%s\n", star, f.name, hint));
             if (f.doc.length)
-                buf.put(format("               %s\n", f.doc));
+                buf.put(format("               %s\n", firstSentence(f.doc)));
         }
         buf.put("  * required unless supplied via --body.\n");
         buf.put("  Nested objects/arrays: pass JSON, e.g. --filter='{\"state\":\"ACTIVE\"}'.\n");
@@ -528,4 +513,38 @@ unittest
     auto list = parseJSON(commandsHelpJson([*c, *create]));
     assert(list["commands"].arrayNoRef.length == 2);
     assert("flags" !in list["commands"][0].objectNoRef, "lists carry summaries only");
+}
+
+// #23: `--help --json` carries a body field's whole description; text help
+// shows its first sentence on one line.
+unittest
+{
+    import std.algorithm : canFind;
+    import std.json : parseJSON;
+
+    const(Command)* cmd;
+    string field, doc;
+    outer: foreach (ref row; commandsIn("cluster"))
+        foreach (f; row.bodyFields)
+            if (f.doc.length > 120)
+            {
+                cmd = &row;
+                field = f.name;
+                doc = f.doc;
+                break outer;
+            }
+    assert(cmd !is null, "the generated catalog has a long field description");
+
+    bool found;
+    foreach (f; parseJSON(commandHelpJson(cmd))["flags"].arrayNoRef)
+        if (f["in"].str == "body" && f["name"].str == field)
+        {
+            assert(f["description"].str == doc, "JSON help keeps the whole description");
+            found = true;
+        }
+    assert(found);
+
+    auto text = commandHelp(cmd);
+    assert(text.canFind(firstSentence(doc)));
+    assert(!text.canFind(doc), "text help shows only the first sentence");
 }
