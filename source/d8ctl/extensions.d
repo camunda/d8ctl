@@ -41,6 +41,21 @@ class ExtensionException : Exception
     }
 }
 
+/// A spec download that failed, with what its retry loop did (attempts and
+/// elapsed time) for the error envelope, like a failed API call.
+class SpecDownloadException : ExtensionException
+{
+    import d8ctl.dispatch : RetryStats;
+
+    RetryStats stats;
+
+    this(string msg, RetryStats stats, string file = __FILE__, size_t line = __LINE__) @safe
+    {
+        super(msg, file, line);
+        this.stats = stats;
+    }
+}
+
 /// The manifest: `<configDir>/extensions/<name>/extension.json`.
 struct Manifest
 {
@@ -286,12 +301,16 @@ FetchResult fetchSpecHttp(string url, string etag, string[string] conn) @safe
     import camunda.transport : mergeHeadersCaseInsensitive;
     import d8ctl.version_ : cliVersion;
 
+    import d8ctl.dispatch : RetryStats, countedTransport, retrying;
+
     int status;
     string bodyText;
     string gotEtag;
+    auto stats = new RetryStats;
     try
     {
-        auto client = extensionTransport(conn);
+        auto client = countedTransport(conn, stats,
+            (string[string] o) => extensionTransport(o));
         string[string] base = client.auth().headers();
         base["Accept"] = "application/json, */*";
         base["User-Agent"] = "d8ctl/" ~ cliVersion;
@@ -300,16 +319,18 @@ FetchResult fetchSpecHttp(string url, string etag, string[string] conn) @safe
         auto hdrs = mergeHeadersCaseInsensitive(base, client.headers);
         // Same retry as API calls (the SDK's policy and the profile's
         // CAMUNDA_SDK_HTTP_RETRY_*): network errors and 429/502/503/504.
-        import camunda.errors : ApiException;
-        import camunda.retry : isRetryable, withRetry;
         import d8ctl.safeio : BoundedResponse;
 
-        auto r = withRetry!BoundedResponse(client.config.retry, client.clock, {
+        // Counted, so a failure reports its attempts and elapsed time.
+        auto r = retrying!BoundedResponse(client, stats, "GET", () @safe {
             // Bounded while receiving: the hardened reader's own size limit
             // runs only after the download, too late to stop a memory blow-up.
             auto got = boundedGet(url, hdrs, MAX_SPEC_BYTES, client.config.tls.certPath,
                 client.config.tls.keyPath, client.config.tls.caPath, client.config.tls.keyPassphrase);
-            if (isRetryable(new ApiException(got.status, "")))
+            // Every failure status (not only retryable ones) goes through the
+            // counted path, so a 503-then-404 still reports its attempts.
+            // The retry policy itself retries only transient statuses.
+            if (got.status != 304 && (got.status < 200 || got.status >= 300))
                 throw new ApiException(got.status, got.body_);
             return got;
         });
@@ -318,15 +339,12 @@ FetchResult fetchSpecHttp(string url, string etag, string[string] conn) @safe
         bodyText = r.body_;
     }
     catch (ApiException e)
-        throw new ExtensionException("cannot download the spec from " ~ url
-            ~ ": HTTP " ~ e.status.to!string);
+        throw new SpecDownloadException("cannot download the spec from " ~ url
+            ~ ": HTTP " ~ e.status.to!string, stats);
     catch (CamundaException e)
-        throw new ExtensionException("cannot download the spec from " ~ url ~ ": " ~ e.msg);
+        throw new SpecDownloadException("cannot download the spec from " ~ url ~ ": " ~ e.msg, stats);
     if (status == 304)
         return FetchResult(null, etag, true);
-    if (status < 200 || status >= 300)
-        throw new ExtensionException("cannot download the spec from " ~ url
-            ~ ": HTTP " ~ status.to!string);
     return FetchResult(bodyText, gotEtag, false);
 }
 
@@ -372,8 +390,14 @@ Transport extensionTransport(string[string] overrides) @safe
     scope (exit)
         foreach (k, v; saved)
             setEnv(k, v);
+    // The CLI retry window (#29) where the overrides set none; the
+    // environment is masked here, so only the overrides count.
+    import d8ctl.dispatch : applyRetryDefaults;
+
+    auto withDefaults = overrides.dup;
+    applyRetryDefaults(withDefaults);
     CamundaOptions o;
-    o.config = overrides;
+    o.config = withDefaults;
     return new Transport(o);
 }
 
@@ -1929,6 +1953,30 @@ version (unittest)
         out_.put(accepted);
     }
 
+    /// Accepts `n` connections and closes each at once, before any
+    /// ServerHello: an https client sees a TLS connect error (the Funnel
+    /// drop of #29). Sends the port, then the number accepted.
+    private void tlsRefuser(int n, Chan!int out_)
+    {
+        import std.socket : InternetAddress, SocketOption, SocketOptionLevel, TcpSocket;
+
+        auto listener = new TcpSocket();
+        scope (exit)
+            listener.close();
+        listener.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, true);
+        listener.bind(new InternetAddress("127.0.0.1", InternetAddress.PORT_ANY));
+        listener.listen(8);
+        out_.put((cast(InternetAddress) listener.localAddress).port);
+        int accepted;
+        foreach (i; 0 .. n)
+        {
+            auto c = listener.accept();
+            accepted++;
+            c.close();
+        }
+        out_.put(accepted);
+    }
+
     import camunda.safeio : Chan;
 
     private int startFlaky(int fail, int serve, int status, string body_, Chan!int ch)
@@ -2016,8 +2064,79 @@ unittest
         fetchSpecHttp(url, "", conn(port, 2));
         assert(false);
     }
-    catch (ExtensionException e)
+    catch (SpecDownloadException e)
+    {
         assert(e.msg[$ - 8 .. $] == "HTTP 503", e.msg);
+        // The retry statistics reach the error envelope.
+        assert(e.stats !is null && e.stats.attempts == 2, e.stats.attempts.to!string);
+        assert(e.stats.retried && e.stats.note.length);
+    }
     ch.take(accepted);
     assert(accepted == 2, accepted.to!string);
+}
+
+/// #29: the CLI retry window. A drop-prone link survives with the d8ctl
+/// defaults (6 attempts, ~10 s worst case), and on exhaustion the attempts
+/// and their span are recorded for the error envelope — here for a TLS
+/// handshake refused before ServerHello, like a Tailscale Funnel drop.
+unittest
+{
+    import camunda.errors : NetworkException;
+    import camunda.safeio : spawn;
+    import camunda.transport : ServerBase;
+    import d8ctl.dispatch : RetryStats, countedTransport, retrying;
+    import std.conv : to;
+    import std.json : JSONValue;
+    import std.string : indexOf;
+
+    int accepted;
+
+    // Five drops then an answer: the SDK default (3 attempts) would fail,
+    // the CLI default (6) succeeds well inside its window.
+    auto ch = Chan!int.make;
+    auto port = startFlaky(5, 1, 0, `{"ok":true}`, ch);
+    string[string] conn = [
+        "CAMUNDA_REST_ADDRESS": "http://127.0.0.1:" ~ port.to!string,
+        "CAMUNDA_AUTH_STRATEGY": "NONE",
+    ];
+    auto stats = new RetryStats;
+    auto client = countedTransport(conn, stats, (string[string] o) => extensionTransport(o));
+    assert(stats.config.maxAttempts == 6 && stats.config.baseDelayMs == 250
+        && stats.config.maxDelayMs == 4000);
+    auto got = retrying!JSONValue(client, stats, "GET",
+        () => client.requestJson("GET", "/ping", JSONValue(null), null, ServerBase.root));
+    assert(got["ok"].boolean);
+    ch.take(accepted);
+    assert(accepted == 6, accepted.to!string);
+    assert(stats.attempts == 6);
+    // Worst case: 250 + 500 + 1000 + 2000 + 4000 ms of backoff.
+    // elapsedMs covers the final backoff and the successful attempt too.
+    assert(stats.elapsedMs > 0 && stats.elapsedMs < 7750 + 2000, stats.elapsedMs.to!string);
+
+    // TLS refused on every attempt: the error comes after exactly the
+    // configured attempts, and they are counted.
+    ch = Chan!int.make;
+    spawn(&tlsRefuser, 3, ch);
+    ch.take(port);
+    conn = [
+        "CAMUNDA_REST_ADDRESS": "https://127.0.0.1:" ~ port.to!string,
+        "CAMUNDA_AUTH_STRATEGY": "NONE",
+        "CAMUNDA_SDK_HTTP_RETRY_BASE_DELAY_MS": "1",
+        "CAMUNDA_SDK_HTTP_RETRY_MAX_DELAY_MS": "5",
+        "CAMUNDA_SDK_HTTP_RETRY_MAX_ATTEMPTS": "3",
+    ];
+    stats = new RetryStats;
+    client = countedTransport(conn, stats, (string[string] o) => extensionTransport(o));
+    bool threw;
+    try
+        cast(void) retrying!JSONValue(client, stats, "POST",
+            () => client.requestJson("POST", "/x", JSONValue(null), null, ServerBase.root));
+    catch (NetworkException)
+        threw = true;
+    assert(threw);
+    ch.take(accepted);
+    assert(accepted == 3, accepted.to!string);
+    assert(stats.attempts == 3 && stats.elapsedMs >= 0);
+    assert(stats.note.indexOf("after 3 attempts over") >= 0, stats.note);
+    assert(stats.note.indexOf("may have been applied") >= 0, stats.note);
 }

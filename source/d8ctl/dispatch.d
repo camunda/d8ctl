@@ -30,7 +30,7 @@ string substitutePath(string path, const string[] names, const string[] values)
 }
 
 string invoke(Transport client, const ref Result r, string headersJson = null, string baseUrl = null,
-    bool pretty = true)
+    bool pretty = true, RetryStats stats = null)
 {
     auto c = r.command;
     if (c is null) throw new UsageException("no command");
@@ -130,17 +130,126 @@ string invoke(Transport client, const ref Result r, string headersJson = null, s
 
     if (c.kind == "void")
     {
-        client.requestVoid(c.method, path, body_, query, server);
+        retrying!bool(client, stats, c.method, {
+            client.requestVoid(c.method, path, body_, query, server);
+            return true;
+        });
         return "";
     }
     if (c.kind == "text")
-        return client.requestText(c.method, path, body_, query, server);
-    auto payload = client.requestJson(c.method, path, body_, query, server);
+        return retrying!string(client, stats, c.method,
+            () => client.requestText(c.method, path, body_, query, server));
+    auto payload = retrying!JSONValue(client, stats, c.method,
+        () => client.requestJson(c.method, path, body_, query, server));
     // The response unchanged: the spec is the output schema (#16) — except
     // --fields, which trims it client-side to the schema's names (#21).
     import d8ctl.output : formatJson, selectFields;
     auto out_ = r.flags.fields.length ? selectFields(payload, r.flags.fields, c) : payload;
     return formatJson(out_, pretty);
+}
+
+// ---- CLI retry window (#29) ----
+
+import camunda.config : RetryConfig;
+
+/// The retry settings d8ctl applies when neither a `--camunda-*` switch, the
+/// profile nor the environment sets them. A one-shot CLI should ride out a
+/// few seconds of flaky link (a Tailscale Funnel TLS drop) rather than fail
+/// in the SDK's ~0.3 s worker-sized window: worst case about 10 s.
+immutable string[2][3] cliRetryDefaults = [
+    ["CAMUNDA_SDK_HTTP_RETRY_MAX_ATTEMPTS", "6"],
+    ["CAMUNDA_SDK_HTTP_RETRY_BASE_DELAY_MS", "250"],
+    ["CAMUNDA_SDK_HTTP_RETRY_MAX_DELAY_MS", "4000"],
+];
+
+/// Fill the unset retry keys of `overrides` with `cliRetryDefaults`. A key
+/// counts as set when the overrides or the environment (`getenv`, null for
+/// none) have a non-blank value — the SDK treats blank as absent too.
+void applyRetryDefaults(ref string[string] overrides, string delegate(string) @safe getenv = null)
+{
+    import std.string : strip;
+
+    foreach (kv; cliRetryDefaults)
+    {
+        if (auto v = kv[0] in overrides)
+            if ((*v).strip.length) continue;
+        if (getenv !is null && getenv(kv[0]).strip.length) continue;
+        overrides[kv[0]] = kv[1];
+    }
+}
+
+/// What the retry loop of one CLI call did, for the error envelope.
+final class RetryStats
+{
+    /// The resolved policy (the transport itself is built with one attempt).
+    RetryConfig config;
+    /// Attempts made, and the time from the first to the last one ending.
+    uint attempts;
+    long elapsedMs;
+    string method;
+
+    /// Whether the call was retried at all.
+    bool retried() const { return attempts > 1; }
+
+    /// Whether a retried write may already have been applied.
+    bool mayHaveApplied() const
+    {
+        return retried && (method == "POST" || method == "PUT" || method == "PATCH");
+    }
+
+    /// " (after 6 attempts over 8.1 s; retried, the request may have been
+    /// applied)" — empty when the call was not retried.
+    string note() const
+    {
+        import std.format : format;
+
+        if (!retried) return "";
+        auto s = format(" (after %s attempts over %.1f s", attempts, elapsedMs / 1000.0);
+        if (mayHaveApplied)
+            s ~= "; retried, the request may have been applied — check state before retrying";
+        return s ~ ")";
+    }
+}
+
+/// A transport whose own retry is off, with the policy it would have used in
+/// `stats`: d8ctl retries in `invoke` so it can count the attempts. `make`
+/// builds a transport from overrides (`Transport.fromEnv`, or the
+/// environment-masked `extensionTransport`).
+Transport countedTransport(string[string] overrides, RetryStats stats,
+    scope Transport delegate(string[string]) @safe make)
+{
+    import std.conv : to;
+
+    stats.config = make(overrides).config.retry;
+    auto once = overrides.dup;
+    once["CAMUNDA_SDK_HTTP_RETRY_MAX_ATTEMPTS"] = "1";
+    return make(once);
+}
+
+/// Run `op` under `stats.config` (the SDK's backoff and retryable set),
+/// recording the attempts. With no `stats`, `op` runs once (the transport's
+/// own retry applies).
+T retrying(T)(Transport client, RetryStats stats, string method, scope T delegate() @safe op)
+{
+    import camunda.retry : backoffDelayMs, isRetryable;
+
+    if (stats is null) return op();
+    stats.method = method;
+    auto clock = client.clock;
+    const start = clock.nowMs;
+    const maxAttempts = stats.config.maxAttempts < 1 ? 1 : stats.config.maxAttempts;
+    // Record the whole call (backoffs and the final attempt) on every exit.
+    scope (exit) stats.elapsedMs = clock.nowMs - start;
+    while (true)
+    {
+        stats.attempts += 1;
+        try return op();
+        catch (Exception err)
+        {
+            if (stats.attempts >= maxAttempts || !isRetryable(err)) throw err;
+            clock.sleep(backoffDelayMs(stats.config, stats.attempts - 1));
+        }
+    }
 }
 
 bool isPathParam(const Command* c, string name)
@@ -479,4 +588,31 @@ unittest
         parseJSON(`{"filter":{"processDefinitionId":"a/b"}}`));
     assert(preview.indexOf(`"a/b"`) >= 0, preview);
     assert(preview.indexOf(`\/`) < 0, preview);
+}
+
+/// #29: CLI retry defaults fill only what nothing else set.
+unittest
+{
+    string[string] o;
+    applyRetryDefaults(o);
+    assert(o["CAMUNDA_SDK_HTTP_RETRY_MAX_ATTEMPTS"] == "6");
+    assert(o["CAMUNDA_SDK_HTTP_RETRY_BASE_DELAY_MS"] == "250");
+    assert(o["CAMUNDA_SDK_HTTP_RETRY_MAX_DELAY_MS"] == "4000");
+
+    string[string] p = ["CAMUNDA_SDK_HTTP_RETRY_MAX_ATTEMPTS": "2", "CAMUNDA_SDK_HTTP_RETRY_MAX_DELAY_MS": " "];
+    applyRetryDefaults(p, (string k) => k == "CAMUNDA_SDK_HTTP_RETRY_BASE_DELAY_MS" ? "7" : null);
+    assert(p["CAMUNDA_SDK_HTTP_RETRY_MAX_ATTEMPTS"] == "2"); // profile/switch wins
+    assert(("CAMUNDA_SDK_HTTP_RETRY_BASE_DELAY_MS" in p) is null); // env wins
+    assert(p["CAMUNDA_SDK_HTTP_RETRY_MAX_DELAY_MS"] == "4000"); // blank is unset
+
+    auto s = new RetryStats;
+    s.attempts = 1;
+    assert(s.note == "");
+    s.attempts = 6;
+    s.elapsedMs = 8123;
+    s.method = "GET";
+    assert(s.note == " (after 6 attempts over 8.1 s)", s.note);
+    s.method = "POST";
+    import std.string : indexOf;
+    assert(s.note.indexOf("may have been applied") >= 0);
 }
