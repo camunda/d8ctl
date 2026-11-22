@@ -319,8 +319,6 @@ FetchResult fetchSpecHttp(string url, string etag, string[string] conn) @safe
         auto hdrs = mergeHeadersCaseInsensitive(base, client.headers);
         // Same retry as API calls (the SDK's policy and the profile's
         // CAMUNDA_SDK_HTTP_RETRY_*): network errors and 429/502/503/504.
-        import camunda.errors : ApiException;
-        import camunda.retry : isRetryable;
         import d8ctl.safeio : BoundedResponse;
 
         // Counted, so a failure reports its attempts and elapsed time.
@@ -329,7 +327,10 @@ FetchResult fetchSpecHttp(string url, string etag, string[string] conn) @safe
             // runs only after the download, too late to stop a memory blow-up.
             auto got = boundedGet(url, hdrs, MAX_SPEC_BYTES, client.config.tls.certPath,
                 client.config.tls.keyPath, client.config.tls.caPath, client.config.tls.keyPassphrase);
-            if (isRetryable(new ApiException(got.status, "")))
+            // Every failure status (not only retryable ones) goes through the
+            // counted path, so a 503-then-404 still reports its attempts.
+            // The retry policy itself retries only transient statuses.
+            if (got.status != 304 && (got.status < 200 || got.status >= 300))
                 throw new ApiException(got.status, got.body_);
             return got;
         });
@@ -344,9 +345,6 @@ FetchResult fetchSpecHttp(string url, string etag, string[string] conn) @safe
         throw new SpecDownloadException("cannot download the spec from " ~ url ~ ": " ~ e.msg, stats);
     if (status == 304)
         return FetchResult(null, etag, true);
-    if (status < 200 || status >= 300)
-        throw new ExtensionException("cannot download the spec from " ~ url
-            ~ ": HTTP " ~ status.to!string);
     return FetchResult(bodyText, gotEtag, false);
 }
 
