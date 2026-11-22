@@ -1,3 +1,10 @@
+## [0.11.2](https://github.com/camunda/d8ctl/compare/v0.11.1...v0.11.2) (2026-11-22)
+
+
+### Bug Fixes
+
+* **retry:** CLI-sized retry window for flaky links ([#30](https://github.com/camunda/d8ctl/issues/30)) ([5439736](https://github.com/camunda/d8ctl/commit/543973661f5104c1715949e7243287964b723ff4)), closes [#29](https://github.com/camunda/d8ctl/issues/29)
+
 ## [0.11.1](https://github.com/camunda/d8ctl/compare/v0.11.0...v0.11.1) (2026-11-22)
 
 
