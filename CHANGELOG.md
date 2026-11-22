@@ -1,3 +1,10 @@
+## [0.11.1](https://github.com/camunda/d8ctl/compare/v0.11.0...v0.11.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* require one shape of oneOf request bodies before sending ([#37](https://github.com/camunda/d8ctl/issues/37)) ([cc2986d](https://github.com/camunda/d8ctl/commit/cc2986db1e7ae6078a929eeb526be5b0fd20bd06)), closes [#36](https://github.com/camunda/d8ctl/issues/36)
+
 # [0.11.0](https://github.com/camunda/d8ctl/compare/v0.10.0...v0.11.0) (2026-11-21)
 
 
