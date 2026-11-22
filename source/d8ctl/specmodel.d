@@ -16,6 +16,7 @@ module d8ctl.specmodel;
 @safe:
 
 import std.algorithm.iteration : map;
+import std.algorithm.searching : all, canFind;
 import std.array : appender, array, join, replace;
 import std.conv : to;
 import std.regex : ctRegex, matchFirst, replaceAll;
@@ -43,6 +44,15 @@ struct ModelField
     string doc;
     /// Allowed values from the schema's string `enum` (shell completion, help).
     string[] values;
+}
+
+/// One shape of a `oneOf`/`anyOf` request body: a label and the top-level
+/// fields that shape requires. A body must satisfy at least one.
+struct ModelVariant
+{
+    /// Human label, e.g. `by key` (from the variant schema's name or title).
+    string name;
+    string[] required;
 }
 
 /// A selectable response field: a top-level name of the selection target
@@ -76,6 +86,9 @@ struct ModelCommand
     string[] requiredQuery;
     string[] optionalQuery;
     ModelField[] bodyFields;
+    /// `oneOf`/`anyOf` body shapes (d8ctl#36); empty = not a union, or a
+    /// union where some shape requires nothing.
+    ModelVariant[] variants;
     bool rootServer;
     /// Hidden unless `--operator` (`x-cli.audience: operator`, or `x-mcp`
     /// exclusion with no `x-cli` — the nano-workforce operator default).
@@ -303,6 +316,8 @@ string classifyProp(Spec spec, J prop)
 private struct Flat
 {
     bool isUnion;
+    /// The first flattened union's shapes (see ModelVariant).
+    ModelVariant[] variants;
     string[] names;
     J[string] props;
     bool[string] required;
@@ -326,13 +341,19 @@ private Flat flattenUnion(Spec spec, J schema, ref bool[string] seen, size_t dep
     Flat out_;
     J[] variants = itemsOf(schema.get("oneOf")).dup ~ itemsOf(schema.get("anyOf"));
     bool[string] req;
+    string[] labels;
+    ModelVariant[] shapes;
+    bool anyEmpty;
     foreach (i, v; variants)
     {
         auto own = seen.dup;
         Flat f;
+        string label = v.isObj ? v.get("title").orS("") : "";
         if (v.isObj && v.has("$ref"))
         {
             const r = spec.refName(v);
+            if (!label.length)
+                label = r;
             f = r.length ? flattenSchema(spec, r, spec.schemas.get(r), own, depth + 1) : Flat.init;
         }
         else
@@ -345,6 +366,14 @@ private Flat flattenUnion(Spec spec, J schema, ref bool[string] seen, size_t dep
         foreach (pn; f.names)
             if (pn !in out_.props)
                 out_.put(pn, f.props[pn]);
+        string[] need;
+        foreach (pn; f.names) // declaration order
+            if (pn in f.required)
+                need ~= pn;
+        if (!need.length)
+            anyEmpty = true;
+        labels ~= label;
+        shapes ~= ModelVariant(null, need);
         if (i == 0)
         {
             foreach (k; f.required.byKey)
@@ -356,7 +385,103 @@ private Flat flattenUnion(Spec spec, J schema, ref bool[string] seen, size_t dep
                     req.remove(k);
     }
     out_.required = req;
+    if (!anyEmpty && shapes.length > 1)
+    {
+        // Untitled inline shapes: name them by the fields only they require.
+        foreach (i, ref l; labels)
+            if (!l.length)
+            {
+                string[] own;
+                foreach (n; shapes[i].required)
+                    if (!shapes.all!(o => o.required.canFind(n)))
+                        own ~= n;
+                if (own.length)
+                    l = "by " ~ own.join(" + ");
+            }
+        auto names = variantLabels(labels);
+        foreach (i, ref sh; shapes)
+            sh.name = names[i];
+        out_.variants = shapes;
+    }
     return out_;
+}
+
+/// Readable labels for union shapes: names or titles lose their shared
+/// leading words and become lower-case words. The last shared word stays when
+/// a remainder would be a single word (`…ByKey`, `…ById` → `by key`, `by id`;
+/// `AuthorizationIdBasedRequest` → `id based request`). Missing → `shape N`.
+private string[] variantLabels(const string[] raw)
+{
+    import std.conv : to;
+    import std.string : split, strip;
+    import std.uni : isUpper, toLower;
+
+    // Each label as words: titles split on spaces, schema names on capitals.
+    string[][] words;
+    foreach (r; raw)
+    {
+        string[] ws;
+        if (r.indexOf(' ') >= 0)
+            ws = r.strip.split(" ");
+        else
+        {
+            string w;
+            foreach (j, ch; r)
+            {
+                if (j && isUpper(ch) && !isUpper(r[j - 1]) && w.length)
+                {
+                    ws ~= w;
+                    w = null;
+                }
+                w ~= ch;
+            }
+            if (w.length)
+                ws ~= w;
+        }
+        string[] lower;
+        foreach (w; ws)
+            if (w.length)
+                lower ~= w.toLower.to!string;
+        words ~= lower;
+    }
+    size_t common;
+    if (raw.length > 1 && words.all!(w => w.length))
+    {
+        common = words[0].length;
+        foreach (w; words[1 .. $])
+        {
+            size_t k;
+            while (k < common && k < w.length && w[k] == words[0][k])
+                k++;
+            common = k;
+        }
+        foreach (w; words)
+            if (common >= w.length)
+                common = common ? w.length - 1 : 0;
+        foreach (w; words)
+            if (common && w.length - common == 1)
+            {
+                common--;
+                break;
+            }
+    }
+    string[] out_;
+    foreach (i, w; words)
+        out_ ~= w.length ? w[common .. $].join(" ") : "shape " ~ (i + 1).to!string;
+    return out_;
+}
+
+unittest
+{
+    assert(variantLabels(["ProcessInstanceCreationInstructionByKey",
+            "ProcessInstanceCreationInstructionById",
+            "ProcessInstanceCreationInstructionByVersionTag"]) == ["by key", "by id", "by version tag"]);
+    assert(variantLabels(["Cat", ""]) == ["cat", "shape 2"]);
+    assert(variantLabels(["Pet by name", "Pet by tag"]) == ["by name", "by tag"]);
+    assert(variantLabels(["Id based request", "Property based request"])
+        == ["id based request", "property based request"]);
+    assert(variantLabels(["AuthorizationIdBasedRequest", "AuthorizationPropertyBasedRequest"])
+        == ["id based request", "property based request"]);
 }
 
 /// Merge `from` into `into`; false (stop: `--body` only) when `from` is an
@@ -372,6 +497,9 @@ private bool mergeFlat(ref Flat into, Flat from)
         into.put(pn, from.props[pn]);
     foreach (rn; from.required.byKey)
         into.required[rn] = true;
+    // A second union in one body: checking only the first is still sound.
+    if (!into.variants.length)
+        into.variants = from.variants;
     return true;
 }
 
@@ -462,7 +590,7 @@ private string kindOf(ref OpInfo op)
     return "json";
 }
 
-private ModelField[] bodyFieldsOf(Spec spec, ref OpInfo op)
+private ModelField[] bodyFieldsOf(Spec spec, ref OpInfo op, out ModelVariant[] variants)
 {
     import std.algorithm.searching : canFind;
 
@@ -476,6 +604,7 @@ private ModelField[] bodyFieldsOf(Spec spec, ref OpInfo op)
         flat = flattenSchema(spec, null, op.bodySchema, seen);
     if (flat.isUnion)
         return null;
+    variants = flat.variants;
     ModelField[] fields;
     foreach (n; flat.names)
     {
@@ -1271,7 +1400,7 @@ Catalog buildCatalog(Spec spec, string ns = "cluster")
         c.pathParams = placeholderOrder(op.path, op.pathParams);
         c.requiredQuery = op.requiredQuery;
         c.optionalQuery = op.optionalQuery;
-        c.bodyFields = bodyFieldsOf(spec, op);
+        c.bodyFields = bodyFieldsOf(spec, op, c.variants);
         c.rootServer = isRootServer(spec, op);
         // Operator gate: explicit x-cli.audience wins; without any x-cli, an
         // x-mcp exclusion defaults to operator-only (nano-workforce#961).
@@ -1461,6 +1590,16 @@ private string dPaths(const string[][] paths)
     return "[" ~ parts.join(", ") ~ "]";
 }
 
+private string dVariants(const ModelVariant[] vs)
+{
+    if (!vs.length)
+        return "null";
+    string[] parts;
+    foreach (v; vs)
+        parts ~= "BodyVariant(" ~ dString(v.name) ~ ", " ~ dStringArray(v.required) ~ ")";
+    return "[" ~ parts.join(", ") ~ "]";
+}
+
 /// Render `cat` as the D source of `d8ctl.generated.catalog`; `generator` names the script in the header.
 string renderCatalogModule(const ref Catalog cat, string generator)
 {
@@ -1476,7 +1615,8 @@ string renderCatalogModule(const ref Catalog cat, string generator)
                 dStringArray(c.requiredQuery), dStringArray(c.optionalQuery), dBodyFields(c.bodyFields),
                 c.rootServer ? "true" : "false", c.operatorOnly ? "true" : "false",
                 dStringArray(c.positional), dPaths(c.paths),
-                dString(c.responseTarget), dString(c.selection), dResponseFields(c.responseFields)])
+                dString(c.responseTarget), dString(c.selection), dResponseFields(c.responseFields),
+                dVariants(c.variants)])
             rows.put("        " ~ v ~ ",\n");
         rows.put("    ),");
     }
@@ -1508,6 +1648,14 @@ struct BodyField
     string doc;
     /// Allowed values (the schema's string ` ~ "`enum`" ~ `); empty = any.
     string[] values;
+}
+
+/// One shape of a ` ~ "`oneOf`/`anyOf`" ~ ` request body: a label and the
+/// top-level fields it requires (d8ctl#36).
+struct BodyVariant
+{
+    string name;
+    string[] required;
 }
 
 /// A selectable response field (` ~ "`--fields`" ~ `, d8ctl#21): a top-level name of the
@@ -1557,6 +1705,8 @@ struct Command
     string selection;
     /// Selection-target fields, in declaration order.
     ResponseField[] responseFields;
+    /// ` ~ "`oneOf`/`anyOf`" ~ ` body shapes (d8ctl#36): a body must satisfy one. Empty = no check.
+    BodyVariant[] variants;
 }
 
 `;
@@ -1952,6 +2102,9 @@ unittest
         ModelField("rounds", "integer", false, ""),
         ModelField("url", "string", false, ""),
     ], "every variant's fields; required only when every variant requires it; first declaration wins");
+    // Each shape's own required set (d8ctl#36); untitled shapes are named by their own fields.
+    assert(cat.commands[0].variants == [ModelVariant("by pr", ["pr", "mode"]),
+        ModelVariant("by url", ["url", "mode"])]);
     // Both variants see the shared base (own `seen` per variant).
     assert(cat.commands[1].bodyFields == [
         ModelField("tenant", "string", true, ""),
@@ -1960,6 +2113,19 @@ unittest
     ]);
     // A non-object variant: --body only.
     assert(cat.commands[2].bodyFields.length == 0);
+    assert(cat.commands[2].variants.length == 0);
+}
+
+/// A shape that requires nothing satisfies any body: no variant check.
+unittest
+{
+    auto cat = buildCatalog(`{"paths": {"/x": {"post": {"operationId": "makeX",
+      "requestBody": {"content": {"application/json": {"schema": {"oneOf": [
+        {"title": "X by name", "type": "object", "required": ["name"], "properties": {"name": {"type": "string"}}},
+        {"title": "X by nothing", "type": "object", "properties": {"tag": {"type": "string"}}}]}}}},
+      "responses": {"200": {"description": "ok"}}}}}}`, null, "t");
+    assert(cat.commands[0].bodyFields.length == 2);
+    assert(cat.commands[0].variants.length == 0);
 }
 
 /// Response field selection (#21): target derivation per response shape.

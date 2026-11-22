@@ -246,6 +246,13 @@ string commandHelp(const Command* c)
         }
         buf.put("  * required unless supplied via --body.\n");
         buf.put("  Nested objects/arrays: pass JSON, e.g. --filter='{\"state\":\"ACTIVE\"}'.\n");
+        if (c.variants.length)
+        {
+            import d8ctl.dispatch : variantLines;
+
+            buf.put("\nPass one of (the body's shapes; each line's flags together):\n");
+            buf.put(variantLines(c));
+        }
     }
     else if (c.hasBody)
         buf.put("\nThis body has no documented top-level fields; use --body='{…}'.\n");
@@ -427,6 +434,13 @@ JSONValue commandJson(const ref Command c, bool detail)
         flags ~= fj;
     }
     j["flags"] = flags;
+    if (c.variants.length)
+    {
+        JSONValue[] vs;
+        foreach (ref v; c.variants)
+            vs ~= JSONValue(["name": JSONValue(v.name), "required": JSONValue(v.required.dup)]);
+        j["variants"] = vs; // the body must satisfy one shape's required fields
+    }
     j["body"] = c.hasBody; // --body='{…}' accepted (wins over body flags)
     // `json`: stdout is the response JSON; `text`: raw text; `void`: nothing.
     j["output"] = c.kind == "multipart" ? "json" : c.kind;
