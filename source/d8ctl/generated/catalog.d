@@ -21,6 +21,14 @@ struct BodyField
     string[] values;
 }
 
+/// One shape of a `oneOf`/`anyOf` request body: a label and the
+/// top-level fields it requires (d8ctl#36).
+struct BodyVariant
+{
+    string name;
+    string[] required;
+}
+
 /// A selectable response field (`--fields`, d8ctl#21): a top-level name of the
 /// command's selection target. `children` are its own object property fields
 /// (dotted `a.b` paths recurse through them); on an `items` target the
@@ -68,6 +76,8 @@ struct Command
     string selection;
     /// Selection-target fields, in declaration order.
     ResponseField[] responseFields;
+    /// `oneOf`/`anyOf` body shapes (d8ctl#36): a body must satisfy one. Empty = no check.
+    BodyVariant[] variants;
 }
 
 /// SHA-256 of the bundled spec this catalog was generated from.
@@ -99,6 +109,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("agentDefinitionKey", "string", null), ResponseField("agentType", "string", null), ResponseField("name", "string", null), ResponseField("elementId", "string", null), ResponseField("processDefinitionId", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processDefinitionVersion", "integer", null), ResponseField("processDefinitionVersionTag", "string", null), ResponseField("tenantId", "string", null)],
+        null,
     ),
     Command(
         "searchAgentDefinitions",
@@ -122,6 +133,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("agentDefinitionKey", "string", null), ResponseField("agentType", "string", null), ResponseField("name", "string", null), ResponseField("elementId", "string", null), ResponseField("processDefinitionId", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processDefinitionVersion", "integer", null), ResponseField("processDefinitionVersionTag", "string", null), ResponseField("tenantId", "string", null)])],
+        null,
     ),
     Command(
         "createAgentInstance",
@@ -145,6 +157,7 @@ immutable Command[] catalog = [
         "items",
         "createdHistory",
         [ResponseField("agentInstanceKey", "string", null), ResponseField("createdHistory", "array", [ResponseField("historyItemId", "string", null), ResponseField("historyItemKey", "string", null), ResponseField("isDuplicate", "boolean", null)])],
+        null,
     ),
     Command(
         "getAgentInstance",
@@ -168,6 +181,7 @@ immutable Command[] catalog = [
         "items",
         "tools",
         [ResponseField("agentInstanceKey", "string", null), ResponseField("agentDefinitionKey", "string", null), ResponseField("status", "string", null), ResponseField("definition", "object", [ResponseField("model", "string", null), ResponseField("provider", "string", null), ResponseField("systemPrompt", "array", [ResponseField("contentType", "string", null), ResponseField("text", "string", null), ResponseField("documentReference", "object", [ResponseField("camunda.document.type", "string", null), ResponseField("storeId", "string", null), ResponseField("documentId", "string", null), ResponseField("contentHash", "string", null), ResponseField("metadata", "object", [ResponseField("contentType", "string", null), ResponseField("fileName", "string", null), ResponseField("expiresAt", "string", null), ResponseField("size", "integer", null), ResponseField("processDefinitionId", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("customProperties", "object", null)])]), ResponseField("object", "json", null)])]), ResponseField("metrics", "object", [ResponseField("inputTokens", "integer", null), ResponseField("outputTokens", "integer", null), ResponseField("reasoningTokenCount", "integer", null), ResponseField("cacheCreationTokenCount", "integer", null), ResponseField("cacheReadTokenCount", "integer", null), ResponseField("modelCalls", "integer", null), ResponseField("toolCalls", "integer", null)]), ResponseField("limits", "object", [ResponseField("maxModelCalls", "integer", null), ResponseField("maxToolCalls", "integer", null), ResponseField("maxTokens", "integer", null)]), ResponseField("tools", "array", [ResponseField("name", "string", null), ResponseField("description", "string", null), ResponseField("elementId", "string", null)]), ResponseField("elementId", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processDefinitionId", "string", null), ResponseField("processDefinitionVersion", "integer", null), ResponseField("processDefinitionVersionTag", "string", null), ResponseField("tenantId", "string", null), ResponseField("creationDate", "string", null), ResponseField("lastUpdatedDate", "string", null), ResponseField("completionDate", "string", null), ResponseField("elementInstanceKeys", "array", null)],
+        null,
     ),
     Command(
         "updateAgentInstance",
@@ -191,6 +205,7 @@ immutable Command[] catalog = [
         "items",
         "createdHistory",
         [ResponseField("createdHistory", "array", [ResponseField("historyItemId", "string", null), ResponseField("historyItemKey", "string", null), ResponseField("isDuplicate", "boolean", null)])],
+        null,
     ),
     Command(
         "searchAgentInstances",
@@ -214,6 +229,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("agentInstanceKey", "string", null), ResponseField("agentDefinitionKey", "string", null), ResponseField("status", "string", null), ResponseField("definition", "object", [ResponseField("model", "string", null), ResponseField("provider", "string", null), ResponseField("systemPrompt", "array", [ResponseField("contentType", "string", null), ResponseField("text", "string", null), ResponseField("documentReference", "object", [ResponseField("camunda.document.type", "string", null), ResponseField("storeId", "string", null), ResponseField("documentId", "string", null), ResponseField("contentHash", "string", null), ResponseField("metadata", "object", [ResponseField("contentType", "string", null), ResponseField("fileName", "string", null), ResponseField("expiresAt", "string", null), ResponseField("size", "integer", null), ResponseField("processDefinitionId", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("customProperties", "object", null)])]), ResponseField("object", "json", null)])]), ResponseField("metrics", "object", [ResponseField("inputTokens", "integer", null), ResponseField("outputTokens", "integer", null), ResponseField("reasoningTokenCount", "integer", null), ResponseField("cacheCreationTokenCount", "integer", null), ResponseField("cacheReadTokenCount", "integer", null), ResponseField("modelCalls", "integer", null), ResponseField("toolCalls", "integer", null)]), ResponseField("limits", "object", [ResponseField("maxModelCalls", "integer", null), ResponseField("maxToolCalls", "integer", null), ResponseField("maxTokens", "integer", null)]), ResponseField("tools", "array", [ResponseField("name", "string", null), ResponseField("description", "string", null), ResponseField("elementId", "string", null)]), ResponseField("elementId", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processDefinitionId", "string", null), ResponseField("processDefinitionVersion", "integer", null), ResponseField("processDefinitionVersionTag", "string", null), ResponseField("tenantId", "string", null), ResponseField("creationDate", "string", null), ResponseField("lastUpdatedDate", "string", null), ResponseField("completionDate", "string", null), ResponseField("elementInstanceKeys", "array", null)])],
+        null,
     ),
     Command(
         "searchAgentInstanceHistory",
@@ -237,6 +253,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("historyItemKey", "string", null), ResponseField("historyItemId", "string", null), ResponseField("agentInstanceKey", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("jobKey", "string", null), ResponseField("jobLeaseToken", "string", null), ResponseField("loopIteration", "integer", null), ResponseField("role", "string", null), ResponseField("content", "array", [ResponseField("contentType", "string", null), ResponseField("text", "string", null), ResponseField("documentReference", "object", [ResponseField("camunda.document.type", "string", null), ResponseField("storeId", "string", null), ResponseField("documentId", "string", null), ResponseField("contentHash", "string", null), ResponseField("metadata", "object", [ResponseField("contentType", "string", null), ResponseField("fileName", "string", null), ResponseField("expiresAt", "string", null), ResponseField("size", "integer", null), ResponseField("processDefinitionId", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("customProperties", "object", null)])]), ResponseField("object", "json", null)]), ResponseField("toolCalls", "array", [ResponseField("toolCallId", "string", null), ResponseField("toolName", "string", null), ResponseField("elementId", "string", null), ResponseField("arguments", "object", null)]), ResponseField("metrics", "object", [ResponseField("inputTokens", "integer", null), ResponseField("outputTokens", "integer", null), ResponseField("reasoningTokenCount", "integer", null), ResponseField("cacheCreationTokenCount", "integer", null), ResponseField("cacheReadTokenCount", "integer", null), ResponseField("durationMs", "integer", null)]), ResponseField("commitStatus", "string", null), ResponseField("producedAt", "string", null), ResponseField("tools", "array", [ResponseField("name", "string", null), ResponseField("description", "string", null), ResponseField("elementId", "string", null)]), ResponseField("model", "string", null), ResponseField("provider", "string", null), ResponseField("limits", "object", [ResponseField("maxModelCalls", "integer", null), ResponseField("maxToolCalls", "integer", null), ResponseField("maxTokens", "integer", null)]), ResponseField("systemPrompt", "array", [ResponseField("contentType", "string", null), ResponseField("text", "string", null), ResponseField("documentReference", "object", [ResponseField("camunda.document.type", "string", null), ResponseField("storeId", "string", null), ResponseField("documentId", "string", null), ResponseField("contentHash", "string", null), ResponseField("metadata", "object", [ResponseField("contentType", "string", null), ResponseField("fileName", "string", null), ResponseField("expiresAt", "string", null), ResponseField("size", "integer", null), ResponseField("processDefinitionId", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("customProperties", "object", null)])]), ResponseField("object", "json", null)])])],
+        null,
     ),
     Command(
         "searchAuditLogs",
@@ -260,6 +277,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("auditLogKey", "string", null), ResponseField("entityKey", "string", null), ResponseField("entityType", "string", null), ResponseField("operationType", "string", null), ResponseField("batchOperationKey", "string", null), ResponseField("batchOperationType", "string", null), ResponseField("timestamp", "string", null), ResponseField("actorId", "string", null), ResponseField("actorType", "string", null), ResponseField("agentElementId", "string", null), ResponseField("tenantId", "string", null), ResponseField("result", "string", null), ResponseField("category", "string", null), ResponseField("processDefinitionId", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("jobKey", "string", null), ResponseField("userTaskKey", "string", null), ResponseField("decisionRequirementsId", "string", null), ResponseField("decisionRequirementsKey", "string", null), ResponseField("decisionDefinitionId", "string", null), ResponseField("decisionDefinitionKey", "string", null), ResponseField("decisionEvaluationKey", "string", null), ResponseField("deploymentKey", "string", null), ResponseField("formKey", "string", null), ResponseField("resourceKey", "string", null), ResponseField("relatedEntityKey", "string", null), ResponseField("relatedEntityType", "string", null), ResponseField("entityDescription", "string", null), ResponseField("inboundChannelType", "string", null), ResponseField("inboundChannelToolName", "string", null)])],
+        null,
     ),
     Command(
         "getAuditLog",
@@ -283,6 +301,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("auditLogKey", "string", null), ResponseField("entityKey", "string", null), ResponseField("entityType", "string", null), ResponseField("operationType", "string", null), ResponseField("batchOperationKey", "string", null), ResponseField("batchOperationType", "string", null), ResponseField("timestamp", "string", null), ResponseField("actorId", "string", null), ResponseField("actorType", "string", null), ResponseField("agentElementId", "string", null), ResponseField("tenantId", "string", null), ResponseField("result", "string", null), ResponseField("category", "string", null), ResponseField("processDefinitionId", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("jobKey", "string", null), ResponseField("userTaskKey", "string", null), ResponseField("decisionRequirementsId", "string", null), ResponseField("decisionRequirementsKey", "string", null), ResponseField("decisionDefinitionId", "string", null), ResponseField("decisionDefinitionKey", "string", null), ResponseField("decisionEvaluationKey", "string", null), ResponseField("deploymentKey", "string", null), ResponseField("formKey", "string", null), ResponseField("resourceKey", "string", null), ResponseField("relatedEntityKey", "string", null), ResponseField("relatedEntityType", "string", null), ResponseField("entityDescription", "string", null), ResponseField("inboundChannelType", "string", null), ResponseField("inboundChannelToolName", "string", null)],
+        null,
     ),
     Command(
         "getAuthentication",
@@ -306,6 +325,7 @@ immutable Command[] catalog = [
         "items",
         "tenants",
         [ResponseField("isAnonymous", "boolean", null), ResponseField("username", "string", null), ResponseField("displayName", "string", null), ResponseField("email", "string", null), ResponseField("authorizedComponents", "array", null), ResponseField("tenants", "array", [ResponseField("name", "string", null), ResponseField("tenantId", "string", null), ResponseField("description", "string", null)]), ResponseField("groups", "array", null), ResponseField("roles", "array", null), ResponseField("salesPlanType", "string", null), ResponseField("c8Links", "object", null), ResponseField("canLogout", "boolean", null)],
+        null,
     ),
     Command(
         "searchOwnAuthorizations",
@@ -329,6 +349,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("ownerId", "string", null), ResponseField("ownerType", "string", null), ResponseField("resourceType", "string", null), ResponseField("resourceId", "string", null), ResponseField("resourcePropertyName", "string", null), ResponseField("permissionTypes", "array", null), ResponseField("authorizationKey", "string", null)]), ResponseField("authorizationsEnabled", "boolean", null)],
+        null,
     ),
     Command(
         "createAuthorization",
@@ -352,6 +373,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("authorizationKey", "string", null)],
+        [BodyVariant("id based request", ["ownerId", "ownerType", "resourceId", "resourceType", "permissionTypes"]), BodyVariant("property based request", ["ownerId", "ownerType", "resourcePropertyName", "resourceType", "permissionTypes"])],
     ),
     Command(
         "searchAuthorizations",
@@ -375,6 +397,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("ownerId", "string", null), ResponseField("ownerType", "string", null), ResponseField("resourceType", "string", null), ResponseField("resourceId", "string", null), ResponseField("resourcePropertyName", "string", null), ResponseField("permissionTypes", "array", null), ResponseField("authorizationKey", "string", null)])],
+        null,
     ),
     Command(
         "getAuthorization",
@@ -398,6 +421,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("ownerId", "string", null), ResponseField("ownerType", "string", null), ResponseField("resourceType", "string", null), ResponseField("resourceId", "string", null), ResponseField("resourcePropertyName", "string", null), ResponseField("permissionTypes", "array", null), ResponseField("authorizationKey", "string", null)],
+        null,
     ),
     Command(
         "updateAuthorization",
@@ -421,6 +445,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        [BodyVariant("id based request", ["ownerId", "ownerType", "resourceId", "resourceType", "permissionTypes"]), BodyVariant("property based request", ["ownerId", "ownerType", "resourcePropertyName", "resourceType", "permissionTypes"])],
     ),
     Command(
         "deleteAuthorization",
@@ -443,6 +468,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -467,6 +493,7 @@ immutable Command[] catalog = [
         "array",
         "",
         [ResponseField("backupId", "integer", null), ResponseField("state", "string", null), ResponseField("failureReason", "string", null), ResponseField("details", "array", [ResponseField("partitionId", "integer", null), ResponseField("state", "string", null), ResponseField("failureReason", "string", null), ResponseField("createdAt", "string", null), ResponseField("lastUpdatedAt", "string", null), ResponseField("snapshotId", "string", null), ResponseField("firstLogPosition", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("brokerId", "integer", null), ResponseField("brokerVersion", "string", null)])],
+        null,
     ),
     Command(
         "takeRuntimeBackup",
@@ -490,6 +517,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("backupId", "integer", null)],
+        null,
     ),
     Command(
         "getRuntimeBackupState",
@@ -513,6 +541,7 @@ immutable Command[] catalog = [
         "multi",
         "",
         [ResponseField("checkpointStates", "array", [ResponseField("checkpointId", "integer", null), ResponseField("checkpointType", "string", null), ResponseField("partitionId", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("checkpointTimestamp", "string", null)]), ResponseField("backupStates", "array", [ResponseField("checkpointId", "integer", null), ResponseField("checkpointType", "string", null), ResponseField("partitionId", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("firstLogPosition", "integer", null), ResponseField("checkpointTimestamp", "string", null)]), ResponseField("ranges", "array", [ResponseField("partitionId", "integer", null), ResponseField("start", "object", [ResponseField("checkpointId", "integer", null), ResponseField("checkpointType", "string", null), ResponseField("partitionId", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("firstLogPosition", "integer", null), ResponseField("checkpointTimestamp", "string", null)]), ResponseField("end", "object", [ResponseField("checkpointId", "integer", null), ResponseField("checkpointType", "string", null), ResponseField("partitionId", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("firstLogPosition", "integer", null), ResponseField("checkpointTimestamp", "string", null)])])],
+        null,
     ),
     Command(
         "deleteRuntimeBackupState",
@@ -535,6 +564,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -559,6 +589,7 @@ immutable Command[] catalog = [
         "multi",
         "",
         [ResponseField("checkpointStates", "array", [ResponseField("checkpointId", "integer", null), ResponseField("checkpointType", "string", null), ResponseField("partitionId", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("checkpointTimestamp", "string", null)]), ResponseField("backupStates", "array", [ResponseField("checkpointId", "integer", null), ResponseField("checkpointType", "string", null), ResponseField("partitionId", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("firstLogPosition", "integer", null), ResponseField("checkpointTimestamp", "string", null)]), ResponseField("ranges", "array", [ResponseField("partitionId", "integer", null), ResponseField("start", "object", [ResponseField("checkpointId", "integer", null), ResponseField("checkpointType", "string", null), ResponseField("partitionId", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("firstLogPosition", "integer", null), ResponseField("checkpointTimestamp", "string", null)]), ResponseField("end", "object", [ResponseField("checkpointId", "integer", null), ResponseField("checkpointType", "string", null), ResponseField("partitionId", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("firstLogPosition", "integer", null), ResponseField("checkpointTimestamp", "string", null)])])],
+        null,
     ),
     Command(
         "getRuntimeBackup",
@@ -582,6 +613,7 @@ immutable Command[] catalog = [
         "items",
         "details",
         [ResponseField("backupId", "integer", null), ResponseField("state", "string", null), ResponseField("failureReason", "string", null), ResponseField("details", "array", [ResponseField("partitionId", "integer", null), ResponseField("state", "string", null), ResponseField("failureReason", "string", null), ResponseField("createdAt", "string", null), ResponseField("lastUpdatedAt", "string", null), ResponseField("snapshotId", "string", null), ResponseField("firstLogPosition", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("brokerId", "integer", null), ResponseField("brokerVersion", "string", null)])],
+        null,
     ),
     Command(
         "deleteRuntimeBackup",
@@ -604,6 +636,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -628,6 +661,7 @@ immutable Command[] catalog = [
         "array",
         "",
         [ResponseField("backupId", "integer", null), ResponseField("state", "string", null), ResponseField("failureReason", "string", null), ResponseField("details", "array", [ResponseField("snapshotName", "string", null), ResponseField("state", "string", null), ResponseField("startTime", "string", null), ResponseField("failures", "array", null)])],
+        null,
     ),
     Command(
         "takeHistoryBackup",
@@ -651,6 +685,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("backupId", "integer", null), ResponseField("scheduledSnapshots", "array", null)],
+        null,
     ),
     Command(
         "getHistoryBackup",
@@ -674,6 +709,7 @@ immutable Command[] catalog = [
         "items",
         "details",
         [ResponseField("backupId", "integer", null), ResponseField("state", "string", null), ResponseField("failureReason", "string", null), ResponseField("details", "array", [ResponseField("snapshotName", "string", null), ResponseField("state", "string", null), ResponseField("startTime", "string", null), ResponseField("failures", "array", null)])],
+        null,
     ),
     Command(
         "deleteHistoryBackup",
@@ -696,6 +732,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -720,6 +757,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("operationType", "string", null), ResponseField("batchOperationKey", "string", null), ResponseField("itemKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("state", "string", null), ResponseField("processedDate", "string", null), ResponseField("errorMessage", "string", null)])],
+        null,
     ),
     Command(
         "searchBatchOperations",
@@ -743,6 +781,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("batchOperationKey", "string", null), ResponseField("state", "string", null), ResponseField("batchOperationType", "string", null), ResponseField("startDate", "string", null), ResponseField("endDate", "string", null), ResponseField("actorType", "string", null), ResponseField("actorId", "string", null), ResponseField("operationsTotalCount", "integer", null), ResponseField("operationsFailedCount", "integer", null), ResponseField("operationsCompletedCount", "integer", null), ResponseField("errors", "array", [ResponseField("partitionId", "integer", null), ResponseField("type", "string", null), ResponseField("message", "string", null)])])],
+        null,
     ),
     Command(
         "getBatchOperation",
@@ -766,6 +805,7 @@ immutable Command[] catalog = [
         "items",
         "errors",
         [ResponseField("batchOperationKey", "string", null), ResponseField("state", "string", null), ResponseField("batchOperationType", "string", null), ResponseField("startDate", "string", null), ResponseField("endDate", "string", null), ResponseField("actorType", "string", null), ResponseField("actorId", "string", null), ResponseField("operationsTotalCount", "integer", null), ResponseField("operationsFailedCount", "integer", null), ResponseField("operationsCompletedCount", "integer", null), ResponseField("errors", "array", [ResponseField("partitionId", "integer", null), ResponseField("type", "string", null), ResponseField("message", "string", null)])],
+        null,
     ),
     Command(
         "cancelBatchOperation",
@@ -788,6 +828,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -812,6 +853,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "suspendBatchOperation",
@@ -834,6 +876,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -858,6 +901,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("timestamp", "string", null)],
+        null,
     ),
     Command(
         "pinClock",
@@ -880,6 +924,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -904,6 +949,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("timestamp", "string", null)],
+        null,
     ),
     Command(
         "resetClock",
@@ -926,6 +972,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -950,6 +997,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("name", "string", null), ResponseField("scope", "string", null), ResponseField("tenantId", "string", null), ResponseField("metadata", "object", null), ResponseField("kind", "string", null), ResponseField("value", "string", null)],
+        null,
     ),
     Command(
         "getGlobalClusterVariable",
@@ -973,6 +1021,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("name", "string", null), ResponseField("scope", "string", null), ResponseField("tenantId", "string", null), ResponseField("metadata", "object", null), ResponseField("kind", "string", null), ResponseField("value", "string", null)],
+        null,
     ),
     Command(
         "updateGlobalClusterVariable",
@@ -996,6 +1045,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("name", "string", null), ResponseField("scope", "string", null), ResponseField("tenantId", "string", null), ResponseField("metadata", "object", null), ResponseField("kind", "string", null), ResponseField("value", "string", null)],
+        null,
     ),
     Command(
         "deleteGlobalClusterVariable",
@@ -1018,6 +1068,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -1042,6 +1093,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("name", "string", null), ResponseField("scope", "string", null), ResponseField("tenantId", "string", null), ResponseField("metadata", "object", null), ResponseField("kind", "string", null), ResponseField("value", "string", null), ResponseField("isTruncated", "boolean", null)])],
+        null,
     ),
     Command(
         "createTenantClusterVariable",
@@ -1065,6 +1117,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("name", "string", null), ResponseField("scope", "string", null), ResponseField("tenantId", "string", null), ResponseField("metadata", "object", null), ResponseField("kind", "string", null), ResponseField("value", "string", null)],
+        null,
     ),
     Command(
         "getTenantClusterVariable",
@@ -1088,6 +1141,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("name", "string", null), ResponseField("scope", "string", null), ResponseField("tenantId", "string", null), ResponseField("metadata", "object", null), ResponseField("kind", "string", null), ResponseField("value", "string", null)],
+        null,
     ),
     Command(
         "updateTenantClusterVariable",
@@ -1111,6 +1165,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("name", "string", null), ResponseField("scope", "string", null), ResponseField("tenantId", "string", null), ResponseField("metadata", "object", null), ResponseField("kind", "string", null), ResponseField("value", "string", null)],
+        null,
     ),
     Command(
         "deleteTenantClusterVariable",
@@ -1133,6 +1188,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -1157,6 +1213,7 @@ immutable Command[] catalog = [
         "items",
         "processInstances",
         [ResponseField("conditionalEvaluationKey", "string", null), ResponseField("tenantId", "string", null), ResponseField("processInstances", "array", [ResponseField("processDefinitionKey", "string", null), ResponseField("processInstanceKey", "string", null)])],
+        null,
     ),
     Command(
         "searchCorrelatedMessageSubscriptions",
@@ -1180,6 +1237,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("businessId", "string", null), ResponseField("correlationKey", "string", null), ResponseField("correlationTime", "string", null), ResponseField("elementId", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("messageKey", "string", null), ResponseField("messageName", "string", null), ResponseField("partitionId", "integer", null), ResponseField("processDefinitionId", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("subscriptionKey", "string", null), ResponseField("tenantId", "string", null)])],
+        null,
     ),
     Command(
         "evaluateDecision",
@@ -1203,6 +1261,7 @@ immutable Command[] catalog = [
         "items",
         "evaluatedDecisions",
         [ResponseField("decisionDefinitionId", "string", null), ResponseField("decisionDefinitionKey", "string", null), ResponseField("decisionDefinitionName", "string", null), ResponseField("decisionDefinitionVersion", "integer", null), ResponseField("decisionEvaluationKey", "string", null), ResponseField("decisionInstanceKey", "string", null), ResponseField("decisionRequirementsId", "string", null), ResponseField("decisionRequirementsKey", "string", null), ResponseField("evaluatedDecisions", "array", [ResponseField("decisionDefinitionId", "string", null), ResponseField("decisionDefinitionName", "string", null), ResponseField("decisionDefinitionVersion", "integer", null), ResponseField("decisionDefinitionType", "string", null), ResponseField("output", "string", null), ResponseField("tenantId", "string", null), ResponseField("matchedRules", "array", [ResponseField("ruleId", "string", null), ResponseField("ruleIndex", "integer", null), ResponseField("evaluatedOutputs", "array", [ResponseField("outputId", "string", null), ResponseField("outputName", "string", null), ResponseField("outputValue", "string", null), ResponseField("ruleId", "string", null), ResponseField("ruleIndex", "integer", null)])]), ResponseField("evaluatedInputs", "array", [ResponseField("inputId", "string", null), ResponseField("inputName", "string", null), ResponseField("inputValue", "string", null)]), ResponseField("decisionDefinitionKey", "string", null), ResponseField("decisionEvaluationInstanceKey", "string", null)]), ResponseField("failedDecisionDefinitionId", "string", null), ResponseField("failureMessage", "string", null), ResponseField("output", "string", null), ResponseField("tenantId", "string", null)],
+        [BodyVariant("by id", ["decisionDefinitionId"]), BodyVariant("by key", ["decisionDefinitionKey"])],
     ),
     Command(
         "searchDecisionDefinitions",
@@ -1226,6 +1285,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("decisionDefinitionId", "string", null), ResponseField("decisionDefinitionKey", "string", null), ResponseField("decisionRequirementsId", "string", null), ResponseField("decisionRequirementsKey", "string", null), ResponseField("decisionRequirementsName", "string", null), ResponseField("decisionRequirementsVersion", "integer", null), ResponseField("name", "string", null), ResponseField("tenantId", "string", null), ResponseField("version", "integer", null)])],
+        null,
     ),
     Command(
         "getDecisionDefinition",
@@ -1249,6 +1309,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("decisionDefinitionId", "string", null), ResponseField("decisionDefinitionKey", "string", null), ResponseField("decisionRequirementsId", "string", null), ResponseField("decisionRequirementsKey", "string", null), ResponseField("decisionRequirementsName", "string", null), ResponseField("decisionRequirementsVersion", "integer", null), ResponseField("name", "string", null), ResponseField("tenantId", "string", null), ResponseField("version", "integer", null)],
+        null,
     ),
     Command(
         "getDecisionDefinitionXML",
@@ -1271,6 +1332,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -1295,6 +1357,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("businessId", "string", null), ResponseField("decisionDefinitionId", "string", null), ResponseField("decisionDefinitionKey", "string", null), ResponseField("decisionDefinitionName", "string", null), ResponseField("decisionDefinitionType", "string", null), ResponseField("decisionDefinitionVersion", "integer", null), ResponseField("decisionEvaluationInstanceKey", "string", null), ResponseField("decisionEvaluationKey", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("evaluationDate", "string", null), ResponseField("evaluationFailure", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("result", "string", null), ResponseField("rootDecisionDefinitionKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("state", "string", null), ResponseField("storageOrdinal", "integer", null), ResponseField("tenantId", "string", null)])],
+        null,
     ),
     Command(
         "getDecisionInstance",
@@ -1318,6 +1381,7 @@ immutable Command[] catalog = [
         "multi",
         "",
         [ResponseField("evaluatedInputs", "array", [ResponseField("inputId", "string", null), ResponseField("inputName", "string", null), ResponseField("inputValue", "string", null)]), ResponseField("matchedRules", "array", [ResponseField("ruleId", "string", null), ResponseField("ruleIndex", "integer", null), ResponseField("evaluatedOutputs", "array", [ResponseField("outputId", "string", null), ResponseField("outputName", "string", null), ResponseField("outputValue", "string", null), ResponseField("ruleId", "string", null), ResponseField("ruleIndex", "integer", null)])])],
+        null,
     ),
     Command(
         "deleteDecisionInstance",
@@ -1340,6 +1404,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -1364,6 +1429,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("batchOperationKey", "string", null), ResponseField("batchOperationType", "string", null)],
+        null,
     ),
     Command(
         "searchDecisionRequirements",
@@ -1387,6 +1453,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("decisionRequirementsId", "string", null), ResponseField("decisionRequirementsKey", "string", null), ResponseField("decisionRequirementsName", "string", null), ResponseField("resourceName", "string", null), ResponseField("tenantId", "string", null), ResponseField("version", "integer", null)])],
+        null,
     ),
     Command(
         "getDecisionRequirements",
@@ -1410,6 +1477,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("decisionRequirementsId", "string", null), ResponseField("decisionRequirementsKey", "string", null), ResponseField("decisionRequirementsName", "string", null), ResponseField("resourceName", "string", null), ResponseField("tenantId", "string", null), ResponseField("version", "integer", null)],
+        null,
     ),
     Command(
         "getDecisionRequirementsXML",
@@ -1432,6 +1500,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -1456,6 +1525,7 @@ immutable Command[] catalog = [
         "items",
         "deployments",
         [ResponseField("deploymentKey", "string", null), ResponseField("tenantId", "string", null), ResponseField("deployments", "array", [ResponseField("processDefinition", "object", [ResponseField("processDefinitionId", "string", null), ResponseField("processDefinitionVersion", "integer", null), ResponseField("resourceName", "string", null), ResponseField("tenantId", "string", null), ResponseField("processDefinitionKey", "string", null)]), ResponseField("decisionDefinition", "object", [ResponseField("decisionDefinitionId", "string", null), ResponseField("version", "integer", null), ResponseField("name", "string", null), ResponseField("tenantId", "string", null), ResponseField("decisionRequirementsId", "string", null), ResponseField("decisionDefinitionKey", "string", null), ResponseField("decisionRequirementsKey", "string", null)]), ResponseField("decisionRequirements", "object", [ResponseField("decisionRequirementsId", "string", null), ResponseField("decisionRequirementsName", "string", null), ResponseField("version", "integer", null), ResponseField("resourceName", "string", null), ResponseField("tenantId", "string", null), ResponseField("decisionRequirementsKey", "string", null)]), ResponseField("form", "object", [ResponseField("formId", "string", null), ResponseField("version", "integer", null), ResponseField("resourceName", "string", null), ResponseField("tenantId", "string", null), ResponseField("formKey", "string", null)]), ResponseField("resource", "object", [ResponseField("resourceId", "string", null), ResponseField("resourceName", "string", null), ResponseField("version", "integer", null), ResponseField("tenantId", "string", null), ResponseField("resourceKey", "string", null)])])],
+        null,
     ),
     Command(
         "createDocument",
@@ -1479,6 +1549,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("camunda.document.type", "string", null), ResponseField("storeId", "string", null), ResponseField("documentId", "string", null), ResponseField("contentHash", "string", null), ResponseField("metadata", "object", [ResponseField("contentType", "string", null), ResponseField("fileName", "string", null), ResponseField("expiresAt", "string", null), ResponseField("size", "integer", null), ResponseField("processDefinitionId", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("customProperties", "object", null)])],
+        null,
     ),
     Command(
         "createDocuments",
@@ -1502,6 +1573,7 @@ immutable Command[] catalog = [
         "multi",
         "",
         [ResponseField("failedDocuments", "array", [ResponseField("fileName", "string", null), ResponseField("status", "integer", null), ResponseField("title", "string", null), ResponseField("detail", "string", null)]), ResponseField("createdDocuments", "array", [ResponseField("camunda.document.type", "string", null), ResponseField("storeId", "string", null), ResponseField("documentId", "string", null), ResponseField("contentHash", "string", null), ResponseField("metadata", "object", [ResponseField("contentType", "string", null), ResponseField("fileName", "string", null), ResponseField("expiresAt", "string", null), ResponseField("size", "integer", null), ResponseField("processDefinitionId", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("customProperties", "object", null)])])],
+        null,
     ),
     Command(
         "getDocument",
@@ -1524,6 +1596,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -1548,6 +1621,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "createDocumentLink",
@@ -1571,6 +1645,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("url", "string", null), ResponseField("expiresAt", "string", null)],
+        null,
     ),
     Command(
         "activateAdHocSubProcessActivities",
@@ -1593,6 +1668,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -1617,6 +1693,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("rootProcessInstanceKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("elementId", "string", null), ResponseField("elementType", "string", null), ResponseField("tenantId", "string", null), ResponseField("bpmnProcessId", "string", null), ResponseField("details", "object", [ResponseField("waitStateType", "string", null), ResponseField("jobKey", "string", null), ResponseField("jobType", "string", null), ResponseField("jobKind", "string", null), ResponseField("listenerEventType", "string", null), ResponseField("retries", "integer", null), ResponseField("messageName", "string", null), ResponseField("correlationKey", "string", null), ResponseField("taskKey", "string", null), ResponseField("dueDate", "string", null), ResponseField("repetitions", "integer", null), ResponseField("signalName", "string", null), ResponseField("expression", "string", null), ResponseField("events", "array", null)])])],
+        null,
     ),
     Command(
         "searchElementInstances",
@@ -1640,6 +1717,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("processDefinitionId", "string", null), ResponseField("startDate", "string", null), ResponseField("endDate", "string", null), ResponseField("elementId", "string", null), ResponseField("elementName", "string", null), ResponseField("type", "string", null), ResponseField("state", "string", null), ResponseField("hasIncident", "boolean", null), ResponseField("tenantId", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("incidentKey", "string", null)])],
+        null,
     ),
     Command(
         "getElementInstance",
@@ -1663,6 +1741,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("processDefinitionId", "string", null), ResponseField("startDate", "string", null), ResponseField("endDate", "string", null), ResponseField("elementId", "string", null), ResponseField("elementName", "string", null), ResponseField("type", "string", null), ResponseField("state", "string", null), ResponseField("hasIncident", "boolean", null), ResponseField("tenantId", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("incidentKey", "string", null)],
+        null,
     ),
     Command(
         "searchElementInstanceIncidents",
@@ -1686,6 +1765,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("processDefinitionId", "string", null), ResponseField("errorType", "string", null), ResponseField("errorMessage", "string", null), ResponseField("elementId", "string", null), ResponseField("creationTime", "string", null), ResponseField("state", "string", null), ResponseField("tenantId", "string", null), ResponseField("incidentKey", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("jobKey", "string", null), ResponseField("storageOrdinal", "integer", null)])],
+        null,
     ),
     Command(
         "createElementInstanceVariables",
@@ -1708,6 +1788,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -1732,6 +1813,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("status", "string", null)],
+        null,
     ),
     Command(
         "pauseExporting",
@@ -1754,6 +1836,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -1778,6 +1861,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "evaluateExpression",
@@ -1801,6 +1885,7 @@ immutable Command[] catalog = [
         "multi",
         "",
         [ResponseField("warnings", "array", [ResponseField("message", "string", null)]), ResponseField("referencedSecrets", "array", [ResponseField("storeId", "string", null), ResponseField("secretName", "string", null)])],
+        null,
     ),
     Command(
         "getFormByKey",
@@ -1824,6 +1909,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("tenantId", "string", null), ResponseField("formId", "string", null), ResponseField("schema", "string", null), ResponseField("version", "integer", null), ResponseField("formKey", "string", null)],
+        null,
     ),
     Command(
         "createGlobalTaskListener",
@@ -1847,6 +1933,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("type", "string", null), ResponseField("retries", "integer", null), ResponseField("afterNonGlobal", "boolean", null), ResponseField("priority", "integer", null), ResponseField("eventTypes", "array", null), ResponseField("id", "string", null), ResponseField("source", "string", null)],
+        null,
     ),
     Command(
         "getGlobalTaskListener",
@@ -1870,6 +1957,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("type", "string", null), ResponseField("retries", "integer", null), ResponseField("afterNonGlobal", "boolean", null), ResponseField("priority", "integer", null), ResponseField("eventTypes", "array", null), ResponseField("id", "string", null), ResponseField("source", "string", null)],
+        null,
     ),
     Command(
         "updateGlobalTaskListener",
@@ -1893,6 +1981,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("type", "string", null), ResponseField("retries", "integer", null), ResponseField("afterNonGlobal", "boolean", null), ResponseField("priority", "integer", null), ResponseField("eventTypes", "array", null), ResponseField("id", "string", null), ResponseField("source", "string", null)],
+        null,
     ),
     Command(
         "deleteGlobalTaskListener",
@@ -1915,6 +2004,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -1939,6 +2029,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("type", "string", null), ResponseField("retries", "integer", null), ResponseField("afterNonGlobal", "boolean", null), ResponseField("priority", "integer", null), ResponseField("eventTypes", "array", null), ResponseField("id", "string", null), ResponseField("source", "string", null)])],
+        null,
     ),
     Command(
         "createGroup",
@@ -1962,6 +2053,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("groupId", "string", null), ResponseField("name", "string", null), ResponseField("description", "string", null)],
+        null,
     ),
     Command(
         "searchGroups",
@@ -1985,6 +2077,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("name", "string", null), ResponseField("groupId", "string", null), ResponseField("description", "string", null)])],
+        null,
     ),
     Command(
         "getGroup",
@@ -2008,6 +2101,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("name", "string", null), ResponseField("groupId", "string", null), ResponseField("description", "string", null)],
+        null,
     ),
     Command(
         "updateGroup",
@@ -2031,6 +2125,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("groupId", "string", null), ResponseField("name", "string", null), ResponseField("description", "string", null)],
+        null,
     ),
     Command(
         "deleteGroup",
@@ -2053,6 +2148,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -2077,6 +2173,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("clientId", "string", null)])],
+        null,
     ),
     Command(
         "assignClientToGroup",
@@ -2099,6 +2196,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -2123,6 +2221,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "searchMappingRulesForGroup",
@@ -2146,6 +2245,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("claimName", "string", null), ResponseField("claimValue", "string", null), ResponseField("name", "string", null), ResponseField("mappingRuleId", "string", null)])],
+        null,
     ),
     Command(
         "assignMappingRuleToGroup",
@@ -2168,6 +2268,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -2192,6 +2293,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "searchRolesForGroup",
@@ -2215,6 +2317,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("name", "string", null), ResponseField("roleId", "string", null), ResponseField("description", "string", null)])],
+        null,
     ),
     Command(
         "searchUsersForGroup",
@@ -2238,6 +2341,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("username", "string", null)])],
+        null,
     ),
     Command(
         "assignUserToGroup",
@@ -2260,6 +2364,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -2284,6 +2389,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "searchIncidents",
@@ -2307,6 +2413,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("processDefinitionId", "string", null), ResponseField("errorType", "string", null), ResponseField("errorMessage", "string", null), ResponseField("elementId", "string", null), ResponseField("creationTime", "string", null), ResponseField("state", "string", null), ResponseField("tenantId", "string", null), ResponseField("incidentKey", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("jobKey", "string", null), ResponseField("storageOrdinal", "integer", null)])],
+        null,
     ),
     Command(
         "getIncident",
@@ -2330,6 +2437,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("processDefinitionId", "string", null), ResponseField("errorType", "string", null), ResponseField("errorMessage", "string", null), ResponseField("elementId", "string", null), ResponseField("creationTime", "string", null), ResponseField("state", "string", null), ResponseField("tenantId", "string", null), ResponseField("incidentKey", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("jobKey", "string", null), ResponseField("storageOrdinal", "integer", null)],
+        null,
     ),
     Command(
         "resolveIncident",
@@ -2352,6 +2460,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -2376,6 +2485,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("processDefinitionId", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processDefinitionName", "string", null), ResponseField("processDefinitionVersion", "integer", null), ResponseField("tenantId", "string", null), ResponseField("activeInstancesWithErrorCount", "integer", null)])],
+        null,
     ),
     Command(
         "getProcessInstanceStatisticsByError",
@@ -2399,6 +2509,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("errorHashCode", "integer", null), ResponseField("errorMessage", "string", null), ResponseField("activeInstancesWithErrorCount", "integer", null)])],
+        null,
     ),
     Command(
         "activateJobs",
@@ -2422,6 +2533,7 @@ immutable Command[] catalog = [
         "items",
         "jobs",
         [ResponseField("jobs", "array", [ResponseField("type", "string", null), ResponseField("processDefinitionId", "string", null), ResponseField("processDefinitionVersion", "integer", null), ResponseField("elementId", "string", null), ResponseField("customHeaders", "object", null), ResponseField("worker", "string", null), ResponseField("retries", "integer", null), ResponseField("deadline", "integer", null), ResponseField("variables", "object", null), ResponseField("tenantId", "string", null), ResponseField("physicalTenantId", "string", null), ResponseField("jobKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("kind", "string", null), ResponseField("listenerEventType", "string", null), ResponseField("userTask", "object", [ResponseField("action", "string", null), ResponseField("assignee", "string", null), ResponseField("candidateGroups", "array", null), ResponseField("candidateUsers", "array", null), ResponseField("changedAttributes", "array", null), ResponseField("dueDate", "string", null), ResponseField("followUpDate", "string", null), ResponseField("formKey", "string", null), ResponseField("priority", "integer", null), ResponseField("userTaskKey", "string", null)]), ResponseField("tags", "array", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("businessId", "string", null), ResponseField("priority", "integer", null), ResponseField("jobLeaseToken", "string", null)])],
+        null,
     ),
     Command(
         "searchJobs",
@@ -2445,6 +2557,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("customHeaders", "object", null), ResponseField("deadline", "string", null), ResponseField("deniedReason", "string", null), ResponseField("elementId", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("endTime", "string", null), ResponseField("errorCode", "string", null), ResponseField("errorMessage", "string", null), ResponseField("hasFailedWithRetriesLeft", "boolean", null), ResponseField("isDenied", "boolean", null), ResponseField("jobKey", "string", null), ResponseField("kind", "string", null), ResponseField("listenerEventType", "string", null), ResponseField("processDefinitionId", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("businessId", "string", null), ResponseField("storageOrdinal", "integer", null), ResponseField("retries", "integer", null), ResponseField("state", "string", null), ResponseField("tenantId", "string", null), ResponseField("type", "string", null), ResponseField("worker", "string", null), ResponseField("creationTime", "string", null), ResponseField("lastUpdateTime", "string", null), ResponseField("priority", "integer", null)])],
+        null,
     ),
     Command(
         "updateJob",
@@ -2467,6 +2580,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -2491,6 +2605,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "throwJobError",
@@ -2513,6 +2628,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -2537,6 +2653,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "updateJobsBatchOperation",
@@ -2560,6 +2677,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("batchOperationKey", "string", null), ResponseField("batchOperationType", "string", null)],
+        null,
     ),
     Command(
         "getGlobalJobStatistics",
@@ -2583,6 +2701,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("created", "object", [ResponseField("count", "integer", null), ResponseField("lastUpdatedAt", "string", null)]), ResponseField("completed", "object", [ResponseField("count", "integer", null), ResponseField("lastUpdatedAt", "string", null)]), ResponseField("failed", "object", [ResponseField("count", "integer", null), ResponseField("lastUpdatedAt", "string", null)]), ResponseField("isIncomplete", "boolean", null)],
+        null,
     ),
     Command(
         "getJobTypeStatistics",
@@ -2606,6 +2725,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("jobType", "string", null), ResponseField("created", "object", [ResponseField("count", "integer", null), ResponseField("lastUpdatedAt", "string", null)]), ResponseField("completed", "object", [ResponseField("count", "integer", null), ResponseField("lastUpdatedAt", "string", null)]), ResponseField("failed", "object", [ResponseField("count", "integer", null), ResponseField("lastUpdatedAt", "string", null)]), ResponseField("workers", "integer", null)])],
+        null,
     ),
     Command(
         "getJobWorkerStatistics",
@@ -2629,6 +2749,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("worker", "string", null), ResponseField("created", "object", [ResponseField("count", "integer", null), ResponseField("lastUpdatedAt", "string", null)]), ResponseField("completed", "object", [ResponseField("count", "integer", null), ResponseField("lastUpdatedAt", "string", null)]), ResponseField("failed", "object", [ResponseField("count", "integer", null), ResponseField("lastUpdatedAt", "string", null)])])],
+        null,
     ),
     Command(
         "getJobTimeSeriesStatistics",
@@ -2652,6 +2773,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("time", "string", null), ResponseField("created", "object", [ResponseField("count", "integer", null), ResponseField("lastUpdatedAt", "string", null)]), ResponseField("completed", "object", [ResponseField("count", "integer", null), ResponseField("lastUpdatedAt", "string", null)]), ResponseField("failed", "object", [ResponseField("count", "integer", null), ResponseField("lastUpdatedAt", "string", null)])])],
+        null,
     ),
     Command(
         "getJobErrorStatistics",
@@ -2675,6 +2797,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("errorCode", "string", null), ResponseField("errorMessage", "string", null), ResponseField("workers", "integer", null)])],
+        null,
     ),
     Command(
         "getLicense",
@@ -2698,6 +2821,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("validLicense", "boolean", null), ResponseField("licenseType", "string", null), ResponseField("isCommercial", "boolean", null), ResponseField("expiresAt", "string", null)],
+        null,
     ),
     Command(
         "createMappingRule",
@@ -2721,6 +2845,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("claimName", "string", null), ResponseField("claimValue", "string", null), ResponseField("name", "string", null), ResponseField("mappingRuleId", "string", null)],
+        null,
     ),
     Command(
         "searchMappingRule",
@@ -2744,6 +2869,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("claimName", "string", null), ResponseField("claimValue", "string", null), ResponseField("name", "string", null), ResponseField("mappingRuleId", "string", null)])],
+        null,
     ),
     Command(
         "getMappingRule",
@@ -2767,6 +2893,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("claimName", "string", null), ResponseField("claimValue", "string", null), ResponseField("name", "string", null), ResponseField("mappingRuleId", "string", null)],
+        null,
     ),
     Command(
         "updateMappingRule",
@@ -2790,6 +2917,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("claimName", "string", null), ResponseField("claimValue", "string", null), ResponseField("name", "string", null), ResponseField("mappingRuleId", "string", null)],
+        null,
     ),
     Command(
         "deleteMappingRule",
@@ -2812,6 +2940,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -2836,6 +2965,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("businessId", "string", null), ResponseField("messageSubscriptionKey", "string", null), ResponseField("processDefinitionId", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("elementId", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("messageSubscriptionState", "string", null), ResponseField("lastUpdatedDate", "string", null), ResponseField("messageName", "string", null), ResponseField("correlationKey", "string", null), ResponseField("messageSubscriptionType", "string", null), ResponseField("toolProperties", "object", null), ResponseField("processDefinitionName", "string", null), ResponseField("processDefinitionVersion", "integer", null), ResponseField("toolName", "string", null), ResponseField("inboundConnectorType", "string", null), ResponseField("tenantId", "string", null)])],
+        null,
     ),
     Command(
         "correlateMessage",
@@ -2859,6 +2989,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("tenantId", "string", null), ResponseField("messageKey", "string", null), ResponseField("processInstanceKey", "string", null)],
+        null,
     ),
     Command(
         "publishMessage",
@@ -2882,6 +3013,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("tenantId", "string", null), ResponseField("messageKey", "string", null)],
+        null,
     ),
     Command(
         "searchProcessDefinitions",
@@ -2905,6 +3037,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("name", "string", null), ResponseField("resourceName", "string", null), ResponseField("version", "integer", null), ResponseField("versionTag", "string", null), ResponseField("processDefinitionId", "string", null), ResponseField("tenantId", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("hasStartForm", "boolean", null), ResponseField("state", "string", null)])],
+        null,
     ),
     Command(
         "getProcessDefinitionMessageSubscriptionStatistics",
@@ -2928,6 +3061,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("processDefinitionId", "string", null), ResponseField("tenantId", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processInstancesWithActiveSubscriptions", "integer", null), ResponseField("activeSubscriptions", "integer", null)])],
+        null,
     ),
     Command(
         "getProcessDefinitionInstanceStatistics",
@@ -2951,6 +3085,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("processDefinitionId", "string", null), ResponseField("tenantId", "string", null), ResponseField("latestProcessDefinitionName", "string", null), ResponseField("hasMultipleVersions", "boolean", null), ResponseField("activeInstancesWithoutIncidentCount", "integer", null), ResponseField("activeInstancesWithIncidentCount", "integer", null)])],
+        null,
     ),
     Command(
         "getProcessDefinition",
@@ -2974,6 +3109,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("name", "string", null), ResponseField("resourceName", "string", null), ResponseField("version", "integer", null), ResponseField("versionTag", "string", null), ResponseField("processDefinitionId", "string", null), ResponseField("tenantId", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("hasStartForm", "boolean", null), ResponseField("state", "string", null)],
+        null,
     ),
     Command(
         "getStartProcessForm",
@@ -2997,6 +3133,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("tenantId", "string", null), ResponseField("formId", "string", null), ResponseField("schema", "string", null), ResponseField("version", "integer", null), ResponseField("formKey", "string", null)],
+        null,
     ),
     Command(
         "getProcessDefinitionStatistics",
@@ -3020,6 +3157,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("items", "array", [ResponseField("elementId", "string", null), ResponseField("active", "integer", null), ResponseField("canceled", "integer", null), ResponseField("incidents", "integer", null), ResponseField("completed", "integer", null)])],
+        null,
     ),
     Command(
         "searchProcessDefinitionVariableNames",
@@ -3043,6 +3181,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("name", "string", null)])],
+        null,
     ),
     Command(
         "getProcessDefinitionXML",
@@ -3065,6 +3204,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -3089,6 +3229,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("processDefinitionId", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processDefinitionName", "string", null), ResponseField("tenantId", "string", null), ResponseField("processDefinitionVersion", "integer", null), ResponseField("activeInstancesWithIncidentCount", "integer", null), ResponseField("activeInstancesWithoutIncidentCount", "integer", null)])],
+        null,
     ),
     Command(
         "createProcessInstance",
@@ -3112,6 +3253,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("processDefinitionId", "string", null), ResponseField("processDefinitionVersion", "integer", null), ResponseField("tenantId", "string", null), ResponseField("variables", "object", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("tags", "array", null), ResponseField("businessId", "string", null)],
+        [BodyVariant("by key", ["processDefinitionKey"]), BodyVariant("by id", ["processDefinitionId"]), BodyVariant("by version tag", ["processDefinitionId", "processDefinitionVersionTag"])],
     ),
     Command(
         "cancelProcessInstancesBatchOperation",
@@ -3135,6 +3277,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("batchOperationKey", "string", null), ResponseField("batchOperationType", "string", null)],
+        null,
     ),
     Command(
         "deleteProcessInstancesBatchOperation",
@@ -3158,6 +3301,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("batchOperationKey", "string", null), ResponseField("batchOperationType", "string", null)],
+        null,
     ),
     Command(
         "resolveIncidentsBatchOperation",
@@ -3181,6 +3325,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("batchOperationKey", "string", null), ResponseField("batchOperationType", "string", null)],
+        null,
     ),
     Command(
         "migrateProcessInstancesBatchOperation",
@@ -3204,6 +3349,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("batchOperationKey", "string", null), ResponseField("batchOperationType", "string", null)],
+        null,
     ),
     Command(
         "modifyProcessInstancesBatchOperation",
@@ -3227,6 +3373,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("batchOperationKey", "string", null), ResponseField("batchOperationType", "string", null)],
+        null,
     ),
     Command(
         "resumeProcessInstancesBatchOperation",
@@ -3250,6 +3397,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("batchOperationKey", "string", null), ResponseField("batchOperationType", "string", null)],
+        null,
     ),
     Command(
         "searchProcessInstances",
@@ -3273,6 +3421,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("processDefinitionId", "string", null), ResponseField("processDefinitionName", "string", null), ResponseField("processDefinitionVersion", "integer", null), ResponseField("processDefinitionVersionTag", "string", null), ResponseField("startDate", "string", null), ResponseField("endDate", "string", null), ResponseField("state", "string", null), ResponseField("suspendedDate", "string", null), ResponseField("hasIncident", "boolean", null), ResponseField("tenantId", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("parentProcessInstanceKey", "string", null), ResponseField("parentElementInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("tags", "array", null), ResponseField("businessId", "string", null), ResponseField("storageOrdinal", "integer", null)])],
+        null,
     ),
     Command(
         "suspendProcessInstancesBatchOperation",
@@ -3296,6 +3445,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("batchOperationKey", "string", null), ResponseField("batchOperationType", "string", null)],
+        null,
     ),
     Command(
         "getProcessInstance",
@@ -3319,6 +3469,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("processDefinitionId", "string", null), ResponseField("processDefinitionName", "string", null), ResponseField("processDefinitionVersion", "integer", null), ResponseField("processDefinitionVersionTag", "string", null), ResponseField("startDate", "string", null), ResponseField("endDate", "string", null), ResponseField("state", "string", null), ResponseField("suspendedDate", "string", null), ResponseField("hasIncident", "boolean", null), ResponseField("tenantId", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("parentProcessInstanceKey", "string", null), ResponseField("parentElementInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("tags", "array", null), ResponseField("businessId", "string", null), ResponseField("storageOrdinal", "integer", null)],
+        null,
     ),
     Command(
         "assignProcessInstanceBusinessId",
@@ -3341,6 +3492,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -3365,6 +3517,7 @@ immutable Command[] catalog = [
         "array",
         "",
         [ResponseField("processInstanceKey", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processDefinitionName", "string", null)],
+        null,
     ),
     Command(
         "cancelProcessInstance",
@@ -3387,6 +3540,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -3411,6 +3565,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "resolveProcessInstanceIncidents",
@@ -3434,6 +3589,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("batchOperationKey", "string", null), ResponseField("batchOperationType", "string", null)],
+        null,
     ),
     Command(
         "searchProcessInstanceIncidents",
@@ -3457,6 +3613,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("processDefinitionId", "string", null), ResponseField("errorType", "string", null), ResponseField("errorMessage", "string", null), ResponseField("elementId", "string", null), ResponseField("creationTime", "string", null), ResponseField("state", "string", null), ResponseField("tenantId", "string", null), ResponseField("incidentKey", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("jobKey", "string", null), ResponseField("storageOrdinal", "integer", null)])],
+        null,
     ),
     Command(
         "migrateProcessInstance",
@@ -3479,6 +3636,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -3503,6 +3661,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "resumeProcessInstance",
@@ -3525,6 +3684,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -3549,6 +3709,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("items", "array", [ResponseField("sequenceFlowId", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processDefinitionId", "string", null), ResponseField("elementId", "string", null), ResponseField("tenantId", "string", null)])],
+        null,
     ),
     Command(
         "getProcessInstanceStatistics",
@@ -3572,6 +3733,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("items", "array", [ResponseField("elementId", "string", null), ResponseField("active", "integer", null), ResponseField("canceled", "integer", null), ResponseField("incidents", "integer", null), ResponseField("completed", "integer", null)])],
+        null,
     ),
     Command(
         "getProcessInstanceWaitStateStatistics",
@@ -3595,6 +3757,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("items", "array", [ResponseField("elementId", "string", null), ResponseField("waitingCount", "integer", null)])],
+        null,
     ),
     Command(
         "suspendProcessInstance",
@@ -3617,6 +3780,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -3641,6 +3805,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("resourceName", "string", null), ResponseField("version", "integer", null), ResponseField("versionTag", "string", null), ResponseField("resourceId", "string", null), ResponseField("tenantId", "string", null), ResponseField("resourceKey", "string", null)])],
+        null,
     ),
     Command(
         "getResource",
@@ -3664,6 +3829,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("resourceName", "string", null), ResponseField("version", "integer", null), ResponseField("versionTag", "string", null), ResponseField("resourceId", "string", null), ResponseField("tenantId", "string", null), ResponseField("resourceKey", "string", null)],
+        null,
     ),
     Command(
         "getResourceContent",
@@ -3686,6 +3852,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -3710,6 +3877,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "deleteResource",
@@ -3733,6 +3901,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("resourceKey", "string", null), ResponseField("batchOperation", "object", [ResponseField("batchOperationKey", "string", null), ResponseField("batchOperationType", "string", null)])],
+        null,
     ),
     Command(
         "createRole",
@@ -3756,6 +3925,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("roleId", "string", null), ResponseField("name", "string", null), ResponseField("description", "string", null)],
+        null,
     ),
     Command(
         "searchRoles",
@@ -3779,6 +3949,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("name", "string", null), ResponseField("roleId", "string", null), ResponseField("description", "string", null)])],
+        null,
     ),
     Command(
         "getRole",
@@ -3802,6 +3973,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("name", "string", null), ResponseField("roleId", "string", null), ResponseField("description", "string", null)],
+        null,
     ),
     Command(
         "updateRole",
@@ -3825,6 +3997,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("name", "string", null), ResponseField("description", "string", null), ResponseField("roleId", "string", null)],
+        null,
     ),
     Command(
         "deleteRole",
@@ -3847,6 +4020,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -3871,6 +4045,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("clientId", "string", null)])],
+        null,
     ),
     Command(
         "assignRoleToClient",
@@ -3893,6 +4068,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -3917,6 +4093,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "searchGroupsForRole",
@@ -3940,6 +4117,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("groupId", "string", null)])],
+        null,
     ),
     Command(
         "assignRoleToGroup",
@@ -3962,6 +4140,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -3986,6 +4165,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "searchMappingRulesForRole",
@@ -4009,6 +4189,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("claimName", "string", null), ResponseField("claimValue", "string", null), ResponseField("name", "string", null), ResponseField("mappingRuleId", "string", null)])],
+        null,
     ),
     Command(
         "assignRoleToMappingRule",
@@ -4031,6 +4212,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -4055,6 +4237,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "searchUsersForRole",
@@ -4078,6 +4261,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("username", "string", null)])],
+        null,
     ),
     Command(
         "assignRoleToUser",
@@ -4100,6 +4284,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -4124,6 +4309,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "resolveSecrets",
@@ -4147,6 +4333,7 @@ immutable Command[] catalog = [
         "multi",
         "",
         [ResponseField("resolved", "array", [ResponseField("reference", "string", null), ResponseField("value", "string", null)]), ResponseField("errors", "array", [ResponseField("reference", "string", null), ResponseField("code", "string", null), ResponseField("message", "string", null)])],
+        null,
     ),
     Command(
         "listSecrets",
@@ -4170,6 +4357,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("references", "array", null)],
+        null,
     ),
     Command(
         "createAdminUser",
@@ -4193,6 +4381,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("username", "string", null), ResponseField("name", "string", null), ResponseField("email", "string", null)],
+        null,
     ),
     Command(
         "broadcastSignal",
@@ -4216,6 +4405,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("tenantId", "string", null), ResponseField("signalKey", "string", null)],
+        null,
     ),
     Command(
         "getStatus",
@@ -4238,6 +4428,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -4262,6 +4453,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("processInstances", "integer", null), ResponseField("decisionInstances", "integer", null), ResponseField("assignees", "integer", null), ResponseField("activeTenants", "integer", null), ResponseField("tenants", "object", null)],
+        null,
     ),
     Command(
         "getSystemConfiguration",
@@ -4285,6 +4477,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("jobMetrics", "object", [ResponseField("enabled", "boolean", null), ResponseField("exportInterval", "string", null), ResponseField("maxWorkerNameLength", "integer", null), ResponseField("maxJobTypeLength", "integer", null), ResponseField("maxTenantIdLength", "integer", null), ResponseField("maxUniqueKeys", "integer", null)]), ResponseField("components", "object", [ResponseField("active", "array", null)]), ResponseField("deployment", "object", [ResponseField("isMultiTenancyEnabled", "boolean", null), ResponseField("isTenantsApiEnabled", "boolean", null), ResponseField("maxRequestSize", "integer", null)]), ResponseField("authentication", "object", [ResponseField("canLogout", "boolean", null), ResponseField("isLoginDelegated", "boolean", null), ResponseField("isCamundaGroupsEnabled", "boolean", null)]), ResponseField("cloud", "object", [ResponseField("stage", "string", null)])],
+        null,
     ),
     Command(
         "createTenant",
@@ -4308,6 +4501,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("tenantId", "string", null), ResponseField("name", "string", null), ResponseField("description", "string", null)],
+        null,
     ),
     Command(
         "searchTenants",
@@ -4331,6 +4525,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("name", "string", null), ResponseField("tenantId", "string", null), ResponseField("description", "string", null)])],
+        null,
     ),
     Command(
         "getTenant",
@@ -4354,6 +4549,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("name", "string", null), ResponseField("tenantId", "string", null), ResponseField("description", "string", null)],
+        null,
     ),
     Command(
         "updateTenant",
@@ -4377,6 +4573,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("tenantId", "string", null), ResponseField("name", "string", null), ResponseField("description", "string", null)],
+        null,
     ),
     Command(
         "deleteTenant",
@@ -4399,6 +4596,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -4423,6 +4621,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("clientId", "string", null)])],
+        null,
     ),
     Command(
         "assignClientToTenant",
@@ -4445,6 +4644,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -4469,6 +4669,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "searchGroupIdsForTenant",
@@ -4492,6 +4693,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("groupId", "string", null)])],
+        null,
     ),
     Command(
         "assignGroupToTenant",
@@ -4514,6 +4716,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -4538,6 +4741,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "searchMappingRulesForTenant",
@@ -4561,6 +4765,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("claimName", "string", null), ResponseField("claimValue", "string", null), ResponseField("name", "string", null), ResponseField("mappingRuleId", "string", null)])],
+        null,
     ),
     Command(
         "assignMappingRuleToTenant",
@@ -4583,6 +4788,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -4607,6 +4813,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "searchRolesForTenant",
@@ -4630,6 +4837,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("name", "string", null), ResponseField("roleId", "string", null), ResponseField("description", "string", null)])],
+        null,
     ),
     Command(
         "assignRoleToTenant",
@@ -4652,6 +4860,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -4676,6 +4885,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "searchUsersForTenant",
@@ -4699,6 +4909,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("username", "string", null)])],
+        null,
     ),
     Command(
         "assignUserToTenant",
@@ -4721,6 +4932,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -4745,6 +4957,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "getTopology",
@@ -4768,6 +4981,7 @@ immutable Command[] catalog = [
         "items",
         "brokers",
         [ResponseField("brokers", "array", [ResponseField("nodeId", "integer", null), ResponseField("brokerId", "string", null), ResponseField("host", "string", null), ResponseField("port", "integer", null), ResponseField("partitions", "array", [ResponseField("partitionId", "integer", null), ResponseField("role", "string", null), ResponseField("health", "string", null), ResponseField("state", "string", null)]), ResponseField("version", "string", null)]), ResponseField("clusterId", "string", null), ResponseField("clusterSize", "integer", null), ResponseField("partitionsCount", "integer", null), ResponseField("replicationFactor", "integer", null), ResponseField("gatewayVersion", "string", null), ResponseField("lastCompletedChangeId", "string", null)],
+        null,
     ),
     Command(
         "changeClusterMode",
@@ -4791,6 +5005,7 @@ immutable Command[] catalog = [
         "items",
         "plannedChanges",
         [ResponseField("changeId", "string", null), ResponseField("plannedChanges", "array", [ResponseField("physicalTenantId", "string", null), ResponseField("operations", "array", [ResponseField("operation", "string", null), ResponseField("mode", "string", null)])])],
+        null,
     ),
     Command(
         "getRestoreStatus",
@@ -4814,6 +5029,7 @@ immutable Command[] catalog = [
         "items",
         "brokers",
         [ResponseField("status", "string", null), ResponseField("changeId", "string", null), ResponseField("startedAt", "string", null), ResponseField("brokers", "array", [ResponseField("brokerId", "string", null), ResponseField("partitionsRestored", "integer", null), ResponseField("partitionsToRestore", "integer", null), ResponseField("partitions", "array", [ResponseField("partitionId", "integer", null), ResponseField("state", "string", null), ResponseField("backupIds", "array", null), ResponseField("completedAt", "string", null)])])],
+        null,
     ),
     Command(
         "restore",
@@ -4837,6 +5053,7 @@ immutable Command[] catalog = [
         "items",
         "plannedChanges",
         [ResponseField("changeId", "string", null), ResponseField("plannedChanges", "array", [ResponseField("physicalTenantId", "string", null), ResponseField("operations", "array", [ResponseField("operation", "string", null), ResponseField("brokerId", "string", null), ResponseField("partitionId", "integer", null), ResponseField("backupIds", "array", null), ResponseField("mode", "string", null)])])],
+        null,
     ),
     Command(
         "getClusterExportingStatus",
@@ -4860,6 +5077,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("status", "string", null)],
+        null,
     ),
     Command(
         "pauseClusterExporting",
@@ -4882,6 +5100,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -4906,6 +5125,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "listRuntimeBackupsAsClusterAdmin",
@@ -4929,6 +5149,7 @@ immutable Command[] catalog = [
         "array",
         "",
         [ResponseField("backupId", "integer", null), ResponseField("state", "string", null), ResponseField("failureReason", "string", null), ResponseField("physicalTenants", "array", [ResponseField("physicalTenantId", "string", null), ResponseField("state", "string", null), ResponseField("failureReason", "string", null), ResponseField("details", "array", [ResponseField("partitionId", "integer", null), ResponseField("state", "string", null), ResponseField("failureReason", "string", null), ResponseField("createdAt", "string", null), ResponseField("lastUpdatedAt", "string", null), ResponseField("snapshotId", "string", null), ResponseField("firstLogPosition", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("brokerId", "integer", null), ResponseField("brokerVersion", "string", null)])])],
+        null,
     ),
     Command(
         "takeRuntimeBackupAsClusterAdmin",
@@ -4952,6 +5173,7 @@ immutable Command[] catalog = [
         "items",
         "physicalTenants",
         [ResponseField("physicalTenants", "array", [ResponseField("physicalTenantId", "string", null), ResponseField("backupId", "integer", null), ResponseField("outcome", "string", null), ResponseField("reason", "string", null)])],
+        null,
     ),
     Command(
         "getRuntimeBackupStateAsClusterAdmin",
@@ -4975,6 +5197,7 @@ immutable Command[] catalog = [
         "items",
         "physicalTenants",
         [ResponseField("physicalTenants", "array", [ResponseField("physicalTenantId", "string", null), ResponseField("state", "object", [ResponseField("checkpointStates", "array", [ResponseField("checkpointId", "integer", null), ResponseField("checkpointType", "string", null), ResponseField("partitionId", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("checkpointTimestamp", "string", null)]), ResponseField("backupStates", "array", [ResponseField("checkpointId", "integer", null), ResponseField("checkpointType", "string", null), ResponseField("partitionId", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("firstLogPosition", "integer", null), ResponseField("checkpointTimestamp", "string", null)]), ResponseField("ranges", "array", [ResponseField("partitionId", "integer", null), ResponseField("start", "object", [ResponseField("checkpointId", "integer", null), ResponseField("checkpointType", "string", null), ResponseField("partitionId", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("firstLogPosition", "integer", null), ResponseField("checkpointTimestamp", "string", null)]), ResponseField("end", "object", [ResponseField("checkpointId", "integer", null), ResponseField("checkpointType", "string", null), ResponseField("partitionId", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("firstLogPosition", "integer", null), ResponseField("checkpointTimestamp", "string", null)])])])])],
+        null,
     ),
     Command(
         "deleteRuntimeBackupStateAsClusterAdmin",
@@ -4997,6 +5220,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -5021,6 +5245,7 @@ immutable Command[] catalog = [
         "items",
         "physicalTenants",
         [ResponseField("physicalTenants", "array", [ResponseField("physicalTenantId", "string", null), ResponseField("state", "object", [ResponseField("checkpointStates", "array", [ResponseField("checkpointId", "integer", null), ResponseField("checkpointType", "string", null), ResponseField("partitionId", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("checkpointTimestamp", "string", null)]), ResponseField("backupStates", "array", [ResponseField("checkpointId", "integer", null), ResponseField("checkpointType", "string", null), ResponseField("partitionId", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("firstLogPosition", "integer", null), ResponseField("checkpointTimestamp", "string", null)]), ResponseField("ranges", "array", [ResponseField("partitionId", "integer", null), ResponseField("start", "object", [ResponseField("checkpointId", "integer", null), ResponseField("checkpointType", "string", null), ResponseField("partitionId", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("firstLogPosition", "integer", null), ResponseField("checkpointTimestamp", "string", null)]), ResponseField("end", "object", [ResponseField("checkpointId", "integer", null), ResponseField("checkpointType", "string", null), ResponseField("partitionId", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("firstLogPosition", "integer", null), ResponseField("checkpointTimestamp", "string", null)])])])])],
+        null,
     ),
     Command(
         "getRuntimeBackupAsClusterAdmin",
@@ -5044,6 +5269,7 @@ immutable Command[] catalog = [
         "items",
         "physicalTenants",
         [ResponseField("backupId", "integer", null), ResponseField("state", "string", null), ResponseField("failureReason", "string", null), ResponseField("physicalTenants", "array", [ResponseField("physicalTenantId", "string", null), ResponseField("state", "string", null), ResponseField("failureReason", "string", null), ResponseField("details", "array", [ResponseField("partitionId", "integer", null), ResponseField("state", "string", null), ResponseField("failureReason", "string", null), ResponseField("createdAt", "string", null), ResponseField("lastUpdatedAt", "string", null), ResponseField("snapshotId", "string", null), ResponseField("firstLogPosition", "integer", null), ResponseField("checkpointPosition", "integer", null), ResponseField("brokerId", "integer", null), ResponseField("brokerVersion", "string", null)])])],
+        null,
     ),
     Command(
         "deleteRuntimeBackupAsClusterAdmin",
@@ -5066,6 +5292,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -5090,6 +5317,7 @@ immutable Command[] catalog = [
         "array",
         "",
         [ResponseField("backupId", "integer", null), ResponseField("physicalTenants", "array", [ResponseField("physicalTenantId", "string", null), ResponseField("state", "string", null), ResponseField("failureReason", "string", null), ResponseField("details", "array", [ResponseField("snapshotName", "string", null), ResponseField("state", "string", null), ResponseField("startTime", "string", null), ResponseField("failures", "array", null)])])],
+        null,
     ),
     Command(
         "takeHistoryBackupAsClusterAdmin",
@@ -5113,6 +5341,7 @@ immutable Command[] catalog = [
         "items",
         "physicalTenants",
         [ResponseField("backupId", "integer", null), ResponseField("physicalTenants", "array", [ResponseField("physicalTenantId", "string", null), ResponseField("scheduledSnapshots", "array", null)])],
+        null,
     ),
     Command(
         "getHistoryBackupAsClusterAdmin",
@@ -5136,6 +5365,7 @@ immutable Command[] catalog = [
         "items",
         "physicalTenants",
         [ResponseField("backupId", "integer", null), ResponseField("physicalTenants", "array", [ResponseField("physicalTenantId", "string", null), ResponseField("state", "string", null), ResponseField("failureReason", "string", null), ResponseField("details", "array", [ResponseField("snapshotName", "string", null), ResponseField("state", "string", null), ResponseField("startTime", "string", null), ResponseField("failures", "array", null)])])],
+        null,
     ),
     Command(
         "deleteHistoryBackupAsClusterAdmin",
@@ -5158,6 +5388,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -5182,6 +5413,7 @@ immutable Command[] catalog = [
         "items",
         "plannedChanges",
         [ResponseField("changeId", "string", null), ResponseField("plannedChanges", "array", [ResponseField("physicalTenantId", "string", null), ResponseField("operations", "array", [ResponseField("operation", "string", null), ResponseField("mode", "string", null)])])],
+        null,
     ),
     Command(
         "getClusterRebalance",
@@ -5205,6 +5437,7 @@ immutable Command[] catalog = [
         "items",
         "partitions",
         [ResponseField("state", "string", null), ResponseField("partitions", "array", [ResponseField("partitionId", "integer", null), ResponseField("physicalTenantId", "string", null), ResponseField("currentLeader", "string", null), ResponseField("desiredLeader", "string", null), ResponseField("state", "string", null)]), ResponseField("runningRebalance", "object", [ResponseField("rebalanceId", "integer", null), ResponseField("partitions", "array", [ResponseField("partitionId", "integer", null), ResponseField("physicalTenantId", "string", null), ResponseField("currentLeader", "string", null), ResponseField("desiredLeader", "string", null), ResponseField("progress", "string", null), ResponseField("result", "string", null)]), ResponseField("startedAt", "string", null), ResponseField("dryRun", "boolean", null), ResponseField("cancelRequested", "boolean", null)]), ResponseField("lastCompletedRebalance", "object", [ResponseField("rebalanceId", "integer", null), ResponseField("partitions", "array", [ResponseField("partitionId", "integer", null), ResponseField("physicalTenantId", "string", null), ResponseField("currentLeader", "string", null), ResponseField("desiredLeader", "string", null), ResponseField("progress", "string", null), ResponseField("result", "string", null)]), ResponseField("startedAt", "string", null), ResponseField("finishedAt", "string", null), ResponseField("result", "string", null)])],
+        null,
     ),
     Command(
         "triggerClusterRebalance",
@@ -5228,6 +5461,7 @@ immutable Command[] catalog = [
         "items",
         "partitions",
         [ResponseField("state", "string", null), ResponseField("partitions", "array", [ResponseField("partitionId", "integer", null), ResponseField("physicalTenantId", "string", null), ResponseField("currentLeader", "string", null), ResponseField("desiredLeader", "string", null), ResponseField("state", "string", null)]), ResponseField("runningRebalance", "object", [ResponseField("rebalanceId", "integer", null), ResponseField("partitions", "array", [ResponseField("partitionId", "integer", null), ResponseField("physicalTenantId", "string", null), ResponseField("currentLeader", "string", null), ResponseField("desiredLeader", "string", null), ResponseField("progress", "string", null), ResponseField("result", "string", null)]), ResponseField("startedAt", "string", null), ResponseField("dryRun", "boolean", null), ResponseField("cancelRequested", "boolean", null)]), ResponseField("lastCompletedRebalance", "object", [ResponseField("rebalanceId", "integer", null), ResponseField("partitions", "array", [ResponseField("partitionId", "integer", null), ResponseField("physicalTenantId", "string", null), ResponseField("currentLeader", "string", null), ResponseField("desiredLeader", "string", null), ResponseField("progress", "string", null), ResponseField("result", "string", null)]), ResponseField("startedAt", "string", null), ResponseField("finishedAt", "string", null), ResponseField("result", "string", null)])],
+        null,
     ),
     Command(
         "cancelClusterRebalance",
@@ -5251,6 +5485,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("wasRunning", "boolean", null)],
+        null,
     ),
     Command(
         "restoreAsClusterAdmin",
@@ -5274,6 +5509,7 @@ immutable Command[] catalog = [
         "items",
         "plannedChanges",
         [ResponseField("changeId", "string", null), ResponseField("plannedChanges", "array", [ResponseField("physicalTenantId", "string", null), ResponseField("operations", "array", [ResponseField("operation", "string", null), ResponseField("brokerId", "string", null), ResponseField("partitionId", "integer", null), ResponseField("backupIds", "array", null), ResponseField("mode", "string", null)])])],
+        null,
     ),
     Command(
         "getClusterStatus",
@@ -5297,6 +5533,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("status", "string", null)],
+        null,
     ),
     Command(
         "getClusterUpgradeStatus",
@@ -5320,6 +5557,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("status", "string", null)],
+        null,
     ),
     Command(
         "getClusterTopology",
@@ -5343,6 +5581,7 @@ immutable Command[] catalog = [
         "multi",
         "",
         [ResponseField("brokers", "array", [ResponseField("brokerId", "string", null), ResponseField("host", "string", null), ResponseField("port", "integer", null), ResponseField("version", "string", null)]), ResponseField("physicalTenants", "array", [ResponseField("physicalTenantId", "string", null), ResponseField("partitionsCount", "integer", null), ResponseField("replicationFactor", "integer", null), ResponseField("lastCompletedChangeId", "string", null), ResponseField("brokers", "array", [ResponseField("brokerId", "string", null), ResponseField("partitions", "array", [ResponseField("partitionId", "integer", null), ResponseField("role", "string", null), ResponseField("health", "string", null), ResponseField("state", "string", null)])])])],
+        null,
     ),
     Command(
         "createUser",
@@ -5366,6 +5605,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("username", "string", null), ResponseField("name", "string", null), ResponseField("email", "string", null)],
+        null,
     ),
     Command(
         "searchUsers",
@@ -5389,6 +5629,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("username", "string", null), ResponseField("name", "string", null), ResponseField("email", "string", null)])],
+        null,
     ),
     Command(
         "getUser",
@@ -5412,6 +5653,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("username", "string", null), ResponseField("name", "string", null), ResponseField("email", "string", null)],
+        null,
     ),
     Command(
         "updateUser",
@@ -5435,6 +5677,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("username", "string", null), ResponseField("name", "string", null), ResponseField("email", "string", null)],
+        null,
     ),
     Command(
         "deleteUser",
@@ -5457,6 +5700,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -5481,6 +5725,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("name", "string", null), ResponseField("state", "string", null), ResponseField("assignee", "string", null), ResponseField("elementId", "string", null), ResponseField("candidateGroups", "array", null), ResponseField("candidateUsers", "array", null), ResponseField("processDefinitionId", "string", null), ResponseField("creationDate", "string", null), ResponseField("completionDate", "string", null), ResponseField("followUpDate", "string", null), ResponseField("dueDate", "string", null), ResponseField("tenantId", "string", null), ResponseField("externalFormReference", "string", null), ResponseField("processDefinitionVersion", "integer", null), ResponseField("customHeaders", "object", null), ResponseField("priority", "integer", null), ResponseField("isSuspended", "boolean", null), ResponseField("userTaskKey", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("processName", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("businessId", "string", null), ResponseField("formKey", "string", null), ResponseField("tags", "array", null)])],
+        null,
     ),
     Command(
         "getUserTask",
@@ -5504,6 +5749,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("name", "string", null), ResponseField("state", "string", null), ResponseField("assignee", "string", null), ResponseField("elementId", "string", null), ResponseField("candidateGroups", "array", null), ResponseField("candidateUsers", "array", null), ResponseField("processDefinitionId", "string", null), ResponseField("creationDate", "string", null), ResponseField("completionDate", "string", null), ResponseField("followUpDate", "string", null), ResponseField("dueDate", "string", null), ResponseField("tenantId", "string", null), ResponseField("externalFormReference", "string", null), ResponseField("processDefinitionVersion", "integer", null), ResponseField("customHeaders", "object", null), ResponseField("priority", "integer", null), ResponseField("isSuspended", "boolean", null), ResponseField("userTaskKey", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("processName", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("businessId", "string", null), ResponseField("formKey", "string", null), ResponseField("tags", "array", null)],
+        null,
     ),
     Command(
         "updateUserTask",
@@ -5526,6 +5772,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -5550,6 +5797,7 @@ immutable Command[] catalog = [
         "",
         "",
         null,
+        null,
     ),
     Command(
         "assignUserTask",
@@ -5572,6 +5820,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -5596,6 +5845,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("auditLogKey", "string", null), ResponseField("entityKey", "string", null), ResponseField("entityType", "string", null), ResponseField("operationType", "string", null), ResponseField("batchOperationKey", "string", null), ResponseField("batchOperationType", "string", null), ResponseField("timestamp", "string", null), ResponseField("actorId", "string", null), ResponseField("actorType", "string", null), ResponseField("agentElementId", "string", null), ResponseField("tenantId", "string", null), ResponseField("result", "string", null), ResponseField("category", "string", null), ResponseField("processDefinitionId", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("jobKey", "string", null), ResponseField("userTaskKey", "string", null), ResponseField("decisionRequirementsId", "string", null), ResponseField("decisionRequirementsKey", "string", null), ResponseField("decisionDefinitionId", "string", null), ResponseField("decisionDefinitionKey", "string", null), ResponseField("decisionEvaluationKey", "string", null), ResponseField("deploymentKey", "string", null), ResponseField("formKey", "string", null), ResponseField("resourceKey", "string", null), ResponseField("relatedEntityKey", "string", null), ResponseField("relatedEntityType", "string", null), ResponseField("entityDescription", "string", null), ResponseField("inboundChannelType", "string", null), ResponseField("inboundChannelToolName", "string", null)])],
+        null,
     ),
     Command(
         "completeUserTask",
@@ -5618,6 +5868,7 @@ immutable Command[] catalog = [
         null,
         "",
         "",
+        null,
         null,
     ),
     Command(
@@ -5642,6 +5893,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("name", "string", null), ResponseField("tenantId", "string", null), ResponseField("variableKey", "string", null), ResponseField("scopeKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("value", "string", null), ResponseField("isTruncated", "boolean", null)])],
+        null,
     ),
     Command(
         "getUserTaskForm",
@@ -5665,6 +5917,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("tenantId", "string", null), ResponseField("formId", "string", null), ResponseField("schema", "string", null), ResponseField("version", "integer", null), ResponseField("formKey", "string", null)],
+        null,
     ),
     Command(
         "lookupUserTask",
@@ -5688,6 +5941,7 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("userTaskKey", "string", null), ResponseField("state", "string", null), ResponseField("elementId", "string", null), ResponseField("elementInstanceKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("processDefinitionId", "string", null), ResponseField("processDefinitionKey", "string", null), ResponseField("processDefinitionVersion", "integer", null), ResponseField("tenantId", "string", null), ResponseField("assignee", "string", null), ResponseField("candidateGroups", "array", null), ResponseField("candidateUsers", "array", null), ResponseField("dueDate", "string", null), ResponseField("followUpDate", "string", null), ResponseField("formKey", "string", null), ResponseField("externalFormReference", "string", null), ResponseField("customHeaders", "object", null), ResponseField("priority", "integer", null), ResponseField("tags", "array", null), ResponseField("businessId", "string", null), ResponseField("creationDate", "string", null), ResponseField("variables", "object", null)],
+        null,
     ),
     Command(
         "searchUserTaskVariables",
@@ -5711,6 +5965,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("name", "string", null), ResponseField("tenantId", "string", null), ResponseField("variableKey", "string", null), ResponseField("scopeKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("value", "string", null), ResponseField("isTruncated", "boolean", null)])],
+        null,
     ),
     Command(
         "searchVariables",
@@ -5734,6 +5989,7 @@ immutable Command[] catalog = [
         "items",
         "items",
         [ResponseField("page", "object", [ResponseField("totalItems", "integer", null), ResponseField("hasMoreTotalItems", "boolean", null), ResponseField("startCursor", "string", null), ResponseField("endCursor", "string", null)]), ResponseField("items", "array", [ResponseField("name", "string", null), ResponseField("tenantId", "string", null), ResponseField("variableKey", "string", null), ResponseField("scopeKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("value", "string", null), ResponseField("isTruncated", "boolean", null)])],
+        null,
     ),
     Command(
         "getVariable",
@@ -5757,5 +6013,6 @@ immutable Command[] catalog = [
         "object",
         "",
         [ResponseField("name", "string", null), ResponseField("tenantId", "string", null), ResponseField("variableKey", "string", null), ResponseField("scopeKey", "string", null), ResponseField("processInstanceKey", "string", null), ResponseField("rootProcessInstanceKey", "string", null), ResponseField("value", "string", null)],
+        null,
     ),
 ];

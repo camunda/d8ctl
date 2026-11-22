@@ -260,7 +260,80 @@ JSONValue buildBody(const Command* c, const string[string] named, string bodyJso
             ~ " (or pass it inside --body). See `d8ctl "
             ~ c.namespace ~ " " ~ c.resource ~ " " ~ c.verb ~ " --help`.");
     }
+    requireVariant(c, obj);
     return obj;
+}
+
+/// A `oneOf`/`anyOf` body (d8ctl#36) must satisfy at least one shape's
+/// required fields; otherwise a usage error listing the shapes as flags.
+/// Which of several satisfied shapes applies is the server's call.
+void requireVariant(const Command* c, JSONValue obj)
+{
+    if (!c.variants.length)
+        return;
+    foreach (ref v; c.variants)
+    {
+        bool ok = true;
+        foreach (n; v.required)
+            if ((n in obj.objectNoRef) is null)
+            {
+                ok = false;
+                break;
+            }
+        if (ok)
+            return;
+    }
+    throw new UsageException(c.resource ~ " " ~ c.verb ~ " needs one of:\n" ~ variantLines(c)
+        ~ "or the same fields inside --body. See `d8ctl " ~ c.namespace ~ " "
+        ~ c.resource ~ " " ~ c.verb ~ " --help`.");
+}
+
+/// The shapes of a union body as flag lines, `  --a=VALUE --b=INT   (by key)`.
+string variantLines(const Command* c)
+{
+    import std.format : format;
+
+    string[] flagsOf;
+    size_t width;
+    foreach (ref v; c.variants)
+    {
+        string line;
+        foreach (n; v.required)
+        {
+            string kind = "string";
+            foreach (ref f; c.bodyFields)
+                if (f.name == n)
+                    kind = f.kind;
+            line ~= (line.length ? " " : "") ~ "--" ~ n ~ "=" ~ bodyKindHint(kind);
+        }
+        flagsOf ~= line;
+        if (line.length > width)
+            width = line.length;
+    }
+    string out_;
+    foreach (i, ref v; c.variants)
+        out_ ~= format("  %-*s  (%s)\n", width, flagsOf[i], v.name);
+    return out_;
+}
+
+unittest
+{
+    import std.exception : assertThrown, collectExceptionMsg;
+    import std.string : indexOf;
+    import d8ctl.catalog : findByOperationId;
+
+    auto c = findByOperationId("createProcessInstance");
+    assert(c !is null && c.variants.length == 3);
+    string[string] none;
+    auto msg = collectExceptionMsg!UsageException(buildBody(c, none, null));
+    assert(msg.indexOf("needs one of:") >= 0, msg);
+    assert(msg.indexOf("--processDefinitionKey=VALUE") >= 0 && msg.indexOf("(by version tag)") >= 0, msg);
+    // Any one shape is enough, via flags or --body.
+    cast(void) buildBody(c, ["processDefinitionId": "p"], null);
+    cast(void) buildBody(c, ["processDefinitionKey": "1"], null);
+    cast(void) buildBody(c, none, `{"processDefinitionKey":"1"}`);
+    // Other fields alone are not.
+    assertThrown!UsageException(buildBody(c, ["processDefinitionVersionTag": "v1"], null));
 }
 
 string bodyKindHint(string kind)

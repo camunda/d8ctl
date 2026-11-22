@@ -15,7 +15,7 @@ import d8ctl.util : eqIgnoreCase;
 import std.algorithm : canFind, map, sort, uniq;
 import std.array : array;
 
-public import d8ctl.generated.catalog : BodyField, Command, ResponseField, catalog, catalogOperationCount, catalogSpecHash;
+public import d8ctl.generated.catalog : BodyField, BodyVariant, Command, ResponseField, catalog, catalogOperationCount, catalogSpecHash;
 
 /// Copy a model row into a `Command` (the generated table's row type).
 Command toCommand(const ref ModelCommand c)
@@ -45,6 +45,8 @@ Command toCommand(const ref ModelCommand c)
     r.selection = c.selection;
     foreach (f; c.responseFields)
         r.responseFields ~= toResponseField(f);
+    foreach (v; c.variants)
+        r.variants ~= BodyVariant(v.name, v.required.dup);
     return r;
 }
 
