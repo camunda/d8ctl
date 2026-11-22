@@ -238,13 +238,14 @@ T retrying(T)(Transport client, RetryStats stats, string method, scope T delegat
     auto clock = client.clock;
     const start = clock.nowMs;
     const maxAttempts = stats.config.maxAttempts < 1 ? 1 : stats.config.maxAttempts;
+    // Record the whole call (backoffs and the final attempt) on every exit.
+    scope (exit) stats.elapsedMs = clock.nowMs - start;
     while (true)
     {
         stats.attempts += 1;
         try return op();
         catch (Exception err)
         {
-            stats.elapsedMs = clock.nowMs - start;
             if (stats.attempts >= maxAttempts || !isRetryable(err)) throw err;
             clock.sleep(backoffDelayMs(stats.config, stats.attempts - 1));
         }

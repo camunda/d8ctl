@@ -2087,7 +2087,8 @@ unittest
     assert(accepted == 6, accepted.to!string);
     assert(stats.attempts == 6);
     // Worst case: 250 + 500 + 1000 + 2000 + 4000 ms of backoff.
-    assert(stats.elapsedMs < 7750 + 2000, stats.elapsedMs.to!string);
+    // elapsedMs covers the final backoff and the successful attempt too.
+    assert(stats.elapsedMs > 0 && stats.elapsedMs < 7750 + 2000, stats.elapsedMs.to!string);
 
     // TLS refused on every attempt: the error comes after exactly the
     // configured attempts, and they are counted.
