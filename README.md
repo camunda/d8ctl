@@ -95,7 +95,10 @@ d8ctl is built for agents and scripts, so its output is a contract (#16):
   so a few seconds of flaky link (a Tailscale Funnel TLS drop) does not fail
   the step. (The SDK's own defaults — 3 attempts, 100 ms, 2 s — give up within
   ~0.3 s; they suit long-running workers.) Precedence: `--camunda-*` switch >
-  profile > environment > d8ctl default. Tune per call
+  profile > environment > d8ctl default for cluster calls; extension calls
+  and spec downloads ignore ambient `CAMUNDA_*` variables, so for them it is
+  switch > profile > d8ctl default (exporting
+  `CAMUNDA_SDK_HTTP_RETRY_MAX_ATTEMPTS=1` does not disable their retries). Tune per call
   (`--camunda-sdk-http-retry-max-attempts=10
   --camunda-sdk-http-retry-max-delay-ms=5000`) or in the profile
   (`CAMUNDA_SDK_HTTP_RETRY_MAX_ATTEMPTS`, `…_BASE_DELAY_MS`, `…_MAX_DELAY_MS`).

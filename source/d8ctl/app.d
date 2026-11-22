@@ -183,8 +183,11 @@ private void writeResult(string out_)
 }
 
 /// The failure for an exception from parsing, config or a request.
-Failure classify(Exception e, string operation, const RetryStats stats = null)
+Failure classify(Exception e, string operation, const RetryStats callStats = null)
 {
+    // A spec download carries its own retry statistics.
+    const(RetryStats) stats = callStats !is null ? callStats
+        : (cast(SpecDownloadException) e !is null ? (cast(SpecDownloadException) e).stats : null);
     Failure f;
     f.message = e.msg;
     f.operation = operation;

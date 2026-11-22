@@ -41,6 +41,21 @@ class ExtensionException : Exception
     }
 }
 
+/// A spec download that failed, with what its retry loop did (attempts and
+/// elapsed time) for the error envelope, like a failed API call.
+class SpecDownloadException : ExtensionException
+{
+    import d8ctl.dispatch : RetryStats;
+
+    RetryStats stats;
+
+    this(string msg, RetryStats stats, string file = __FILE__, size_t line = __LINE__) @safe
+    {
+        super(msg, file, line);
+        this.stats = stats;
+    }
+}
+
 /// The manifest: `<configDir>/extensions/<name>/extension.json`.
 struct Manifest
 {
@@ -286,12 +301,16 @@ FetchResult fetchSpecHttp(string url, string etag, string[string] conn) @safe
     import camunda.transport : mergeHeadersCaseInsensitive;
     import d8ctl.version_ : cliVersion;
 
+    import d8ctl.dispatch : RetryStats, countedTransport, retrying;
+
     int status;
     string bodyText;
     string gotEtag;
+    auto stats = new RetryStats;
     try
     {
-        auto client = extensionTransport(conn);
+        auto client = countedTransport(conn, stats,
+            (string[string] o) => extensionTransport(o));
         string[string] base = client.auth().headers();
         base["Accept"] = "application/json, */*";
         base["User-Agent"] = "d8ctl/" ~ cliVersion;
@@ -301,10 +320,11 @@ FetchResult fetchSpecHttp(string url, string etag, string[string] conn) @safe
         // Same retry as API calls (the SDK's policy and the profile's
         // CAMUNDA_SDK_HTTP_RETRY_*): network errors and 429/502/503/504.
         import camunda.errors : ApiException;
-        import camunda.retry : isRetryable, withRetry;
+        import camunda.retry : isRetryable;
         import d8ctl.safeio : BoundedResponse;
 
-        auto r = withRetry!BoundedResponse(client.config.retry, client.clock, {
+        // Counted, so a failure reports its attempts and elapsed time.
+        auto r = retrying!BoundedResponse(client, stats, "GET", () @safe {
             // Bounded while receiving: the hardened reader's own size limit
             // runs only after the download, too late to stop a memory blow-up.
             auto got = boundedGet(url, hdrs, MAX_SPEC_BYTES, client.config.tls.certPath,
@@ -318,10 +338,10 @@ FetchResult fetchSpecHttp(string url, string etag, string[string] conn) @safe
         bodyText = r.body_;
     }
     catch (ApiException e)
-        throw new ExtensionException("cannot download the spec from " ~ url
-            ~ ": HTTP " ~ e.status.to!string);
+        throw new SpecDownloadException("cannot download the spec from " ~ url
+            ~ ": HTTP " ~ e.status.to!string, stats);
     catch (CamundaException e)
-        throw new ExtensionException("cannot download the spec from " ~ url ~ ": " ~ e.msg);
+        throw new SpecDownloadException("cannot download the spec from " ~ url ~ ": " ~ e.msg, stats);
     if (status == 304)
         return FetchResult(null, etag, true);
     if (status < 200 || status >= 300)
@@ -2046,8 +2066,13 @@ unittest
         fetchSpecHttp(url, "", conn(port, 2));
         assert(false);
     }
-    catch (ExtensionException e)
+    catch (SpecDownloadException e)
+    {
         assert(e.msg[$ - 8 .. $] == "HTTP 503", e.msg);
+        // The retry statistics reach the error envelope.
+        assert(e.stats !is null && e.stats.attempts == 2, e.stats.attempts.to!string);
+        assert(e.stats.retried && e.stats.note.length);
+    }
     ch.take(accepted);
     assert(accepted == 2, accepted.to!string);
 }
