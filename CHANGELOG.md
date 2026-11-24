@@ -1,3 +1,10 @@
+# [0.12.0](https://github.com/camunda/d8ctl/compare/v0.11.2...v0.12.0) (2026-11-24)
+
+
+### Features
+
+* typed path and query parameters (type, description, enum, default) ([#40](https://github.com/camunda/d8ctl/issues/40)) ([3a3606f](https://github.com/camunda/d8ctl/commit/3a3606fa03491e15109fbd95cb10c5aa4440e454)), closes [#39](https://github.com/camunda/d8ctl/issues/39)
+
 ## [0.11.2](https://github.com/camunda/d8ctl/compare/v0.11.1...v0.11.2) (2026-11-22)
 
 
