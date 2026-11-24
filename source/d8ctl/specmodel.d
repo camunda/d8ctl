@@ -46,6 +46,22 @@ struct ModelField
     string[] values;
 }
 
+/// A path or query parameter, exposed as `--name=value` (d8ctl#39).
+struct ModelParam
+{
+    string name;
+    /// `path` or `query`.
+    string location;
+    /// `string`, `integer`, `number`, `boolean`, or `json`.
+    string kind;
+    bool required;
+    string doc;
+    /// Allowed values from the schema's (or array items') string `enum`.
+    string[] values;
+    /// The schema's scalar `default`, as text; empty when none.
+    string defaultValue;
+}
+
 /// One shape of a `oneOf`/`anyOf` request body: a label and the top-level
 /// fields that shape requires. A body must satisfy at least one.
 struct ModelVariant
@@ -86,6 +102,8 @@ struct ModelCommand
     string[] requiredQuery;
     string[] optionalQuery;
     ModelField[] bodyFields;
+    /// Typed path + query parameters, in spec order (d8ctl#39).
+    ModelParam[] params;
     /// `oneOf`/`anyOf` body shapes (d8ctl#36); empty = not a union, or a
     /// union where some shape requires nothing.
     ModelVariant[] variants;
@@ -311,6 +329,77 @@ string classifyProp(Spec spec, J prop)
     default:
         return "json";
     }
+}
+
+/// Text of a scalar JSON value (a schema `default`); empty for anything else.
+private string scalarText(J v)
+{
+    if (v is null)
+        return "";
+    final switch (v.kind)
+    {
+    case Kind.bool_:
+        return v.boolean ? "true" : "false";
+    case Kind.number, Kind.string_:
+        return v.text;
+    case Kind.null_, Kind.array, Kind.object:
+        return "";
+    }
+}
+
+/// The typed form of a resolved OpenAPI parameter object (d8ctl#39). An
+/// array parameter takes its allowed values from its items.
+private ModelParam paramOf(Spec spec, J p, string location)
+{
+    ModelParam m;
+    m.name = p.get("name").orS("");
+    m.location = location;
+    m.required = location == "path" || truthy(p.get("required"));
+    m.doc = cleanDoc(p.get("description").orS(""));
+    auto sch = p.get("schema");
+    if (sch is null || !sch.isObj)
+    {
+        m.kind = "string";
+        return m;
+    }
+    m.kind = classifyProp(spec, sch);
+    bool[string] seen;
+    m.values = enumValues(spec, sch, seen);
+    if (!m.values.length)
+    {
+        bool[string] seenItems;
+        m.values = enumValues(spec, sch.get("items"), seenItems);
+    }
+    m.defaultValue = scalarText(sch.get("default"));
+    return m;
+}
+
+/// Typed parameters of a raw operation, path-level parameters first (an
+/// operation-level one of the same name and location overrides it).
+private ModelParam[] paramsOf(Spec spec, J pathItem, J op, string where)
+{
+    ModelParam[] out_;
+    foreach (src; [pathItem, op])
+        foreach (i, p; itemsOf(src is null ? null : src.get("parameters")))
+        {
+            auto r = resolveComponent(spec, p, "parameters", where ~ "/parameters/" ~ i.to!string);
+            const loc = r.get("in").orS("");
+            if (loc != "path" && loc != "query")
+                continue;
+            auto m = paramOf(spec, r, loc);
+            if (!m.name.length)
+                continue;
+            bool replaced;
+            foreach (ref e; out_)
+                if (e.name == m.name && e.location == loc)
+                {
+                    e = m;
+                    replaced = true;
+                }
+            if (!replaced)
+                out_ ~= m;
+        }
+    return out_;
 }
 
 private struct Flat
@@ -558,6 +647,7 @@ private struct OpInfo
     string[] pathParams;
     string[] requiredQuery;
     string[] optionalQuery;
+    ModelParam[] params;
     long successStatus = 200;
     bool hasResponseSchema;
     /// `components/schemas` name of the 2xx JSON response, when it is one.
@@ -1126,6 +1216,11 @@ private OpInfo fromMeta(Spec spec, J op, size_t i)
         else
             o.optionalQuery ~= pyStr(q.get("name"));
     }
+    {
+        auto item = spec.spec.get("paths").get(o.path);
+        o.params = paramsOf(spec, item, item is null ? null : item.get(o.method.toLower),
+            "#/paths/" ~ pointerEscape(o.path) ~ "/" ~ o.method.toLower);
+    }
     auto st = op.get("successStatus");
     o.successStatus = truthy(st) ? pyStr(st).to!double.to!long : 200;
     o.responseRef = pyStrOrNull(op.get("successResponseSchemaRef"));
@@ -1238,6 +1333,7 @@ private OpInfo fromPaths(Spec spec, J op)
     auto oid = op.get("operationId");
     o.operationId = oid !is null && oid.isStr && oid.text.length ? oid.text : syntheticOperationId(o.method, o.path);
     o.summary = op.get("summary").orS(o.operationId);
+    o.params = paramsOf(spec, null, op, where);
     foreach (i, p; itemsOf(op.get("parameters")))
     {
         auto r = resolveComponent(spec, p, "parameters", where ~ "/parameters/" ~ i.to!string);
@@ -1410,6 +1506,7 @@ Catalog buildCatalog(Spec spec, string ns = "cluster")
         c.pathParams = placeholderOrder(op.path, op.pathParams);
         c.requiredQuery = op.requiredQuery;
         c.optionalQuery = op.optionalQuery;
+        c.params = op.params;
         c.bodyFields = bodyFieldsOf(spec, op, c.variants);
         c.rootServer = isRootServer(spec, op);
         // Operator gate: explicit x-cli.audience wins; without any x-cli, an
@@ -1600,6 +1697,18 @@ private string dPaths(const string[][] paths)
     return "[" ~ parts.join(", ") ~ "]";
 }
 
+private string dParams(const ModelParam[] ps)
+{
+    if (!ps.length)
+        return "null";
+    string[] parts;
+    foreach (p; ps)
+        parts ~= "ParamField(" ~ dString(p.name) ~ ", " ~ dString(p.location) ~ ", " ~ dString(p.kind) ~ ", "
+            ~ (p.required ? "true" : "false") ~ ", " ~ dString(p.doc) ~ ", " ~ dStringArray(p.values)
+            ~ ", " ~ dString(p.defaultValue) ~ ")";
+    return "[" ~ parts.join(", ") ~ "]";
+}
+
 private string dVariants(const ModelVariant[] vs)
 {
     if (!vs.length)
@@ -1626,7 +1735,7 @@ string renderCatalogModule(const ref Catalog cat, string generator)
                 c.rootServer ? "true" : "false", c.operatorOnly ? "true" : "false",
                 dStringArray(c.positional), dPaths(c.paths),
                 dString(c.responseTarget), dString(c.selection), dResponseFields(c.responseFields),
-                dVariants(c.variants)])
+                dVariants(c.variants), dParams(c.params)])
             rows.put("        " ~ v ~ ",\n");
         rows.put("    ),");
     }
@@ -1717,6 +1826,21 @@ struct Command
     ResponseField[] responseFields;
     /// ` ~ "`oneOf`/`anyOf`" ~ ` body shapes (d8ctl#36): a body must satisfy one. Empty = no check.
     BodyVariant[] variants;
+    /// Typed path + query parameters (d8ctl#39), in spec order.
+    ParamField[] params;
+}
+
+/// A path or query parameter (d8ctl#39). ` ~ "`location`" ~ ` is ` ~ "`path` or `query`" ~ `;
+/// ` ~ "`kind`" ~ ` as for ` ~ "`BodyField`" ~ `; ` ~ "`values`" ~ ` the allowed values (empty = any).
+struct ParamField
+{
+    string name;
+    string location;
+    string kind;
+    bool required;
+    string doc;
+    string[] values;
+    string defaultValue;
 }
 
 `;
@@ -1806,6 +1930,8 @@ unittest
     assert(list.summary == "List pets" && list.kind == "json" && !list.hasBody);
     assert(list.requiredQuery == ["owner"] && list.optionalQuery == ["limit"]);
     assert(!list.rootServer);
+    assert(list.params.length == 2 && list.params[0].name == "limit" && list.params[0].kind == "string");
+    assert(list.params[1].name == "owner" && list.params[1].required && list.params[1].location == "query");
 
     auto create = cat.commands[1];
     assert(create.verb == "create" && create.resource == "pet" && create.addedInVersion == "1.2");
@@ -2355,4 +2481,50 @@ unittest
     enum meta2 = `{"operations": [{"operationId": "getX", "method": "get", "path": "/x",
         "successStatus": "200", "successResponseSchemaRef": "C0"}]}`;
     assertThrown!OpenApiLimitException(buildCatalog(spec2, meta2, "t"));
+}
+
+/// Typed path + query parameters (d8ctl#39): kind, description, enum (inline,
+/// `$ref`, array items), default; path-level parameters with operation-level
+/// overrides.
+unittest
+{
+    enum spec = `{
+      "openapi": "3.1.0", "info": {"title": "t", "version": "1"},
+      "paths": {
+        "/things/{id}": {
+          "parameters": [
+            {"name": "id", "in": "path", "required": true, "description": "The thing. More text.",
+             "schema": {"type": "integer"}},
+            {"name": "state", "in": "query", "schema": {"type": "string"}}
+          ],
+          "get": {
+            "operationId": "getThing",
+            "parameters": [
+              {"name": "state", "in": "query", "description": "Filter by state.",
+               "schema": {"type": "string", "enum": ["open", "closed"], "default": "open"}},
+              {"name": "sort", "in": "query", "schema": {"$ref": "#/components/schemas/Sort"}},
+              {"name": "tags", "in": "query", "schema": {"type": "array", "items": {"type": "string", "enum": ["a", "b"]}}},
+              {"name": "limit", "in": "query", "required": true, "schema": {"type": "integer", "default": 20}},
+              {"name": "X-Trace", "in": "header", "schema": {"type": "string"}}
+            ],
+            "responses": {"204": {"description": "ok"}}
+          }
+        }
+      },
+      "components": {"schemas": {"Sort": {"type": "string", "enum": ["asc", "desc"]}}}
+    }`;
+    auto cat = buildCatalog(spec, null, "t");
+    auto ps = cat.commands[0].params;
+    assert(ps.length == 5, ps.length.to!string);
+    assert(ps[0].name == "id" && ps[0].location == "path" && ps[0].required && ps[0].kind == "integer");
+    assert(ps[0].doc.startsWith("The thing."));
+    // The operation-level `state` replaces the path-level one, in place.
+    assert(ps[1].name == "state" && ps[1].values == ["open", "closed"] && ps[1].defaultValue == "open");
+    assert(ps[1].doc == "Filter by state." && !ps[1].required);
+    assert(ps[2].name == "sort" && ps[2].values == ["asc", "desc"] && ps[2].kind == "string");
+    assert(ps[3].name == "tags" && ps[3].kind == "json" && ps[3].values == ["a", "b"]);
+    assert(ps[4].name == "limit" && ps[4].required && ps[4].kind == "integer" && ps[4].defaultValue == "20");
+
+    auto src = renderCatalogModule(cat, "test");
+    assert(src.indexOf(`ParamField("state", "query", "string", false, "Filter by state.", ["open", "closed"], "open")`) >= 0);
 }

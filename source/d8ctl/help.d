@@ -10,7 +10,7 @@ import d8ctl.specmodel : Catalog, firstSentence;
 import d8ctl.util : eqIgnoreCase;
 import d8ctl.version_ : cliVersion;
 import std.algorithm : sort;
-import std.array : appender;
+import std.array : Appender, appender, join;
 import std.format : format;
 
 enum versionString = "d8ctl " ~ cliVersion ~ " (catalog " ~ catalogSpecHash ~ ")";
@@ -209,7 +209,10 @@ string commandHelp(const Command* c)
     {
         buf.put("\nPath parameters (positional, in order):\n");
         foreach (p; c.pathParams)
+        {
             buf.put("  " ~ p ~ "\n");
+            putParamDetail(buf, c, p);
+        }
     }
     if (c.positional.length)
     {
@@ -223,13 +226,19 @@ string commandHelp(const Command* c)
     {
         buf.put("\nRequired query flags:\n");
         foreach (p; c.requiredQuery)
-            buf.put("  --" ~ p ~ "=VALUE\n");
+        {
+            buf.put("  --" ~ p ~ "=" ~ paramHint(c, p) ~ "\n");
+            putParamDetail(buf, c, p);
+        }
     }
     if (c.optionalQuery.length)
     {
         buf.put("\nOptional query flags:\n");
         foreach (p; c.optionalQuery)
-            buf.put("  --" ~ p ~ "=VALUE\n");
+        {
+            buf.put("  --" ~ p ~ "=" ~ paramHint(c, p) ~ "\n");
+            putParamDetail(buf, c, p);
+        }
     }
     if (c.bodyFields.length)
     {
@@ -290,6 +299,43 @@ private void putResponseField(ref typeof(appender!string()) buf, const ref Respo
     buf.put(format("%s%-28s %s\n", indent, f.name, f.kind));
     foreach (ref ch; f.children)
         putResponseField(buf, ch, indent ~ "  .");
+}
+
+private bool isRequiredQuery(const ref Command c, string name)
+{
+    foreach (q; c.requiredQuery)
+        if (q == name) return true;
+    return false;
+}
+
+/// `a|b|c` for an enum parameter, else the kind hint (`VALUE`, `N`, ...).
+private string paramHint(const Command* c, string name)
+{
+    import d8ctl.dispatch : findParam;
+
+    auto p = findParam(c, name);
+    if (p is null)
+        return "VALUE";
+    if (p.values.length && p.values.length <= 6)
+        return p.values.join("|") ~ (p.kind == "json" ? "[,…]" : "");
+    return p.kind == "json" ? "VALUE[,…]" : bodyKindHint(p.kind);
+}
+
+/// The description, allowed values and default of a parameter, indented
+/// under its flag line (d8ctl#39).
+private void putParamDetail(ref Appender!string buf, const Command* c, string name)
+{
+    import d8ctl.dispatch : findParam;
+
+    auto p = findParam(c, name);
+    if (p is null)
+        return;
+    if (p.doc.length)
+        buf.put(format("               %s\n", firstSentence(p.doc)));
+    if (p.values.length > 6)
+        buf.put(format("               One of: %-(%s, %)\n", p.values));
+    if (p.defaultValue.length)
+        buf.put(format("               Default: %s\n", p.defaultValue));
 }
 
 string bodyKindHint(string kind)
@@ -421,10 +467,31 @@ JSONValue commandJson(const ref Command c, bool detail)
     // Positional arguments, in order: x-cli's, else the path parameters.
     j["positional"] = c.positional.length ? c.positional.dup : c.pathParams.dup;
     JSONValue[] flags;
-    foreach (q; c.requiredQuery)
-        flags ~= JSONValue(["name": JSONValue(q), "in": JSONValue("query"), "required": JSONValue(true)]);
-    foreach (q; c.optionalQuery)
-        flags ~= JSONValue(["name": JSONValue(q), "in": JSONValue("query"), "required": JSONValue(false)]);
+    // Typed parameters (d8ctl#39): query ones are flags, path ones positional.
+    JSONValue[] pathParams;
+    foreach (ref p; c.params)
+    {
+        JSONValue pj = ["name": JSONValue(p.name), "in": JSONValue(p.location),
+            "type": JSONValue(p.kind), "required": JSONValue(p.required)];
+        if (p.doc.length) pj["description"] = p.doc;
+        if (p.values.length) pj["enum"] = p.values.dup;
+        if (p.defaultValue.length) pj["default"] = p.defaultValue;
+        if (p.location == "query")
+            flags ~= pj;
+        else
+            pathParams ~= pj;
+    }
+    // Query names the spec model saw but could not type (none today).
+    foreach (q; c.requiredQuery ~ c.optionalQuery)
+    {
+        bool typed;
+        foreach (ref p; c.params)
+            typed |= p.name == q && p.location == "query";
+        if (!typed)
+            flags ~= JSONValue(["name": JSONValue(q), "in": JSONValue("query"),
+                "required": JSONValue(isRequiredQuery(c, q))]);
+    }
+    if (pathParams.length) j["pathParams"] = pathParams;
     foreach (f; c.bodyFields)
     {
         JSONValue fj = ["name": JSONValue(f.name), "in": JSONValue("body"),
