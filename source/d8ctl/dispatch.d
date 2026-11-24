@@ -8,7 +8,7 @@ module d8ctl.dispatch;
 @safe:
 
 import camunda.runtime;
-import d8ctl.catalog : BodyField, Command;
+import d8ctl.catalog : BodyField, Command, ParamField;
 import d8ctl.parse : Result;
 import std.json;
 import std.string : replace;
@@ -104,6 +104,11 @@ string invoke(Transport client, const ref Result r, string headersJson = null, s
                     "unknown flag --" ~ name ~ "=. See `d8ctl "
                     ~ c.namespace ~ " " ~ c.resource ~ " " ~ c.verb ~ " --help`.");
     }
+
+    foreach (i, p; pathNames)
+        requireAllowed(c, p, pathValues[i]);
+    foreach (q, v; query)
+        requireAllowed(c, q, v);
 
     auto path = substitutePath(c.path, pathNames, pathValues);
 
@@ -271,6 +276,31 @@ bool isQueryFlag(const Command* c, string name)
     foreach (q; c.optionalQuery)
         if (q == name) return true;
     return false;
+}
+
+/// The typed path/query parameter `name` (d8ctl#39), or null.
+const(ParamField)* findParam(return scope const Command* c, string name)
+{
+    foreach (i, ref p; c.params)
+        if (p.name == name) return &c.params[i];
+    return null;
+}
+
+/// Refuse a path/query value outside the parameter's `enum` before sending
+/// (d8ctl#39): a usage error that lists the allowed values. Array parameters
+/// (kind `json`) take a comma-separated list; each item is checked.
+void requireAllowed(scope const Command* c, string name, string value)
+{
+    import std.algorithm.searching : canFind;
+    import std.array : split;
+
+    auto p = findParam(c, name);
+    if (p is null || !p.values.length)
+        return;
+    foreach (item; p.kind == "json" ? value.split(",") : [value])
+        if (!p.values.canFind(item))
+            throw new UsageException("--" ~ name ~ ": '" ~ item ~ "' is not one of: "
+                ~ joinComma(p.values) ~ ".");
 }
 
 const(BodyField)* findBodyField(const Command* c, string name)
@@ -615,4 +645,24 @@ unittest
     s.method = "POST";
     import std.string : indexOf;
     assert(s.note.indexOf("may have been applied") >= 0);
+}
+
+/// Enum parameters are checked before sending (d8ctl#39): a scalar value
+/// must be one of them, each item of an array parameter's comma list too;
+/// parameters without an enum, and unknown names, pass through.
+unittest
+{
+    import std.exception : assertThrown, collectExceptionMsg;
+
+    Command c;
+    c.params = [ParamField("state", "query", "string", false, "", ["open", "closed"], ""),
+        ParamField("tags", "query", "json", false, "", ["a", "b"], ""),
+        ParamField("q", "query", "string", false, "", null, "")];
+    requireAllowed(&c, "state", "open");
+    requireAllowed(&c, "tags", "a,b");
+    requireAllowed(&c, "q", "anything");
+    requireAllowed(&c, "other", "anything");
+    assert(collectExceptionMsg(requireAllowed(&c, "state", "OPEN"))
+        == "--state: 'OPEN' is not one of: open, closed.");
+    assertThrown!UsageException(requireAllowed(&c, "tags", "a,c"));
 }

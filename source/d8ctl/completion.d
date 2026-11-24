@@ -325,9 +325,9 @@ private Cand[] flagsFor(string[] prev, string[] pos, Dirs dirs)
     if (auto c = commandOf(prev, dirs))
     {
         foreach (q; c.requiredQuery)
-            out_ ~= Cand("--" ~ q ~ "=", "query (required)");
+            out_ ~= Cand("--" ~ q ~ "=", "(required) " ~ paramDesc(c, q));
         foreach (q; c.optionalQuery)
-            out_ ~= Cand("--" ~ q ~ "=", "query");
+            out_ ~= Cand("--" ~ q ~ "=", paramDesc(c, q));
         foreach (ref f; c.bodyFields)
             out_ ~= Cand("--" ~ f.name ~ "=", (f.required ? "(required) " : "") ~ f.kind
                 ~ (f.doc.length ? ": " ~ f.doc : ""));
@@ -339,6 +339,15 @@ private Cand[] flagsFor(string[] prev, string[] pos, Dirs dirs)
     out_ ~= globalFlags.dup;
     out_ ~= configSwitches();
     return out_;
+}
+
+/// Completion description of a query flag: its kind and documentation.
+private string paramDesc(const Command* c, string name)
+{
+    foreach (ref p; c.params)
+        if (p.name == name && p.location == "query")
+            return "query " ~ p.kind ~ (p.doc.length ? ": " ~ p.doc : "");
+    return "query";
 }
 
 private Cand[] configSwitches()
@@ -375,6 +384,19 @@ private Cand[] flagValues(string name, string[] prev, Dirs dirs, bool spaceForm)
         return null;
     if (name == "fields")
         return null; // comma lists: left to the user (see `--help`)
+    foreach (ref p; c.params)
+        if (p.name == name && p.location == "query")
+        {
+            if (p.values.length)
+            {
+                Cand[] out_;
+                foreach (v; p.values)
+                    out_ ~= Cand(v, "");
+                return out_;
+            }
+            if (p.kind == "boolean")
+                return [Cand("true", ""), Cand("false", "")];
+        }
     foreach (ref f; c.bodyFields)
         if (f.name == name)
         {
