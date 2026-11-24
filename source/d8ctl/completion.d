@@ -157,7 +157,7 @@ private Result parsed(string[] prev, Dirs dirs)
     Result r;
     try
         r = parse(prev, dirs.d8ctl);
-    catch (Exception)
+    catch (Exception) // half-typed words: complete nothing rather than fail the shell
         r.kind = Kind.error;
     return r;
 }
@@ -402,6 +402,7 @@ private Cand[] profileNames(Dirs dirs)
     }
     catch (Exception)
     {
+        // unreadable profile files: offer no profile names; a completion must never error
     }
     return out_;
 }
@@ -410,7 +411,7 @@ private string[] extensionNames(Dirs dirs)
 {
     try
         return listExtensionNames(dirs.d8ctl);
-    catch (Exception)
+    catch (Exception) // unreadable extensions dir: offer no names; a completion must never error
         return null;
 }
 

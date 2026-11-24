@@ -36,6 +36,6 @@
     }
   },
   "preBuildCommands": [
-    "sh \"$PACKAGE_DIR/scripts/check-safe.sh\""
+    "dub run -q \"safer-d:check@~>2.0\" -- --root \"$PACKAGE_DIR\""
   ]
 }

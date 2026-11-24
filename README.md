@@ -27,8 +27,10 @@ make build      # ./d8ctl
 ```
 
 Same `@safe` contract as the SDK: DIP1000, nosharedaccess, bounds checks on
-in release, `scripts/check-safe.sh` as a pre-build hook. **Zero extra dub
-packages** — Phobos + the D SDK (which itself only links libcurl).
+in release, and the shared [Safer D](https://github.com/camunda/safer-d)
+checker (`safer-d-check`, budgets in `safer-d.json`) as a pre-build hook.
+**Zero extra dub packages** in the binary: Phobos + the D SDK (which itself
+only links libcurl); the checker runs as a tool, not a dependency.
 
 ## Usage
 

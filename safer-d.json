@@ -1,0 +1,18 @@
+{
+  "sources": ["source"],
+  "ioModules": ["source/d8ctl/safeio.d"],
+  "budgets": {
+    "cast": 26,
+    "catch": 15,
+    "class": 1,
+    "class-null": 4,
+    "isolation": 0,
+    "null-local": 0,
+    "nullable": 0,
+    "nullable-mark": 0,
+    "pure-throw": 0,
+    "subtraction": 0,
+    "trusted": 0,
+    "trusted-io": 8
+  }
+}

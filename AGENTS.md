@@ -37,7 +37,7 @@ Transport: `camunda-orchestration-sdk:runtime` from
 | `source/d8ctl/extensions.d` | Runtime extensions (#9): `extension add/list/update/remove`, the `<configDir>/extensions/<name>/` cache (spec + manifest, 0600/0700, atomic), and the model built from it. Profile-relative extensions (#25) resolve path `--spec`/`--base-url` against the selected profile's origin per call. |
 | `scripts/generate.d` | Thin catalog generator (`dub run --single`). Reads `external-spec/bundled/`, calls `specmodel`. |
 | `external-spec/bundled/` | Bundled spec + `spec-metadata.json` (`npm run bundle:spec`). Committed. |
-| `scripts/check-safe.sh` | `@safe` ratchet (same contract as the SDK). |
+| `safer-d.json` | [Safer D](https://github.com/camunda/safer-d) checker config: `ioModules` and budgets. Budgets only go down (`dub run -q "safer-d:check@~>2.0" -- --ratchet`); raising one needs a reason in the PR. |
 | `scripts/prepare-release.sh` | Stamps `dub.json` + `version_.d` (the release builds, then semantic-release). |
 | `scripts/npm-stage.sh`, `npm/` | npm packages from the release binaries: `@camunda8/d8ctl` (launcher `npm/d8ctl/bin/d8ctl.js`) + one per platform. `npm/README.md` has the first-publish steps. |
 | `docs/` | GitHub Pages explainer (`camunda.github.io/d8ctl`). |
@@ -46,7 +46,13 @@ Transport: `camunda-orchestration-sdk:runtime` from
 
 LDC ≥ 1.43 only. Every module `@safe:`. `-preview=dip1000 -preview=nosharedaccess`.
 Release keeps `-boundscheck=on`. No extra dub packages beyond the SDK's `:runtime` and `:openapi`. No raw threads,
-`__gshared`, or `union` outside a future `safeio.d`.
+`__gshared`, or `union` outside `safeio.d`.
+
+The rules are Safer D's (SD001–SD024, see
+https://github.com/camunda/safer-d/blob/main/SAFER-D.md), run by
+`safer-d-check` as the `dub.json` pre-build hook, in `make lint` and in CI.
+It runs as a tool (`dub run -q "safer-d:check@~>2.0"`, quote the version or
+the shell reads `>2` as a redirect), not as a library dependency.
 
 ## Releases
 

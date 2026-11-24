@@ -1090,7 +1090,7 @@ string extensionCommand(string cfgDir, const ref Sources sources, string[] args,
                     auto sp = buildPath(generationDir(cfgDir, n), "spec.json");
                     try
                         cachedOk = exists(sp) && sha256Hex(readText(sp)) == m.sha256;
-                    catch (Exception)
+                    catch (Exception) // unreadable cache: refetch without the ETag
                         cachedOk = false;
                 }
                 auto got = fetch(fetchUrl, cachedOk ? m.etag : null,
@@ -1214,9 +1214,6 @@ private string joinNames(const string[] names)
 
 version (unittest)
 {
-    import std.file : mkdirRecurse, write;
-    import std.path : baseName, buildPath;
-
     /// A tiny x-cli-bearing spec (the nwf fixture has none yet).
     enum xcliSpec = `{
       "openapi": "3.0.3",
@@ -1250,6 +1247,7 @@ version (unittest)
 
     private string testDir(string tag)
     {
+        import std.path : buildPath;
         import std.file : tempDir;
         import std.process : thisProcessID;
 
@@ -1311,6 +1309,7 @@ unittest
 
 unittest
 {
+    import std.path : baseName, buildPath;
     // add/list/update/remove against a fake fetch; files are 0600 in a 0700 dir.
     import std.exception : assertThrown;
     import std.file : exists, getAttributes, readText;
@@ -1527,6 +1526,7 @@ version (unittest)
 
 unittest
 {
+    import std.path : buildPath;
     // A held lock refuses concurrent changes; a commit leaves no staging dirs.
     import std.exception : assertThrown;
     import std.file : dirEntries, mkdir, rmdir, SpanMode;
@@ -1563,6 +1563,7 @@ unittest
 
 unittest
 {
+    import std.path : buildPath;
     // Review regressions (PR #13 round 4): env-free transports, whitespace
     // credentials, update locking, and the reader window of generations.
     import camunda.runtime : AuthStrategy;
@@ -1912,7 +1913,7 @@ version (unittest)
     /// connections are dropped after the request head (`status == 0`, a
     /// network error) or answered with `status`; later ones get 200 `body_`.
     /// Sends the port on `out_`, then the number of connections accepted.
-    private void flakyServer(int fail, int serve, int status, string body_, Chan!int out_)
+    private void flakyServer(C)(int fail, int serve, int status, string body_, C out_)
     {
         import std.conv : to;
         import std.socket : InternetAddress, SocketOption, SocketOptionLevel, TcpSocket;
@@ -1956,7 +1957,7 @@ version (unittest)
     /// Accepts `n` connections and closes each at once, before any
     /// ServerHello: an https client sees a TLS connect error (the Funnel
     /// drop of #29). Sends the port, then the number accepted.
-    private void tlsRefuser(int n, Chan!int out_)
+    private void tlsRefuser(C)(int n, C out_)
     {
         import std.socket : InternetAddress, SocketOption, SocketOptionLevel, TcpSocket;
 
@@ -1977,13 +1978,11 @@ version (unittest)
         out_.put(accepted);
     }
 
-    import camunda.safeio : Chan;
-
-    private int startFlaky(int fail, int serve, int status, string body_, Chan!int ch)
+    private int startFlaky(C)(int fail, int serve, int status, string body_, C ch)
     {
         import camunda.safeio : spawn;
 
-        spawn(&flakyServer, fail, serve, status, body_, ch);
+        spawn(&flakyServer!C, fail, serve, status, body_, ch);
         int port;
         ch.take(port);
         return port;
@@ -1995,6 +1994,7 @@ version (unittest)
 /// CAMUNDA_SDK_HTTP_RETRY_MAX_ATTEMPTS, and give up after it.
 unittest
 {
+    import camunda.safeio : Chan;
     import camunda.errors : NetworkException;
     import camunda.transport : ServerBase;
     import std.conv : to;
@@ -2081,6 +2081,7 @@ unittest
 /// handshake refused before ServerHello, like a Tailscale Funnel drop.
 unittest
 {
+    import camunda.safeio : Chan;
     import camunda.errors : NetworkException;
     import camunda.safeio : spawn;
     import camunda.transport : ServerBase;
@@ -2116,7 +2117,7 @@ unittest
     // TLS refused on every attempt: the error comes after exactly the
     // configured attempts, and they are counted.
     ch = Chan!int.make;
-    spawn(&tlsRefuser, 3, ch);
+    spawn(&tlsRefuser!(typeof(ch)), 3, ch);
     ch.take(port);
     conn = [
         "CAMUNDA_REST_ADDRESS": "https://127.0.0.1:" ~ port.to!string,
