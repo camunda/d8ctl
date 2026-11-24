@@ -571,6 +571,18 @@ private struct OpInfo
     J vendorExtensions;
 }
 
+/// The JSON schema of a response object, or null when it has none (no JSON
+/// media type, or an empty/false schema). The one null check for both
+/// response readers, so the type-aware SD022 sees the guard.
+private J responseSchemaOf(J resp)
+{
+    auto media = jsonContent(resp.get("content"));
+    if (media is null)
+        return null;
+    auto sch = media.get("schema");
+    return truthy(sch) ? sch : null;
+}
+
 private bool isMultipart(const string[] ctypes)
 {
     foreach (c; ctypes)
@@ -1146,9 +1158,8 @@ private OpInfo fromMeta(Spec spec, J op, size_t i)
                 continue;
             auto resp = resolveComponent(spec, responses.fields[code], "responses",
                 where ~ "/responses/" ~ code);
-            auto media = jsonContent(resp.get("content"));
-            auto respSchema = media is null ? null : media.get("schema");
-            if (!truthy(respSchema))
+            auto respSchema = responseSchemaOf(resp);
+            if (respSchema is null)
                 continue;
             // A `$ref` with siblings (OpenAPI 3.1) keeps the whole schema.
             if (respSchema.isObj && keysOf(respSchema).length == 1)
@@ -1272,9 +1283,8 @@ private OpInfo fromPaths(Spec spec, J op)
                 continue;
         }
         auto resp = resolveComponent(spec, responses.fields[code], "responses", where ~ "/responses/" ~ code);
-        auto media = jsonContent(resp.get("content"));
-        auto respSchema = media is null ? null : media.get("schema");
-        const hasSchema = truthy(respSchema);
+        auto respSchema = responseSchemaOf(resp);
+        const hasSchema = respSchema !is null;
         // Rank: JSON schema > any body > no content.
         const rank = hasSchema ? 2 : (keysOf(resp.get("content")).length ? 1 : 0);
         if (!found || rank > bestRank)
@@ -1284,7 +1294,7 @@ private OpInfo fromPaths(Spec spec, J op)
             bestRank = rank;
             o.responseRef = null;
             o.responseSchema = null;
-            if (hasSchema)
+            if (respSchema !is null)
             {
                 // A `$ref` with siblings (OpenAPI 3.1) keeps the whole schema.
                 if (respSchema.isObj && keysOf(respSchema).length == 1)
