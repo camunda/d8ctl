@@ -373,10 +373,13 @@ private string schemaScalar(Spec spec, J schema, string key, ref bool[string] se
     if (schema.has("$ref"))
     {
         const name = spec.refName(schema);
-        if (!name.length || name in seen)
-            return "";
-        seen[name] = true;
-        return schemaScalar(spec, spec.schemas.get(name), key, seen, depth + 1);
+        if (name.length && name !in seen)
+        {
+            seen[name] = true;
+            const viaRef = schemaScalar(spec, spec.schemas.get(name), key, seen, depth + 1);
+            if (viaRef.length)
+                return viaRef;
+        }
     }
     foreach (part; itemsOf(schema.get("allOf")))
     {
@@ -2560,6 +2563,7 @@ unittest
               {"name": "wrapped", "in": "query", "schema": {"allOf": [{"$ref": "#/components/schemas/Prefix"}]}},
               {"name": "own", "in": "query", "schema": {"$ref": "#/components/schemas/Prefix", "example": "mine"}},
               {"name": "loop", "in": "query", "schema": {"$ref": "#/components/schemas/Loop"}},
+              {"name": "mixed", "in": "query", "schema": {"$ref": "#/components/schemas/Sort", "allOf": [{"example": "asc"}]}},
               {"name": "X-Trace", "in": "header", "schema": {"type": "string"}}
             ],
             "responses": {"204": {"description": "ok"}}
@@ -2572,7 +2576,7 @@ unittest
     }`;
     auto cat = buildCatalog(spec, null, "t");
     auto ps = cat.commands[0].params;
-    assert(ps.length == 11, ps.length.to!string);
+    assert(ps.length == 12, ps.length.to!string);
     assert(ps[0].name == "id" && ps[0].location == "path" && ps[0].required && ps[0].kind == "integer");
     assert(ps[0].doc.startsWith("The thing."));
     // The operation-level `state` replaces the path-level one, in place.
@@ -2590,6 +2594,8 @@ unittest
     assert(ps[8].name == "wrapped" && ps[8].example == "17567*" && ps[8].defaultValue == "1*");
     assert(ps[9].name == "own" && ps[9].example == "mine" && ps[9].defaultValue == "1*");
     assert(ps[10].name == "loop" && ps[10].example == "" && ps[10].defaultValue == "");
+    // A `$ref` without a value still lets a sibling `allOf` contribute.
+    assert(ps[11].name == "mixed" && ps[11].example == "asc");
 
     auto src = renderCatalogModule(cat, "test");
     assert(src.indexOf(`ParamField("state", "query", "string", false, "Filter by state.", ["open", "closed"], "open", "")`) >= 0);
