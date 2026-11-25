@@ -655,9 +655,9 @@ unittest
     import std.exception : assertThrown, collectExceptionMsg;
 
     Command c;
-    c.params = [ParamField("state", "query", "string", false, "", ["open", "closed"], ""),
-        ParamField("tags", "query", "json", false, "", ["a", "b"], ""),
-        ParamField("q", "query", "string", false, "", null, "")];
+    c.params = [ParamField("state", "query", "string", false, "", ["open", "closed"], "", ""),
+        ParamField("tags", "query", "json", false, "", ["a", "b"], "", ""),
+        ParamField("q", "query", "string", false, "", null, "", "")];
     requireAllowed(&c, "state", "open");
     requireAllowed(&c, "tags", "a,b");
     requireAllowed(&c, "q", "anything");

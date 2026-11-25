@@ -25,7 +25,9 @@ string rootHelp()
     buf.put("        [--profile=<name>] [--camunda-<key>=<value> …] cluster …\n");
     buf.put("  d8ctl profile list|show|add|use|remove …\n");
     buf.put("  d8ctl extension add|list|update|remove …\n");
-    buf.put("  d8ctl completion bash|zsh|fish|powershell|install\n\n");
+    buf.put("  d8ctl completion bash|zsh|fish|powershell|install\n");
+    buf.put("  d8ctl catalog --json [--namespace=…] [--resource=…]   (for agents)\n");
+    buf.put("  d8ctl complete --json --tokens='…'|--line='…'          (for agents)\n\n");
     buf.put(format("The Orchestration Cluster surface is under `cluster` (%s operations).\n", catalogOperationCount));
     buf.put("Both `cluster <resource> <verb>` and `cluster <verb> <resource>` parse.\n");
     buf.put("`--order` only changes how help lists them (default: resource).\n");
@@ -336,6 +338,8 @@ private void putParamDetail(ref Appender!string buf, const Command* c, string na
         buf.put(format("               One of: %-(%s, %)\n", p.values));
     if (p.defaultValue.length)
         buf.put(format("               Default: %s\n", p.defaultValue));
+    if (p.example.length)
+        buf.put(format("               Example: %s\n", p.example));
 }
 
 string bodyKindHint(string kind)
@@ -476,6 +480,7 @@ JSONValue commandJson(const ref Command c, bool detail)
         if (p.doc.length) pj["description"] = p.doc;
         if (p.values.length) pj["enum"] = p.values.dup;
         if (p.defaultValue.length) pj["default"] = p.defaultValue;
+        if (p.example.length) pj["example"] = p.example; // a hint, not validated
         if (p.location == "query")
             flags ~= pj;
         else
@@ -522,6 +527,60 @@ JSONValue commandJson(const ref Command c, bool detail)
         j["responseFields"] = rfs;
     }
     return j;
+}
+
+/// One loaded namespace for `catalog --json` (d8ctl#46).
+struct CatalogNamespace
+{
+    string name;
+    string summary;
+    const(Command)[] rows;
+}
+
+/// `d8ctl catalog --json` (d8ctl#46): the loaded surface as one offline tree,
+/// namespace → resource → verb, each verb in the `--help --json` shape.
+/// An x-cli command is filed under its path's leading words (the verb is the
+/// last). `namespace`/`resource` trim it (empty = all); operator-only rows
+/// appear only with `includeOperator`.
+string catalogJson(const(CatalogNamespace)[] nss, string namespace = null,
+    string resource = null, bool includeOperator = false)
+{
+    import std.array : join;
+
+    JSONValue[] nsList;
+    foreach (ref ns; nss)
+    {
+        if (namespace.length && ns.name != namespace)
+            continue;
+        string[] order;
+        JSONValue[][string] verbs;
+        foreach (ref c; ns.rows)
+        {
+            if (c.operatorOnly && !includeOperator)
+                continue;
+            string res = c.resource, verb = c.verb;
+            if (c.paths.length)
+            {
+                res = c.paths[0][0 .. $ - 1].join(" ");
+                verb = c.paths[0][$ - 1];
+            }
+            if (resource.length && res != resource)
+                continue;
+            auto vj = commandJson(c, true);
+            vj["verb"] = verb;
+            if (res !in verbs)
+                order ~= res;
+            verbs[res] ~= vj;
+        }
+        JSONValue[] resList;
+        foreach (res; order)
+            resList ~= JSONValue(["name": JSONValue(res), "verbs": JSONValue(verbs[res])]);
+        JSONValue nj = ["name": JSONValue(ns.name), "summary": JSONValue(ns.summary),
+            "resources": JSONValue(resList)];
+        nsList ~= nj;
+    }
+    JSONValue j = ["namespaces": JSONValue(nsList)];
+    return j.toString(JSONOptions.doNotEscapeSlashes);
 }
 
 private JSONValue responseFieldJson(const ref ResponseField f)
@@ -632,4 +691,47 @@ unittest
     auto text = commandHelp(cmd);
     assert(text.canFind(firstSentence(doc)));
     assert(!text.canFind(doc), "text help shows only the first sentence");
+}
+
+unittest
+{
+    // catalog --json (d8ctl#46): namespace → resource → verb, filterable.
+    import std.json : parseJSON;
+    import d8ctl.catalog : commandsIn, overlayRows;
+    import d8ctl.specmodel : buildCatalog;
+
+    auto cat = new Catalog;
+    *cat = buildCatalog(`{"openapi":"3.0.3","info":{"title":"T","version":"1"},
+      "servers":[{"url":"http://h"}],
+      "paths": {
+        "/auto-resolutions": {"get": {"operationId": "listAutoResolutions",
+            "parameters": [{"name": "subject", "in": "query", "example": "orders",
+              "schema": {"type": "string"}}],
+            "responses": {"200": {"description": "ok"}}}},
+        "/runs/{id}/cancel": {"post": {"operationId": "cancelRun",
+            "x-cli": {"command": ["pr", "run", "cancel"], "positional": ["id"]},
+            "parameters": [{"name": "id", "in": "path", "required": true}],
+            "responses": {"200": {"description": "ok"}}}}
+      }}`, null, "t");
+    auto rows = overlayRows(cat);
+    auto nss = [CatalogNamespace("cluster", "C", commandsIn("cluster")), CatalogNamespace("t", "Extension", rows)];
+    auto all = parseJSON(catalogJson(nss));
+    assert(all["namespaces"].arrayNoRef.length == 2);
+    auto t = parseJSON(catalogJson(nss, "t"));
+    assert(t["namespaces"].arrayNoRef.length == 1);
+    auto res = t["namespaces"][0]["resources"].arrayNoRef;
+    assert(res.length == 2);
+    assert(res[0]["name"].str == "auto-resolutions");
+    auto v = res[0]["verbs"][0];
+    assert(v["verb"].str == "list" && v["method"].str == "GET");
+    assert(v["flags"][0]["example"].str == "orders");
+    assert(res[1]["name"].str == "pr run" && res[1]["verbs"][0]["verb"].str == "cancel");
+    auto one = parseJSON(catalogJson(nss, "cluster", "topology"));
+    assert(one["namespaces"][0]["resources"].arrayNoRef.length == 1);
+    assert(one["namespaces"][0]["resources"][0]["verbs"][0]["command"].str == "d8ctl cluster topology get");
+    // Help text shows the example as a hint.
+    import d8ctl.catalog : findExact;
+
+    auto c = findExact("t", "auto-resolutions", "list", cat, rows);
+    assert(commandHelp(c).canFind("Example: orders"));
 }

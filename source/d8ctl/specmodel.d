@@ -60,6 +60,10 @@ struct ModelParam
     string[] values;
     /// The schema's scalar `default`, as text; empty when none.
     string defaultValue;
+    /// A scalar `example` from the spec (the parameter's, else its schema's
+    /// `example` or first `examples` entry), as text; empty when none.
+    /// A non-binding hint (d8ctl#46): never validated against.
+    string example;
 }
 
 /// One shape of a `oneOf`/`anyOf` request body: a label and the top-level
@@ -356,6 +360,7 @@ private ModelParam paramOf(Spec spec, J p, string location)
     m.location = location;
     m.required = location == "path" || truthy(p.get("required"));
     m.doc = cleanDoc(p.get("description").orS(""));
+    m.example = scalarText(p.get("example"));
     auto sch = p.get("schema");
     if (sch is null || !sch.isObj)
     {
@@ -371,6 +376,14 @@ private ModelParam paramOf(Spec spec, J p, string location)
         m.values = enumValues(spec, sch.get("items"), seenItems);
     }
     m.defaultValue = scalarText(sch.get("default"));
+    if (!m.example.length)
+        m.example = scalarText(sch.get("example"));
+    if (!m.example.length)
+        foreach (e; itemsOf(sch.get("examples")))
+        {
+            m.example = scalarText(e);
+            break;
+        }
     return m;
 }
 
@@ -1705,7 +1718,7 @@ private string dParams(const ModelParam[] ps)
     foreach (p; ps)
         parts ~= "ParamField(" ~ dString(p.name) ~ ", " ~ dString(p.location) ~ ", " ~ dString(p.kind) ~ ", "
             ~ (p.required ? "true" : "false") ~ ", " ~ dString(p.doc) ~ ", " ~ dStringArray(p.values)
-            ~ ", " ~ dString(p.defaultValue) ~ ")";
+            ~ ", " ~ dString(p.defaultValue) ~ ", " ~ dString(p.example) ~ ")";
     return "[" ~ parts.join(", ") ~ "]";
 }
 
@@ -1841,6 +1854,8 @@ struct ParamField
     string doc;
     string[] values;
     string defaultValue;
+    /// A spec example (d8ctl#46): a non-binding hint; empty = none.
+    string example;
 }
 
 `;
@@ -2505,6 +2520,8 @@ unittest
               {"name": "sort", "in": "query", "schema": {"$ref": "#/components/schemas/Sort"}},
               {"name": "tags", "in": "query", "schema": {"type": "array", "items": {"type": "string", "enum": ["a", "b"]}}},
               {"name": "limit", "in": "query", "required": true, "schema": {"type": "integer", "default": 20}},
+              {"name": "subject", "in": "query", "example": "orders", "schema": {"type": "string"}},
+              {"name": "kind", "in": "query", "schema": {"type": "string", "examples": ["retry"]}},
               {"name": "X-Trace", "in": "header", "schema": {"type": "string"}}
             ],
             "responses": {"204": {"description": "ok"}}
@@ -2515,7 +2532,7 @@ unittest
     }`;
     auto cat = buildCatalog(spec, null, "t");
     auto ps = cat.commands[0].params;
-    assert(ps.length == 5, ps.length.to!string);
+    assert(ps.length == 7, ps.length.to!string);
     assert(ps[0].name == "id" && ps[0].location == "path" && ps[0].required && ps[0].kind == "integer");
     assert(ps[0].doc.startsWith("The thing."));
     // The operation-level `state` replaces the path-level one, in place.
@@ -2524,7 +2541,11 @@ unittest
     assert(ps[2].name == "sort" && ps[2].values == ["asc", "desc"] && ps[2].kind == "string");
     assert(ps[3].name == "tags" && ps[3].kind == "json" && ps[3].values == ["a", "b"]);
     assert(ps[4].name == "limit" && ps[4].required && ps[4].kind == "integer" && ps[4].defaultValue == "20");
+    // Spec examples (d8ctl#46): the parameter's, else its schema's; never invented.
+    assert(ps[5].name == "subject" && ps[5].example == "orders");
+    assert(ps[6].name == "kind" && ps[6].example == "retry");
+    assert(ps[1].example == "");
 
     auto src = renderCatalogModule(cat, "test");
-    assert(src.indexOf(`ParamField("state", "query", "string", false, "Filter by state.", ["open", "closed"], "open")`) >= 0);
+    assert(src.indexOf(`ParamField("state", "query", "string", false, "Filter by state.", ["open", "closed"], "open", "")`) >= 0);
 }

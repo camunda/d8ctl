@@ -4,7 +4,7 @@ module d8ctl.app;
 @safe:
 
 import camunda.runtime;
-import d8ctl.completion : complete, install, script;
+import d8ctl.completion : complete, completeJson, completeWords, install, script;
 import d8ctl.catalog : Command, catalogOperationCount, commandsFor, commandsIn, commandsUnderPath, namespaces;
 import d8ctl.extensions;
 import d8ctl.version_ : cliVersion;
@@ -35,6 +35,11 @@ int run(string[] args, Dirs dirs)
     }
     if (argv.length && argv[0] == "completion")
         return completionCommand(argv[1 .. $]);
+    // Agent-native discovery (d8ctl#46): offline, JSON only.
+    if (argv.length && argv[0] == "complete")
+        return completeCommand(argv[1 .. $], dirs);
+    if (argv.length && argv[0] == "catalog")
+        return catalogCommand(argv[1 .. $], dirs);
     try
         r = parse(argv, dirs.d8ctl);
     catch (ExtensionException e)
@@ -183,6 +188,109 @@ private int completionCommand(string[] args)
     catch (Exception e)
         return fail(r, classify(e, null));
 }
+
+/// `d8ctl complete --json --tokens='…'|--line='…'` (d8ctl#46).
+private int completeCommand(string[] args, Dirs dirs)
+{
+    import std.algorithm : canFind;
+
+    Result r;
+    if (args.canFind("--help") || args.canFind("-h"))
+    {
+        stdOut.write(completeHelp);
+        return 0;
+    }
+    if (!args.canFind("--json"))
+        return fail(r, Failure(ErrorKind.usage, "complete needs --json (`__complete` is the shell protocol)"));
+    try
+    {
+        stdOut.writeln(completeJson(completeWords(args), dirs));
+        return 0;
+    }
+    catch (UsageException e)
+        return fail(r, classify(e, null));
+}
+
+private enum completeHelp = `d8ctl complete --json — completion for programs
+
+Usage:
+  d8ctl complete --json --tokens='cluster jobs activate --ty'
+  d8ctl complete --json --line='d8ctl cluster jobs activate --ty'
+
+--tokens: the words after d8ctl; --line: a whole line (a leading d8ctl is
+dropped). Split on whitespace, no quoting; end with a space to ask for the
+next word. Prints {"items":[{"value","description"}],"noSpace":bool}.
+A query flag with a spec example offers it as a hint; any value is accepted.
+Same answers as d8ctl __complete, which stays the shell protocol. Offline.
+`;
+
+/// `d8ctl catalog --json [--namespace=…] [--resource=…] [--operator]` (d8ctl#46).
+private int catalogCommand(string[] args, Dirs dirs)
+{
+    import std.algorithm : startsWith;
+    import std.file : FileException;
+
+    Result r;
+    bool json, op;
+    string ns, res;
+    foreach (a; args)
+    {
+        if (a == "--json") json = true;
+        else if (a == "--operator") op = true;
+        else if (a.startsWith("--namespace=")) ns = a[12 .. $];
+        else if (a.startsWith("--resource=")) res = a[11 .. $];
+        else if (a == "--help" || a == "-h")
+        {
+            stdOut.write(catalogHelp);
+            return 0;
+        }
+        else
+            return fail(r, Failure(ErrorKind.usage, "catalog: unknown argument " ~ a));
+    }
+    if (!json)
+        return fail(r, Failure(ErrorKind.usage, "catalog needs --json"));
+    CatalogNamespace[] nss;
+    foreach (n; namespaces())
+        nss ~= CatalogNamespace(n, "Camunda 8 Orchestration Cluster API", commandsIn(n, null, null, true));
+    string[] exts;
+    try
+        exts = listExtensionNames(dirs.d8ctl);
+    catch (FileException e) // an unreadable extensions dir: cluster only
+        warn(r, e.msg);
+    foreach (e; exts)
+    {
+        if (ns.length && ns != e)
+            continue;
+        try
+        {
+            auto er = parse([e], dirs.d8ctl);
+            if (er.extCatalog !is null)
+                nss ~= CatalogNamespace(e, "Extension", er.extRows);
+        }
+        catch (ExtensionException x) // a broken extension: list the rest
+            warn(r, x.msg);
+    }
+    if (ns.length)
+    {
+        bool found;
+        foreach (ref n; nss) found |= n.name == ns;
+        if (!found)
+            return fail(r, Failure(ErrorKind.usage, "catalog: no loaded namespace " ~ ns));
+    }
+    stdOut.writeln(catalogJson(nss, ns, res, op));
+    return 0;
+}
+
+private enum catalogHelp = `d8ctl catalog --json — the loaded command surface
+
+Usage:
+  d8ctl catalog --json [--namespace=NAME] [--resource=NAME] [--operator]
+
+One offline JSON tree of every loaded namespace (cluster plus installed
+extensions): {"namespaces":[{"name","summary","resources":[{"name","verbs":[…]}]}]}.
+Each verb has the same fields as that command's --help --json, plus "verb".
+--operator includes operator-only extension operations.
+`;
 
 private enum completionHelp = `d8ctl completion — shell completion
 
@@ -344,4 +452,10 @@ unittest
     assert(run(["d8ctl", "completion"]) == 2);
     assert(run(["d8ctl", "completion", "tcsh"]) == 2);
     assert(run(["d8ctl", "__complete", "cluster", ""]) == 0);
+    // Agent-native discovery (d8ctl#46).
+    assert(run(["d8ctl", "catalog", "--json", "--namespace=cluster", "--resource=topology"]) == 0);
+    assert(run(["d8ctl", "catalog"]) == 2);
+    assert(run(["d8ctl", "catalog", "--json", "--namespace=nope"]) == 2);
+    assert(run(["d8ctl", "complete", "--json", "--tokens=cluster topology "]) == 0);
+    assert(run(["d8ctl", "complete", "--tokens=x"]) == 2);
 }

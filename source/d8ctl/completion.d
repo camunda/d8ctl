@@ -52,25 +52,15 @@ private immutable Cand[] globalFlags = [
 /// Answer one `__complete` call. `words` excludes the program name.
 string complete(string[] words, Dirs dirs)
 {
-    string cur = words.length ? words[$ - 1] : "";
-    if (cur == `""`)
-        cur = "";
-    string[] prev = words.length ? words[0 .. $ - 1] : null;
     int directive;
-    auto cands = candidates(prev, cur, dirs, directive);
-
     auto buf = appender!string();
-    bool[string] seen;
-    foreach (c; cands)
+    foreach (c; answer(words, dirs, directive))
     {
-        if (!c.value.startsWith(cur) || c.value in seen)
-            continue;
-        seen[c.value] = true;
         buf.put(c.value);
         if (c.doc.length)
         {
             buf.put('\t');
-            buf.put(oneLine(c.doc));
+            buf.put(c.doc);
         }
         buf.put('\n');
     }
@@ -80,6 +70,80 @@ string complete(string[] words, Dirs dirs)
     buf.put(directive.to!string);
     buf.put('\n');
     return buf.data;
+}
+
+/// The program protocol (d8ctl#46): `d8ctl complete --json` answers the same
+/// question as `__complete` (the shell protocol) as
+/// `{"items":[{"value","description"}],"noSpace":bool}`. `words` excludes the
+/// program name; the last is the word under the cursor (may be empty).
+string completeJson(string[] words, Dirs dirs)
+{
+    import std.json : JSONOptions, JSONValue;
+
+    int directive;
+    JSONValue[] items;
+    foreach (c; answer(words, dirs, directive))
+        items ~= JSONValue(["value": c.value, "description": c.doc]);
+    JSONValue j = ["items": JSONValue(items), "noSpace": JSONValue((directive & noSpace) != 0)];
+    return j.toString(JSONOptions.doNotEscapeSlashes);
+}
+
+/// Words for `complete --json`: `--tokens='a b --c='` (the words after
+/// `d8ctl`) or `--line='d8ctl a b --c='` (a whole line; a leading `d8ctl` is
+/// dropped). Split on whitespace, no quoting; trailing whitespace means the
+/// cursor is on a new, empty word. Throws `UsageException` without either.
+string[] completeWords(string[] args)
+{
+    import std.array : split;
+    import std.ascii : isWhite;
+    import std.path : baseName, stripExtension;
+
+    string text;
+    bool line, given;
+    foreach (a; args)
+    {
+        if (a.startsWith("--tokens="))
+        {
+            text = a[9 .. $];
+            given = true;
+        }
+        else if (a.startsWith("--line="))
+        {
+            text = a[7 .. $];
+            line = given = true;
+        }
+        else if (a != "--json")
+            throw new UsageException("complete: unknown argument " ~ a
+                ~ " (expected --json and --tokens=… or --line=…)");
+    }
+    if (!given)
+        throw new UsageException("complete needs --tokens='…' or --line='…'");
+    auto ws = text.split;
+    if (line && ws.length && ws[0].baseName.stripExtension == "d8ctl")
+        ws = ws[1 .. $];
+    if (!ws.length || (text.length && isWhite(text[$ - 1])))
+        ws ~= "";
+    return ws;
+}
+
+/// The candidates for `words` (last = the word under the cursor), filtered
+/// by that prefix, de-duplicated, descriptions on one line.
+private Cand[] answer(string[] words, Dirs dirs, ref int directive)
+{
+    string cur = words.length ? words[$ - 1] : "";
+    if (cur == `""`)
+        cur = "";
+    string[] prev = words.length ? words[0 .. $ - 1] : null;
+    Cand[] out_;
+    bool[string] seen;
+    foreach (c; candidates(prev, cur, dirs, directive))
+    {
+        if (!c.value.startsWith(cur) || c.value in seen)
+            continue;
+        seen[c.value] = true;
+        out_ ~= Cand(c.value, c.doc.length ? oneLine(c.doc) : "");
+    }
+    return out_;
 }
 
 private string oneLine(string s)
@@ -175,6 +239,8 @@ private Cand[] words(string[] pos, string[] prev, Dirs dirs)
         out_ ~= Cand("profile", "Manage connection profiles");
         out_ ~= Cand("extension", "Add, list, update or remove extensions");
         out_ ~= Cand("completion", "Shell completion scripts");
+        out_ ~= Cand("catalog", "The loaded command surface as JSON");
+        out_ ~= Cand("complete", "Completion as JSON (for programs)");
         out_ ~= Cand("help", "Help");
         return out_;
     }
@@ -301,6 +367,13 @@ private Cand[] flagsFor(string[] prev, string[] pos, Dirs dirs)
     Cand[] out_;
     if (pos.length && pos[0] == "completion")
         return [Cand("--shell=", "bash|zsh|fish (completion install)")];
+    if (pos.length && pos[0] == "catalog")
+        return [Cand("--json", "Required: JSON output"), Cand("--namespace=", "Only this namespace"),
+            Cand("--resource=", "Only this resource"), Cand("--operator", "Include operator-only operations")];
+    if (pos.length && pos[0] == "complete")
+        return [Cand("--json", "Required: JSON output"),
+            Cand("--tokens=", "The words after d8ctl, last = the one being typed"),
+            Cand("--line=", "The whole command line")];
     if (pos.length && (pos[0] == "profile" || (pos.length >= 2 && pos[1] == "profile")))
     {
         out_ ~= [Cand("--from-env", "profile add: copy CAMUNDA_* from the environment"),
@@ -346,7 +419,8 @@ private string paramDesc(const Command* c, string name)
 {
     foreach (ref p; c.params)
         if (p.name == name && p.location == "query")
-            return "query " ~ p.kind ~ (p.doc.length ? ": " ~ p.doc : "");
+            return "query " ~ p.kind ~ (p.doc.length ? ": " ~ p.doc : "")
+                ~ (p.example.length ? " (e.g. " ~ p.example ~ ")" : "");
     return "query";
 }
 
@@ -396,6 +470,9 @@ private Cand[] flagValues(string name, string[] prev, Dirs dirs, bool spaceForm)
             }
             if (p.kind == "boolean")
                 return [Cand("true", ""), Cand("false", "")];
+            // A spec example (d8ctl#46): a hint only; any value is accepted.
+            if (p.example.length)
+                return [Cand(p.example, "example")];
         }
     foreach (ref f; c.bodyFields)
         if (f.name == name)
@@ -750,4 +827,48 @@ unittest
     assert(exists(buildPath(home, ".config", "fish", "completions", "d8ctl.fish")));
     assertThrown!UsageException(install("", home, ""));
     assertThrown!UsageException(install("powershell", home, ""));
+}
+
+unittest
+{
+    // complete --json (d8ctl#46): the same answers as __complete, for programs.
+    import std.json : parseJSON;
+    import std.exception : assertThrown;
+
+    auto d = tmpDirs();
+    string[] vals(string json)
+    {
+        string[] vs;
+        foreach (i; parseJSON(json)["items"].arrayNoRef)
+            vs ~= i["value"].str;
+        return vs;
+    }
+    // The cases of scripts/test-completion.sh.
+    assert(vals(completeJson(completeWords(["--json", "--tokens=cluster get topo"]), d)).canFind("topology"));
+    assert(vals(completeJson(completeWords(["--json", "--line=d8ctl --output="]), d)).canFind("--output=json"));
+    assert(vals(completeJson(completeWords(["--json", "--tokens=cluster topology "]), d)) == ["get"]);
+    auto j = parseJSON(completeJson(completeWords(["--json", "--line=d8ctl cluster jobs activate --ty"]), d));
+    assert(j["items"][0]["value"].str == "--type=" && j["noSpace"].boolean);
+    assert(completeWords(["--tokens="]) == [""]);
+    assert(completeWords(["--line=d8ctl"]) == [""]);
+    assertThrown!UsageException(completeWords(["--json"]));
+    assertThrown!UsageException(completeWords(["--bogus", "--tokens=x"]));
+}
+
+unittest
+{
+    // A spec example is offered as a non-binding hint (d8ctl#46).
+    import std.file : mkdirRecurse, write;
+    import d8ctl.catalog : catalog;
+
+    auto d = tmpDirs();
+    foreach (ref c; catalog)
+        foreach (ref p; c.params)
+            if (p.location == "query" && p.example.length && !p.values.length && p.kind != "boolean")
+            {
+                auto got = values(complete([c.namespace, c.resource, c.verb, "--" ~ p.name ~ "="], d));
+                assert(got == ["--" ~ p.name ~ "=" ~ p.example], c.operationId);
+                return;
+            }
+    // The bundled spec may carry no query example; nothing to check then.
 }
