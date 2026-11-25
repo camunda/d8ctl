@@ -100,6 +100,8 @@ bool isValidExtensionName(string name) pure
 immutable string[] RESERVED_NAMES = [
     "cluster", "extension", "extensions", "profile", "profiles",
     "help", "version", "completion",
+    // Discovery commands (#46) intercepted before extensions in app.d.
+    "catalog", "complete",
     // `<verb> profile…` is rewritten to profile management before namespaces
     // are looked up (parse.d), so these would be shadowed.
     "list", "show", "add", "use", "remove", "rm", "delete",
@@ -1294,6 +1296,8 @@ unittest
     foreach (n; RESERVED_NAMES)
         assertThrown!ExtensionException(requireExtensionName(n));
     assertThrown!ExtensionException(requireExtensionName("Bad Name"));
+    assertThrown!ExtensionException(requireExtensionName("catalog"));
+    assertThrown!ExtensionException(requireExtensionName("complete"));
 
     // Base URL resolution: relative, absolute, root-relative, variables.
     const u = "http://merlin.local:8080/console/app-view/Workforce/app/api-docs/openapi.json";

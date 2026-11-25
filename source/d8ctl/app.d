@@ -269,6 +269,8 @@ private int catalogCommand(string[] args, Dirs dirs)
         }
         catch (ExtensionException x) // a broken extension: list the rest
             warn(r, x.msg);
+        catch (FileException x) // an unreadable cached spec: list the rest
+            warn(r, e ~ ": " ~ x.msg);
     }
     if (ns.length)
     {
