@@ -48,7 +48,7 @@ Command toCommand(const ref ModelCommand c)
     foreach (v; c.variants)
         r.variants ~= BodyVariant(v.name, v.required.dup);
     foreach (p; c.params)
-        r.params ~= ParamField(p.name, p.location, p.kind, p.required, p.doc, p.values.dup, p.defaultValue);
+        r.params ~= ParamField(p.name, p.location, p.kind, p.required, p.doc, p.values.dup, p.defaultValue, p.example);
     return r;
 }
 
