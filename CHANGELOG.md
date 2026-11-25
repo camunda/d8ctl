@@ -1,3 +1,10 @@
+# [0.13.0](https://github.com/camunda/d8ctl/compare/v0.12.0...v0.13.0) (2026-11-25)
+
+
+### Features
+
+* agent-native catalog --json and complete --json; spec examples as hints ([#48](https://github.com/camunda/d8ctl/issues/48)) ([3a0c28b](https://github.com/camunda/d8ctl/commit/3a0c28be67a4614ede061cd91fd5051c941e750c)), closes [#46](https://github.com/camunda/d8ctl/issues/46)
+
 # [0.12.0](https://github.com/camunda/d8ctl/compare/v0.11.2...v0.12.0) (2026-11-24)
 
 
